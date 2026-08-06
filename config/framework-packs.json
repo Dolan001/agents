@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "copy_application_source": false,
+  "packs": {
+    "django-drf": {
+      "path": "../template_django_drf",
+      "role": "backend",
+      "target": "apps/backend"
+    },
+    "fastapi": {
+      "path": "../template_fastapi",
+      "role": "backend",
+      "target": "apps/backend"
+    },
+    "nextjs": {
+      "path": "../template_nextjs",
+      "role": "frontend",
+      "target": "apps/frontend"
+    },
+    "react": {
+      "path": "../template_react",
+      "role": "frontend",
+      "target": "apps/frontend"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": [
+    "pre_workflow", "post_workflow", "pre_phase", "post_phase", "pre_task",
+    "post_task", "pre_edit", "post_edit", "pre_test", "post_test", "pre_commit",
+    "post_commit", "pre_push", "post_push", "on_failure", "on_retry", "on_blocked",
+    "on_conflict", "on_resume"
+  ],
+  "fail_closed": ["pre_task", "pre_edit", "pre_commit", "pre_push"]
+}
+
