@@ -3,22 +3,22 @@
   "copy_application_source": false,
   "packs": {
     "django-drf": {
-      "path": "../template_django_drf",
+      "path": "templates/django_drf",
       "role": "backend",
       "target": "apps/backend"
     },
     "fastapi": {
-      "path": "../template_fastapi",
+      "path": "templates/fastapi",
       "role": "backend",
       "target": "apps/backend"
     },
     "nextjs": {
-      "path": "../template_nextjs",
+      "path": "templates/nextjs",
       "role": "frontend",
       "target": "apps/frontend"
     },
     "react": {
-      "path": "../template_react",
+      "path": "templates/react",
       "role": "frontend",
       "target": "apps/frontend"
     }

@@ -3,7 +3,7 @@ from pathlib import Path
 
 PACK_NAMES = ("django-drf", "fastapi", "nextjs", "react")
 REQUIRED_DIRECTORIES = {"agents", "skills", "commands", "hooks", "rules"}
-ALLOWED_TOP_LEVEL = REQUIRED_DIRECTORIES | {"AGENTS.md", "README.md", ".git"}
+ALLOWED_TOP_LEVEL = REQUIRED_DIRECTORIES | {"AGENTS.md", "README.md", ".git", ".gitignore"}
 FORBIDDEN_APPLICATION_FILES = {
     "Dockerfile",
     "manage.py",

@@ -32,6 +32,25 @@ The repository-local `bin/ai` launcher works without installation.
 is a dry run unless `--execute` is supplied, rejects dirty worktrees, and rejects every
 protected or malformed branch.
 
+## Linked repositories
+
+`base_ai` and every framework pack are pinned Git submodules:
+
+```text
+ai_workflow/
+├── base_ai/                 # base_ai repository
+└── templates/
+    ├── django_drf/          # template_django_drf repository
+    ├── fastapi/             # template_fastapi repository
+    ├── nextjs/              # template_nextjs repository
+    └── react/               # template_react repository
+```
+
+Clone with `git clone --recurse-submodules <ai_workflow-url>`, or initialize an
+existing clone with `git submodule update --init --recursive`. The current
+`.gitmodules` uses sibling-relative local URLs; replace those URLs with the private
+repository URLs when remotes are created.
+
 ## Exit codes
 
 - `0`: command completed and its requested gate passed
