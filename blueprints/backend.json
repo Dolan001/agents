@@ -1,0 +1,8 @@
+{
+  "name": "backend",
+  "nodes": [
+    {"id": "load-backend-pack", "type": "deterministic", "action": "resolve_selected_framework_pack"},
+    {"id": "implement-backend-slices", "type": "agentic", "agent": "selected-backend-agent", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/backend.json", "verification": "evidence-schema"},
+    {"id": "verify-api-contract", "type": "agentic", "agent": "api-contract-manager", "required_output": ".ai/evidence/api-contract.json", "verification": "verified-true"}
+  ]
+}

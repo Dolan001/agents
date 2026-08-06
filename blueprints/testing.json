@@ -1,0 +1,8 @@
+{
+  "name": "testing",
+  "nodes": [
+    {"id": "run-approved-test-matrix", "type": "deterministic", "action": "run_project_owned_test_commands"},
+    {"id": "independent-feature-verification", "type": "agentic", "agent": "feature-verification-agent", "fanout": "implemented_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/final-verification.json", "verification": "verified-true"},
+    {"id": "security-review", "type": "agentic", "agent": "security-reviewer", "required_output": "artifacts/security/security-report.json", "verification": "no-unresolved-critical"}
+  ]
+}

@@ -1,15 +1,20 @@
 [submodule "base_ai"]
 	path = base_ai
-	url = ../base_ai
-[submodule "templates/django_drf"]
-	path = templates/django_drf
-	url = ../template_django_drf
-[submodule "templates/fastapi"]
-	path = templates/fastapi
-	url = ../template_fastapi
-[submodule "templates/nextjs"]
-	path = templates/nextjs
-	url = ../template_nextjs
-[submodule "templates/react"]
-	path = templates/react
-	url = ../template_react
+	url = https://github.com/potentialInc/claude-base-ai.git
+	branch = dev
+[submodule "django"]
+	path = django
+	url = https://github.com/potentialInc/claude-django.git
+	branch = dev
+[submodule "fastapi"]
+	path = fastapi
+	url = https://github.com/potentialInc/claude-fastapi.git
+	branch = dev
+[submodule "nextjs"]
+	path = nextjs
+	url = https://github.com/potentialInc/claude-nextjs.git
+	branch = dev
+[submodule "react"]
+	path = react
+	url = https://github.com/potentialInc/claude-react.git
+	branch = dev

@@ -13,6 +13,7 @@ from .discovery import inventory, print_json, save_inventory
 from .git import assert_safe_branch, baseline, run_git
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
+from .pipeline import validate_control_plane
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 
@@ -316,6 +317,11 @@ def command_doctor(args: argparse.Namespace) -> int:
     return 0 if sys.version_info >= (3, 12) and git_path else 2
 
 
+def command_pipeline(args: argparse.Namespace) -> int:
+    print_json(validate_control_plane())
+    return 0
+
+
 def command_clean_state(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     target = project / ".ai"
@@ -396,6 +402,8 @@ def parser() -> argparse.ArgumentParser:
     doctor = commands.add_parser("doctor")
     add_project(doctor)
     doctor.set_defaults(handler=command_doctor)
+    pipeline = commands.add_parser("pipeline")
+    pipeline.set_defaults(handler=command_pipeline)
     clean = commands.add_parser("clean-state")
     add_project(clean)
     clean.add_argument("--yes", action="store_true")

@@ -1,0 +1,11 @@
+{
+  "name": "requirements",
+  "prerequisites": ["bootstrap"],
+  "agents": ["requirements-reconciliation-agent", "solution-architect", "dependency-planner"],
+  "skills": ["prd-extraction", "requirement-reconciliation", "vertical-slice-planning"],
+  "rules": ["rules/common.md", "rules/phases/requirements.md"],
+  "inputs": ["docs/PRD.md", ".ai/discovery/repository-map.json"],
+  "outputs": ["docs/generated/requirements.json", ".ai/task-queue.json"],
+  "scope": {"application_writes": false},
+  "gate": "gates/contracts/requirements.json"
+}

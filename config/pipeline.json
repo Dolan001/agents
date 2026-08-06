@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "state_root": ".ai",
+  "phase_order": [
+    "bootstrap",
+    "requirements",
+    "design",
+    "frontend",
+    "backend",
+    "integration",
+    "testing",
+    "delivery"
+  ],
+  "phases": {
+    "bootstrap": {
+      "manifest": "pipeline/manifests/bootstrap.json",
+      "blueprint": "blueprints/bootstrap.json",
+      "gate": "gates/contracts/bootstrap.json"
+    },
+    "requirements": {
+      "manifest": "pipeline/manifests/requirements.json",
+      "blueprint": "blueprints/requirements.json",
+      "gate": "gates/contracts/requirements.json"
+    },
+    "design": {
+      "manifest": "pipeline/manifests/design.json",
+      "blueprint": "blueprints/design.json",
+      "gate": "gates/contracts/design.json"
+    },
+    "frontend": {
+      "manifest": "pipeline/manifests/frontend.json",
+      "blueprint": "blueprints/frontend.json",
+      "gate": "gates/contracts/frontend.json"
+    },
+    "backend": {
+      "manifest": "pipeline/manifests/backend.json",
+      "blueprint": "blueprints/backend.json",
+      "gate": "gates/contracts/backend.json"
+    },
+    "integration": {
+      "manifest": "pipeline/manifests/integration.json",
+      "blueprint": "blueprints/integration.json",
+      "gate": "gates/contracts/integration.json"
+    },
+    "testing": {
+      "manifest": "pipeline/manifests/testing.json",
+      "blueprint": "blueprints/testing.json",
+      "gate": "gates/contracts/testing.json"
+    },
+    "delivery": {
+      "manifest": "pipeline/manifests/delivery.json",
+      "blueprint": "blueprints/delivery.json",
+      "gate": "gates/contracts/delivery.json"
+    }
+  },
+  "execution": {
+    "maximum_retries_per_failure": 2,
+    "agentic_nodes_require_artifact_contracts": true,
+    "resume_from_last_verified_node": true,
+    "remote_push_enabled_by_default": false
+  }
+}

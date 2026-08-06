@@ -1,0 +1,11 @@
+{
+  "name": "frontend",
+  "prerequisites": ["design"],
+  "agents": ["frontend-architect", "frontend-implementer", "frontend-test-agent"],
+  "skills": ["selected-frontend-pack", "vertical-slice-implementation"],
+  "rules": ["rules/common.md", "rules/phases/frontend.md"],
+  "inputs": ["HTML/approved/**", "docs/generated/requirements.json"],
+  "outputs": ["apps/frontend/**", ".ai/evidence/features/**"],
+  "scope": {"allowed_paths": ["apps/frontend/**", "packages/shared-types/**", ".ai/evidence/**"]},
+  "gate": "gates/contracts/frontend.json"
+}

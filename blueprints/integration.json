@@ -1,0 +1,8 @@
+{
+  "name": "integration",
+  "nodes": [
+    {"id": "generate-typed-client", "type": "deterministic", "action": "run_project_owned_openapi_client_command"},
+    {"id": "connect-feature-slices", "type": "agentic", "agent": "integration-engineer", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/integration.json", "verification": "evidence-schema"},
+    {"id": "verify-contracts", "type": "agentic", "agent": "contract-test-agent", "required_output": ".ai/evidence/contract-verification.json", "verification": "verified-true"}
+  ]
+}

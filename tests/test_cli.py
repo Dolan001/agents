@@ -3,6 +3,7 @@ from pathlib import Path
 
 from ai_workflow.cli import main
 from ai_workflow.discovery import detect
+from ai_workflow.pipeline import validate_control_plane
 
 
 def test_detects_frameworks() -> None:
@@ -45,3 +46,11 @@ def test_clean_state_requires_confirmation(tmp_path: Path) -> None:
     (tmp_path / ".ai").mkdir()
     assert main(["clean-state", "--project", str(tmp_path)]) == 1
     assert (tmp_path / ".ai").exists()
+
+
+def test_control_plane_is_fully_connected() -> None:
+    report = validate_control_plane()
+    assert report["valid"] is True
+    assert report["phases"] == 8
+    assert report["nodes"] == 24
+    assert report["agentic_nodes"] == 14

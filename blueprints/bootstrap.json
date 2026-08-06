@@ -1,0 +1,8 @@
+{
+  "name": "bootstrap",
+  "nodes": [
+    {"id": "validate-prd", "type": "deterministic", "action": "validate_required_prd"},
+    {"id": "inspect-target", "type": "deterministic", "action": "inventory_repository"},
+    {"id": "persist-baseline", "type": "deterministic", "action": "create_durable_state"}
+  ]
+}

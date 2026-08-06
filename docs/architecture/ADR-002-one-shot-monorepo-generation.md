@@ -23,6 +23,9 @@ the separate target monorepo.
 9. Run project-owned checks and independent verification.
 10. Record durable evidence and create safe feature commits.
 
+Each step is represented by a phase manifest, blueprint node graph, and deterministic
+gate contract. The control plane is validated with `ai pipeline` before a run.
+
 ## Consequences
 
 Framework packs stay small, code-free, and reusable across new and existing projects.

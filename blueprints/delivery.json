@@ -1,0 +1,8 @@
+{
+  "name": "delivery",
+  "nodes": [
+    {"id": "aggregate-evidence", "type": "deterministic", "action": "aggregate_feature_evidence"},
+    {"id": "assess-release-readiness", "type": "agentic", "agent": "release-readiness-agent", "required_output": "artifacts/final/release-readiness.json", "verification": "schema"},
+    {"id": "prepare-git-summary", "type": "agentic", "agent": "git-release-agent", "required_output": "artifacts/final/git-summary.md", "verification": "non-empty"}
+  ]
+}

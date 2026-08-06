@@ -1,0 +1,5 @@
+{
+  "phase": "delivery",
+  "required": ["artifacts/final/release-readiness.json", "artifacts/final/git-summary.md"],
+  "assertions": ["remaining_gaps_are_reported", "completion_claims_match_evidence", "push_is_explicit_and_branch_is_safe"]
+}

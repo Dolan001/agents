@@ -1,0 +1,8 @@
+{
+  "name": "design",
+  "nodes": [
+    {"id": "inventory-design-inputs", "type": "deterministic", "action": "inventory_design_assets"},
+    {"id": "establish-html-baseline", "type": "agentic", "agent": "design-interpreter", "required_output": ".ai/evidence/design/baseline.json", "verification": "evidence-schema"},
+    {"id": "verify-html-baseline", "type": "agentic", "agent": "html-quality-agent", "required_output": ".ai/evidence/design/verification.json", "verification": "verified-true"}
+  ]
+}

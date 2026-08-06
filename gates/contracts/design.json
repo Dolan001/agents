@@ -1,0 +1,5 @@
+{
+  "phase": "design",
+  "required": ["HTML/approved/**", ".ai/evidence/design/verification.json"],
+  "assertions": ["source_assets_preserved", "approved_html_exists", "baseline_accessibility_checked"]
+}

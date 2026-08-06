@@ -8,3 +8,17 @@ configured frontend and backend behavior packs, performs discovery and reconcili
 creates vertical-slice task contracts, and dispatches specialized agents. Agents write
 only to leased target-monorepo paths. Framework-pack files are read-only behavioral
 context and are never copied into the application.
+
+The workflow uses:
+
+```text
+command
+  → phase manifest
+  → blueprint nodes
+  → scoped stable agents and selected framework skills
+  → evidence gate
+  → durable checkpoint
+```
+
+This mirrors the useful control-plane architecture of `claude-fullstack` without
+copying framework source templates or placing a generated project in this repository.

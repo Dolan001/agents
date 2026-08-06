@@ -1,0 +1,5 @@
+{
+  "phase": "testing",
+  "required": ["artifacts/tests/**", "artifacts/security/security-report.json"],
+  "assertions": ["required_test_matrix_executed", "all_claimed_features_independently_verified", "no_unresolved_critical_security_findings"]
+}

@@ -1,8 +1,9 @@
 # ai_workflow
 
-User-facing orchestration for new and brownfield projects. It validates a required
-PRD, inventories existing code without rewriting it, reconciles requirements, creates
-task contracts, maintains durable state and leases, and gates review and release.
+Specification-driven control plane for new and brownfield full-stack delivery. Its
+shape follows the proven `claude-fullstack` separation: commands enter a deterministic
+pipeline; phase manifests select rules, skills, and agents; blueprints define
+executable nodes; and evidence gates control progression.
 
 The framework repositories are code-free behavior packs. During a one-shot run,
 specialized agents read the selected pack and create application code directly in the
@@ -20,6 +21,7 @@ ai plan --project /path/to/project --remaining
 ai build --project /path/to/project --remaining
 ai status --project /path/to/project
 ai resume --project /path/to/project
+ai pipeline
 ```
 
 Framework selection is defined in `config/framework-packs.json`. Pack contents are
@@ -34,22 +36,46 @@ protected or malformed branch.
 
 ## Linked repositories
 
-`base_ai` and every framework pack are pinned Git submodules:
+`base_ai` and every framework behavior repository are root-level, pinned Git
+submodules:
 
 ```text
 ai_workflow/
-├── base_ai/                 # base_ai repository
-└── templates/
-    ├── django_drf/          # template_django_drf repository
-    ├── fastapi/             # template_fastapi repository
-    ├── nextjs/              # template_nextjs repository
-    └── react/               # template_react repository
+├── agents/                  # orchestration-only agents
+├── blueprints/              # deterministic + agentic node graphs
+├── commands/                # workflow entry contracts
+├── gates/                   # evidence contracts
+├── hooks/                   # lifecycle dispatch
+├── pipeline/                # manifests, evaluation, and recovery policy
+├── rules/                   # common and phase scope rules
+├── skills/                  # orchestration skills
+├── base_ai/                 # shared AI behavior repository
+├── django/                  # Django DRF behavior repository
+├── fastapi/                 # FastAPI behavior repository
+├── nextjs/                  # Next.js behavior repository
+└── react/                   # React behavior repository
 ```
 
 Clone with `git clone --recurse-submodules <ai_workflow-url>`, or initialize an
-existing clone with `git submodule update --init --recursive`. The current
-`.gitmodules` uses sibling-relative local URLs; replace those URLs with the private
-repository URLs when remotes are created.
+existing clone with `git submodule update --init --recursive`. Submodules track their
+`dev` branches for explicit update operations while the parent repository always pins
+an exact reviewed commit.
+
+The expected private repositories are under the `potentialInc` organization:
+`claude-base-ai`, `claude-django`, `claude-fastapi`, `claude-nextjs`, and
+`claude-react`.
+
+## Pipeline
+
+```text
+bootstrap → requirements → design → frontend → backend
+          → integration → testing → delivery
+```
+
+`config/pipeline.json` is the phase registry. Every phase points to one manifest, one
+blueprint, and one gate contract. Run `ai pipeline` to validate that the control plane
+is fully connected. Framework packs are loaded only for their selected implementation
+phase; no behavior repository contains application boilerplate.
 
 ## Exit codes
 

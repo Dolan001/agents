@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "completion": {
+    "requirement_coverage": 1.0,
+    "required_gate_pass_rate": 1.0,
+    "unresolved_critical_security_findings": 0,
+    "unreported_remaining_gaps": 0
+  },
+  "evidence_required": [
+    "source",
+    "tests",
+    "test_output",
+    "runtime_or_contract",
+    "acceptance_criteria"
+  ],
+  "quality_score_is_advisory": true
+}

@@ -1,0 +1,11 @@
+{
+  "name": "testing",
+  "prerequisites": ["integration"],
+  "agents": ["test-triage-agent", "e2e-test-agent", "security-reviewer", "feature-verification-agent"],
+  "skills": ["full-test-matrix", "independent-verification"],
+  "rules": ["rules/common.md", "rules/phases/testing.md"],
+  "inputs": ["apps/**", "packages/**", "tests/**"],
+  "outputs": ["artifacts/tests/**", "artifacts/security/**", ".ai/evidence/features/**"],
+  "scope": {"application_writes": false, "allowed_paths": ["tests/**", "artifacts/**", ".ai/evidence/**"]},
+  "gate": "gates/contracts/testing.json"
+}

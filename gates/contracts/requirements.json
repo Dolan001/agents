@@ -1,0 +1,5 @@
+{
+  "phase": "requirements",
+  "required": ["docs/generated/requirements.json", ".ai/task-queue.json"],
+  "assertions": ["every_requirement_has_stable_id", "every_task_references_requirement", "task_contracts_validate"]
+}

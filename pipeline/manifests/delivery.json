@@ -1,0 +1,11 @@
+{
+  "name": "delivery",
+  "prerequisites": ["testing"],
+  "agents": ["release-readiness-agent", "git-release-agent"],
+  "skills": ["release-readiness", "safe-git-delivery"],
+  "rules": ["rules/common.md", "rules/phases/delivery.md"],
+  "inputs": [".ai/evidence/**", "artifacts/tests/**", "artifacts/security/**"],
+  "outputs": ["artifacts/final/**"],
+  "scope": {"application_writes": false, "remote_push_requires_explicit_execute": true},
+  "gate": "gates/contracts/delivery.json"
+}

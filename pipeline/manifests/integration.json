@@ -1,0 +1,11 @@
+{
+  "name": "integration",
+  "prerequisites": ["backend"],
+  "agents": ["integration-engineer", "contract-test-agent"],
+  "skills": ["openapi-client-generation", "cross-layer-integration"],
+  "rules": ["rules/common.md", "rules/phases/integration.md"],
+  "inputs": ["apps/frontend/**", "apps/backend/**", "docs/api/**"],
+  "outputs": ["packages/api-client/**", "tests/contract/**", "tests/integration/**"],
+  "scope": {"allowed_paths": ["apps/**", "packages/api-client/**", "tests/**", ".ai/evidence/**"]},
+  "gate": "gates/contracts/integration.json"
+}

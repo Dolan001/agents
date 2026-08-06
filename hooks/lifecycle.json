@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "events": {
+    "pre_workflow": ["validate_prd", "validate_target_boundary", "inspect_git"],
+    "pre_phase": ["validate_prerequisites", "load_rules", "hydrate_bounded_context"],
+    "pre_task": ["validate_task_contract", "acquire_path_lease"],
+    "post_task": ["validate_expected_outputs", "capture_evidence", "release_path_lease"],
+    "post_phase": ["run_gate", "persist_phase_checkpoint"],
+    "on_failure": ["classify_failure", "capture_failure_record"],
+    "on_retry": ["invalidate_stale_context", "enforce_retry_budget"],
+    "on_resume": ["verify_checkpoint", "verify_target_git_baseline"],
+    "pre_push": ["require_explicit_execute", "assert_safe_branch", "require_clean_tree"]
+  },
+  "fail_closed": ["pre_workflow", "pre_task", "post_phase", "pre_push"]
+}
