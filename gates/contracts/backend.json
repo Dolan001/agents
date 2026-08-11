@@ -1,5 +1,5 @@
 {
   "phase": "backend",
-  "required": ["apps/backend/**", ".ai/evidence/api-contract.json"],
+  "required": ["apps/backend/**", ".ai/test-commands.json", ".ai/evidence/api-contract.json"],
   "assertions": ["selected_pack_structure_valid", "migrations_checked", "backend_tests_pass", "openapi_valid"]
 }

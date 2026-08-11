@@ -3,6 +3,7 @@ from pathlib import Path
 
 from ai_workflow.cli import main
 from ai_workflow.discovery import detect
+from ai_workflow.git import run_git
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
 
 
@@ -54,14 +55,14 @@ def test_control_plane_is_fully_connected() -> None:
     assert report["phases"] == 8
     assert report["nodes"] == 25
     assert report["agentic_nodes"] == 15
-    assert report["execution_groups"][3] == ["frontend", "backend"]
+    assert report["execution_groups"][3:5] == [["frontend"], ["backend"]]
 
 
-def test_scheduler_unlocks_only_dependency_ready_parallel_work() -> None:
+def test_scheduler_unlocks_only_the_next_sequential_phase() -> None:
     assert ready_phases(set(), set()) == ["bootstrap"]
     assert ready_phases({"bootstrap"}, set()) == ["requirements"]
     completed = {"bootstrap", "requirements", "design"}
-    assert ready_phases(completed, set()) == ["frontend", "backend"]
+    assert ready_phases(completed, set()) == ["frontend"]
     assert ready_phases(completed | {"frontend"}, set()) == ["backend"]
 
 
@@ -73,3 +74,36 @@ def test_cache_key_changes_only_when_declared_inputs_change(tmp_path: Path) -> N
     assert node_cache_key(tmp_path, "requirements/plan", ["requirements.json"]) == first
     source.write_text("two")
     assert node_cache_key(tmp_path, "requirements/plan", ["requirements.json"]) != first
+
+
+def test_one_shot_dry_run_creates_safe_branch_without_application_code(
+    tmp_path: Path, capsys: object
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    assert (
+        main(
+            [
+                "one-shot",
+                "--project",
+                str(tmp_path),
+                "--prd",
+                "docs/PRD.md",
+                "--frontend",
+                "react",
+                "--backend",
+                "fastapi",
+                "--github-user",
+                "Test User",
+                "--branch-feature",
+                "Account Build",
+            ]
+        )
+        == 0
+    )
+    code, branch = run_git(tmp_path, "branch", "--show-current")
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert code == 0 and branch == "ai/test-user/account-build"
+    assert state["completed_phases"] == ["bootstrap"]
+    assert not (tmp_path / "apps").exists()

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "adapters": {
+    "claude": {"argv": ["claude", "-p"], "prompt_transport": "stdin"},
+    "opencode": {"argv": ["opencode", "run"], "prompt_transport": "stdin"},
+    "codex": {"argv": ["codex", "exec", "-"], "prompt_transport": "stdin"}
+  },
+  "timeout_seconds": 3600
+}

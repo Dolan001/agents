@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "format": "markdown-first",
+  "skills": [
+    {"name": "run-one-shot-delivery", "path": "skills/run-one-shot-delivery/SKILL.md"}
+  ]
+}

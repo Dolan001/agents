@@ -91,7 +91,8 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
             node_count += 1
             if node.get("type") == "agentic":
                 agentic_count += 1
-                if not all(isinstance(node.get(key), str) for key in ("agent", "required_output", "verification")):
+                artifact_keys = ("agent", "required_output", "verification")
+                if not all(isinstance(node.get(key), str) for key in artifact_keys):
                     raise RuntimeError(
                         f"agentic node lacks an artifact contract: {phase}/{node['id']}"
                     )

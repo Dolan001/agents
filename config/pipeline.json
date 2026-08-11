@@ -15,7 +15,8 @@
     ["bootstrap"],
     ["requirements"],
     ["design"],
-    ["frontend", "backend"],
+    ["frontend"],
+    ["backend"],
     ["integration"],
     ["testing"],
     ["delivery"]
@@ -46,7 +47,7 @@
       "gate": "gates/contracts/frontend.json"
     },
     "backend": {
-      "dependencies": ["requirements", "design"],
+      "dependencies": ["frontend"],
       "manifest": "pipeline/manifests/backend.json",
       "blueprint": "blueprints/backend.json",
       "gate": "gates/contracts/backend.json"
@@ -71,8 +72,8 @@
     }
   },
   "execution": {
-    "scheduler": "dependency-dag",
-    "maximum_parallel_tasks": 3,
+    "scheduler": "sequential-phase-state-machine",
+    "maximum_parallel_tasks": 1,
     "parallelism_requires_disjoint_path_leases": true,
     "prioritize_critical_path": true,
     "maximum_retries_per_failure": 2,

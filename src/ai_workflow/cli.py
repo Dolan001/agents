@@ -4,20 +4,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from .commands import run_command_groups
 from .discovery import inventory, print_json, save_inventory
-from .git import assert_safe_branch, baseline, run_git
+from .execution import evaluate_phase_gate, execute_phase
+from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
-from .pipeline import validate_control_plane
+from .pipeline import ready_phases, validate_control_plane
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 
 Command = Callable[[argparse.Namespace], int]
+
+
+def project_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "project"
 
 
 def resolved_project(value: str) -> Path:
@@ -41,6 +49,13 @@ def require_prd(project: Path, value: str) -> Path:
 def initialize(args: argparse.Namespace, mode: str) -> int:
     project = resolved_project(args.project)
     prd = require_prd(project, args.prd)
+    github_user = getattr(args, "github_user", None)
+    if github_user:
+        prepare_feature_branch(
+            project,
+            github_user,
+            getattr(args, "branch_feature", None) or project.name,
+        )
     git = baseline(project)
     branch = git["branch"] if isinstance(git["branch"], str) else None
     if branch:
@@ -53,7 +68,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             if frameworks[side] == "unknown":
                 frameworks[side] = detected[side]
     state = StateStore(project).create(
-        project_id=args.project_id or project.name.lower().replace("_", "-"),
+        project_id=project_slug(args.project_id or project.name),
         mode=mode,
         frontend=frameworks["frontend"],
         backend=frameworks["backend"],
@@ -64,6 +79,12 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             "Local work is allowed; remote push requires explicit configuration.",
         ],
     )
+    save_inventory(project, inventory(project))
+    state["completed_phases"] = ["bootstrap"]
+    StateStore(project).save(state)
+    bootstrap_gate = evaluate_phase_gate(project, "bootstrap")
+    if not bootstrap_gate["passed"]:
+        raise RuntimeError(f"bootstrap gate failed: {bootstrap_gate['missing_artifacts']}")
     append_jsonl(
         project / ".ai" / "decisions.jsonl",
         {
@@ -106,7 +127,16 @@ def command_reconcile(args: argparse.Namespace) -> int:
         raise RuntimeError("state does not record a PRD")
     prd = require_prd(project, prd_assumption.removeprefix("PRD source: "))
     report = inventory(project)
-    requirements = reconcile_requirements(parse_prd(prd), report["repository_map"]["files"])
+    source_files = (
+        [
+            path
+            for path in report["repository_map"]["files"]
+            if not path.startswith((".ai/", "docs/", "HTML/", "artifacts/"))
+        ]
+        if state["mode"] == "brownfield"
+        else []
+    )
+    requirements = reconcile_requirements(parse_prd(prd), source_files)
     save_requirement_outputs(project, requirements)
     write_json(
         project / "docs" / "generated" / "requirement-reconciliation.json",
@@ -191,16 +221,81 @@ def command_build(args: argparse.Namespace) -> int:
         state["current_phase"] = args.phase
     state["status"] = "running"
     state_store.save(state)
+    if args.execute:
+        completed = set(state.get("completed_phases", []))
+        ready = ready_phases(completed, set())
+        phase = args.phase or (ready[0] if ready else None)
+        if phase is None:
+            raise RuntimeError("no phase is ready for execution")
+        if phase not in ready:
+            raise RuntimeError(f"phase is not dependency-ready: {phase}; ready={ready}")
+        result = execute_phase(
+            project,
+            phase,
+            args.adapter,
+            selected,
+            commit_verified=args.commit_verified,
+            push=args.push,
+        )
+        print_json(result)
+        return 0
     print_json(
         {
             "selected_tasks": [task["task_id"] for task in selected],
             "status": "READY",
             "note": (
-                "Task contracts are ready for controlled agent execution; "
-                "no arbitrary code was executed."
+                "Dry run only. Repeat with --execute and an installed agent adapter "
+                "to execute the next dependency-ready phase."
             ),
         }
     )
+    return 0
+
+
+def command_one_shot(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    state_exists = (project / ".ai" / "state.json").is_file()
+    if not state_exists:
+        initialize(args, "new")
+    if not (project / "docs" / "generated" / "requirements.json").is_file():
+        command_reconcile(args)
+    if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
+        command_plan(args)
+    queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+    selected = [task for task in queue["tasks"] if task["status"] not in {"VERIFIED", "COMMITTED"}]
+    if not args.execute:
+        print_json(
+            {
+                "status": "READY",
+                "phases": list(PHASES[1:]),
+                "tasks": [task["task_id"] for task in selected],
+                "note": "Dry run only; repeat with --execute to invoke the selected adapter.",
+            }
+        )
+        return 0
+    results = []
+    completed = set(StateStore(project).load().get("completed_phases", []))
+    for phase in PHASES[1:]:
+        if phase in completed:
+            continue
+        results.append(
+            execute_phase(
+                project,
+                phase,
+                args.adapter,
+                selected,
+                commit_verified=args.commit_verified or args.push,
+                push=args.push,
+            )
+        )
+        if phase == "requirements":
+            refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+            selected = [
+                task
+                for task in refreshed["tasks"]
+                if task["status"] not in {"VERIFIED", "COMMITTED"}
+            ]
+    print_json({"status": "complete", "phases": results})
     return 0
 
 
@@ -243,14 +338,13 @@ def command_test(args: argparse.Namespace) -> int:
             }
         )
         return 2
-    print_json(
-        {
-            "scope": scope,
-            "status": "planned",
-            "commands": commands,
-            "note": "Run project-owned commands through the configured execution adapter.",
-        }
-    )
+    if args.execute:
+        groups = (
+            ["backend", "frontend", "contract", "integration", "e2e"] if scope == "all" else [scope]
+        )
+        print_json(run_command_groups(project, groups))
+        return 0
+    print_json({"scope": scope, "status": "dry-run", "commands": commands})
     return 0
 
 
@@ -364,6 +458,8 @@ def parser() -> argparse.ArgumentParser:
         add_project(command)
         command.add_argument("--prd", required=True)
         command.add_argument("--project-id")
+        command.add_argument("--github-user")
+        command.add_argument("--branch-feature")
         command.add_argument(
             "--frontend", choices=["react", "nextjs", "unknown"], default="unknown"
         )
@@ -371,6 +467,20 @@ def parser() -> argparse.ArgumentParser:
             "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
         )
         command.set_defaults(handler=handler)
+    one_shot = commands.add_parser("one-shot")
+    add_project(one_shot)
+    one_shot.add_argument("--prd", required=True)
+    one_shot.add_argument("--project-id")
+    one_shot.add_argument("--github-user")
+    one_shot.add_argument("--branch-feature")
+    one_shot.add_argument("--frontend", choices=["react", "nextjs"], required=True)
+    one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
+    one_shot.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")
+    one_shot.add_argument("--execute", action="store_true")
+    one_shot.add_argument("--commit-verified", action="store_true")
+    one_shot.add_argument("--push", action="store_true")
+    one_shot.add_argument("--remaining", action="store_true", default=True)
+    one_shot.set_defaults(handler=command_one_shot)
     inspect = commands.add_parser("inspect")
     add_project(inspect)
     inspect.add_argument("--deep", action="store_true")
@@ -387,6 +497,10 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--phase")
     build.add_argument("--feature")
     build.add_argument("--remaining", action="store_true")
+    build.add_argument("--execute", action="store_true")
+    build.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")
+    build.add_argument("--commit-verified", action="store_true")
+    build.add_argument("--push", action="store_true")
     build.set_defaults(handler=command_build)
     verify = commands.add_parser("verify")
     add_project(verify)
@@ -401,6 +515,7 @@ def parser() -> argparse.ArgumentParser:
         "--scope", choices=["backend", "frontend", "contract", "integration", "e2e"]
     )
     test.set_defaults(handler=command_test)
+    test.add_argument("--execute", action="store_true")
     review = commands.add_parser("review")
     add_project(review)
     review.set_defaults(handler=command_review)

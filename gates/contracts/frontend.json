@@ -1,5 +1,5 @@
 {
   "phase": "frontend",
-  "required": ["apps/frontend/**", ".ai/evidence/frontend-verification.json"],
+  "required": ["apps/frontend/**", ".ai/test-commands.json", ".ai/evidence/frontend-verification.json"],
   "assertions": ["selected_pack_structure_valid", "frontend_tests_pass", "responsive_and_accessible_states_evidenced"]
 }

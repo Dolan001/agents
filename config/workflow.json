@@ -8,7 +8,7 @@
   "maximum_context_files": 12,
   "maximum_context_characters": 60000,
   "maximum_changed_files_per_task": 30,
-  "maximum_parallel_tasks": 3,
+  "maximum_parallel_tasks": 1,
   "parallelism_requires_disjoint_path_leases": true,
   "reuse_verified_nodes_by_input_hash": true,
   "verification_lanes": ["fast", "full"],

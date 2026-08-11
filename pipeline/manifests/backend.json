@@ -1,11 +1,11 @@
 {
   "name": "backend",
-  "prerequisites": ["requirements", "design"],
+  "prerequisites": ["frontend"],
   "agents": ["api-contract-manager", "selected-backend-agent", "backend-test-agent"],
   "skills": ["selected-backend-pack", "api-contract-design", "vertical-slice-implementation"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],
   "inputs": ["docs/generated/requirements.json", "apps/frontend/**"],
-  "outputs": ["apps/backend/**", "docs/api/**", ".ai/evidence/features/**"],
+  "outputs": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/features/**"],
   "scope": {"allowed_paths": ["apps/backend/**", "docs/api/**", ".ai/evidence/**"]},
   "gate": "gates/contracts/backend.json"
 }
