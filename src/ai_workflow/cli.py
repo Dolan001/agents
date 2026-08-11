@@ -124,7 +124,7 @@ def command_plan(args: argparse.Namespace) -> int:
     if not source:
         raise RuntimeError("requirements not found; run ai reconcile first")
     tasks = []
-    for requirement in source["requirements"]:
+    for priority, requirement in enumerate(source["requirements"], start=1):
         if args.remaining and requirement["status"] == "IMPLEMENTED_VERIFIED":
             continue
         requirement_id = requirement["requirement_id"]
@@ -132,20 +132,37 @@ def command_plan(args: argparse.Namespace) -> int:
             {
                 "task_id": f"TASK-{requirement_id}-SLICE",
                 "feature_id": requirement_id.lower(),
-                "agent": "solution-architect",
+                "agent": "workflow-orchestrator",
+                "priority": priority,
                 "requirement_ids": [requirement_id],
-                "description": f"Plan the vertical slice for {requirement['title']}.",
-                "inputs": ["docs/generated/requirements.json"],
-                "expected_outputs": ["scoped vertical-slice task contracts"],
-                "allowed_paths": ["docs/generated/**", ".ai/evidence/**"],
+                "description": f"Deliver and independently verify {requirement['title']}.",
+                "inputs": ["docs/generated/requirements.json", "docs/api/contract-plan.json"],
+                "expected_outputs": [
+                    "requirement-complete vertical slice",
+                    "independent verification evidence",
+                ],
+                "allowed_paths": [
+                    "apps/**",
+                    "packages/**",
+                    "tests/**",
+                    "docs/api/**",
+                    ".ai/evidence/**",
+                ],
                 "forbidden_paths": ["infra/production/**"],
                 "dependencies": [],
-                "acceptance_criteria": [f"{requirement_id} has an evidence-backed delivery plan."],
-                "required_tests": ["schema"],
+                "acceptance_criteria": [
+                    f"{requirement_id} is implemented and independently verified."
+                ],
+                "required_tests": ["fast", "affected-full"],
                 "security_review_required": False,
                 "performance_review_required": False,
                 "retry_policy": {"maximum_attempts": 2},
-                "completion_evidence": ["validated task contract"],
+                "context_budget": {"maximum_files": 12, "maximum_characters": 60000},
+                "completion_evidence": [
+                    "scoped implementation diff",
+                    "fast and affected-full check results",
+                    "independent final verification",
+                ],
                 "status": "PLANNED",
             }
         )

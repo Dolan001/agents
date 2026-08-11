@@ -1,6 +1,6 @@
 {
   "name": "integration",
-  "prerequisites": ["backend"],
+  "prerequisites": ["frontend", "backend"],
   "agents": ["integration-engineer", "contract-test-agent"],
   "skills": ["openapi-client-generation", "cross-layer-integration"],
   "rules": ["rules/common.md", "rules/phases/integration.md"],

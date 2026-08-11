@@ -11,52 +11,88 @@
     "testing",
     "delivery"
   ],
+  "execution_groups": [
+    ["bootstrap"],
+    ["requirements"],
+    ["design"],
+    ["frontend", "backend"],
+    ["integration"],
+    ["testing"],
+    ["delivery"]
+  ],
   "phases": {
     "bootstrap": {
+      "dependencies": [],
       "manifest": "pipeline/manifests/bootstrap.json",
       "blueprint": "blueprints/bootstrap.json",
       "gate": "gates/contracts/bootstrap.json"
     },
     "requirements": {
+      "dependencies": ["bootstrap"],
       "manifest": "pipeline/manifests/requirements.json",
       "blueprint": "blueprints/requirements.json",
       "gate": "gates/contracts/requirements.json"
     },
     "design": {
+      "dependencies": ["requirements"],
       "manifest": "pipeline/manifests/design.json",
       "blueprint": "blueprints/design.json",
       "gate": "gates/contracts/design.json"
     },
     "frontend": {
+      "dependencies": ["design"],
       "manifest": "pipeline/manifests/frontend.json",
       "blueprint": "blueprints/frontend.json",
       "gate": "gates/contracts/frontend.json"
     },
     "backend": {
+      "dependencies": ["requirements", "design"],
       "manifest": "pipeline/manifests/backend.json",
       "blueprint": "blueprints/backend.json",
       "gate": "gates/contracts/backend.json"
     },
     "integration": {
+      "dependencies": ["frontend", "backend"],
       "manifest": "pipeline/manifests/integration.json",
       "blueprint": "blueprints/integration.json",
       "gate": "gates/contracts/integration.json"
     },
     "testing": {
+      "dependencies": ["integration"],
       "manifest": "pipeline/manifests/testing.json",
       "blueprint": "blueprints/testing.json",
       "gate": "gates/contracts/testing.json"
     },
     "delivery": {
+      "dependencies": ["testing"],
       "manifest": "pipeline/manifests/delivery.json",
       "blueprint": "blueprints/delivery.json",
       "gate": "gates/contracts/delivery.json"
     }
   },
   "execution": {
+    "scheduler": "dependency-dag",
+    "maximum_parallel_tasks": 3,
+    "parallelism_requires_disjoint_path_leases": true,
+    "prioritize_critical_path": true,
     "maximum_retries_per_failure": 2,
     "agentic_nodes_require_artifact_contracts": true,
     "resume_from_last_verified_node": true,
-    "remote_push_enabled_by_default": false
+    "remote_push_enabled_by_default": false,
+    "cache": {
+      "key": "declared-input-sha256",
+      "reuse_only_verified_outputs": true,
+      "invalidate_dependents_only": true
+    },
+    "context": {
+      "maximum_files_per_task": 12,
+      "maximum_characters_per_task": 60000,
+      "load_selected_frameworks_only": true,
+      "prefer_cached_summaries": true
+    },
+    "verification_lanes": {
+      "fast": "format + lint + types + focused tests",
+      "full": "affected full tests + contract + runtime + security + browser gates"
+    }
   }
 }

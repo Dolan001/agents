@@ -1,5 +1,15 @@
 {
   "version": 1,
+  "instructions": {
+    "pre_workflow": "hooks/pre-workflow.md",
+    "pre_phase": "hooks/pre-phase.md",
+    "pre_task": "hooks/pre-task.md",
+    "post_task": "hooks/post-task.md",
+    "post_phase": "hooks/post-phase.md",
+    "on_failure": "hooks/on-failure.md",
+    "on_resume": "hooks/on-resume.md",
+    "pre_push": "hooks/pre-push.md"
+  },
   "events": {
     "pre_workflow": ["validate_prd", "validate_target_boundary", "inspect_git"],
     "pre_phase": ["validate_prerequisites", "load_rules", "hydrate_bounded_context"],

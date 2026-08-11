@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "prerequisites": ["frontend"],
+  "prerequisites": ["requirements", "design"],
   "agents": ["api-contract-manager", "selected-backend-agent", "backend-test-agent"],
   "skills": ["selected-backend-pack", "api-contract-design", "vertical-slice-implementation"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],

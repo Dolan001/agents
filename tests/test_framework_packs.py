@@ -37,12 +37,21 @@ def test_framework_packs_are_code_free_behavior_only() -> None:
         structure = json.loads((pack / "rules" / "project-structure.json").read_text())
         assert agents["framework"] == name
         assert skills["framework"] == name
+        assert agents["format"] == "markdown-first"
+        assert skills["format"] == "markdown-first"
         assert structure["framework"] == name
         assert structure["target_root"] == specification["target"]
         assert agents["agents"]
         assert skills["skills"]
+        for agent in agents["agents"]:
+            assert (pack / "agents" / f"{agent['agent']}.md").is_file()
+        for skill in skills["skills"]:
+            skill_path = pack / skill["path"]
+            assert skill_path.is_file()
+            assert skill_path.name == "SKILL.md"
         assert structure["required_paths"]
         assert (pack / "rules" / "project-structure.md").is_file()
-        assert "validate_generated_structure" in json.loads(
-            (pack / "hooks" / "lifecycle.json").read_text()
-        )["hooks"]["post_write"]
+        lifecycle = json.loads((pack / "hooks" / "lifecycle.json").read_text())
+        assert "validate_generated_structure" in lifecycle["hooks"]["post_write"]
+        for instruction in lifecycle["instructions"].values():
+            assert (pack / instruction).is_file()

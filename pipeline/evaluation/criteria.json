@@ -13,5 +13,10 @@
     "runtime_or_contract",
     "acceptance_criteria"
   ],
-  "quality_score_is_advisory": true
+  "quality_score_is_advisory": true,
+  "operational_metrics": {
+    "accuracy": ["verified_requirement_coverage", "gate_failure_escape_count", "contract_drift_count"],
+    "time": ["critical_path_seconds", "cache_hit_rate", "retry_seconds", "parallel_utilization"],
+    "context": ["characters_per_task", "files_per_task", "cache_reuse_count", "truncation_count"]
+  }
 }

@@ -68,14 +68,28 @@ The expected private repositories are under the `potentialInc` organization:
 ## Pipeline
 
 ```text
-bootstrap → requirements → design → frontend → backend
-          → integration → testing → delivery
+bootstrap → requirements/contracts → design ─┬→ frontend ─┐
+                                             └→ backend  ─┴→ integration
+                                                → testing → delivery
 ```
 
 `config/pipeline.json` is the phase registry. Every phase points to one manifest, one
 blueprint, and one gate contract. Run `ai pipeline` to validate that the control plane
 is fully connected. Framework packs are loaded only for their selected implementation
 phase; no behavior repository contains application boilerplate.
+
+### Accuracy, time, and token controls
+
+- Accuracy: stable cross-layer contracts, artifact contracts on every agentic node,
+  independent verification, and fail-closed evidence gates.
+- Build time: dependency-DAG scheduling, frontend/backend safe concurrency, focused
+  fast checks, critical-path priority, and verified-node caching.
+- Token use: Markdown progressive disclosure, exactly one frontend/backend pack,
+  cached project summaries, 12-file/60k-character task bundles, and concise failure
+  excerpts.
+
+JSON remains only where the engine needs deterministic structure. Agent behavior,
+skills, commands, hooks, and rules are Markdown.
 
 ## Exit codes
 

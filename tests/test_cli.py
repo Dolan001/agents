@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ai_workflow.cli import main
 from ai_workflow.discovery import detect
-from ai_workflow.pipeline import validate_control_plane
+from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
 
 
 def test_detects_frameworks() -> None:
@@ -52,5 +52,24 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 8
-    assert report["nodes"] == 24
-    assert report["agentic_nodes"] == 14
+    assert report["nodes"] == 25
+    assert report["agentic_nodes"] == 15
+    assert report["execution_groups"][3] == ["frontend", "backend"]
+
+
+def test_scheduler_unlocks_only_dependency_ready_parallel_work() -> None:
+    assert ready_phases(set(), set()) == ["bootstrap"]
+    assert ready_phases({"bootstrap"}, set()) == ["requirements"]
+    completed = {"bootstrap", "requirements", "design"}
+    assert ready_phases(completed, set()) == ["frontend", "backend"]
+    assert ready_phases(completed | {"frontend"}, set()) == ["backend"]
+
+
+def test_cache_key_changes_only_when_declared_inputs_change(tmp_path: Path) -> None:
+    source = tmp_path / "requirements.json"
+    source.write_text("one")
+    first = node_cache_key(tmp_path, "requirements/plan", ["requirements.json"])
+    (tmp_path / "unrelated.txt").write_text("ignored")
+    assert node_cache_key(tmp_path, "requirements/plan", ["requirements.json"]) == first
+    source.write_text("two")
+    assert node_cache_key(tmp_path, "requirements/plan", ["requirements.json"]) != first
