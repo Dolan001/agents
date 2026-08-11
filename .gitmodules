@@ -1,20 +1,20 @@
 [submodule "base_ai"]
 	path = base_ai
-	url = https://github.com/potentialInc/claude-base-ai.git
+	url = https://github.com/Dolan001/base_ai.git
 	branch = dev
-[submodule "django"]
-	path = django
-	url = https://github.com/potentialInc/claude-django.git
+[submodule "drf_ai"]
+	path = drf_ai
+	url = https://github.com/Dolan001/drf_ai.git
 	branch = dev
-[submodule "fastapi"]
-	path = fastapi
-	url = https://github.com/potentialInc/claude-fastapi.git
+[submodule "fastapi_ai"]
+	path = fastapi_ai
+	url = https://github.com/Dolan001/fastapi_ai.git
 	branch = dev
-[submodule "nextjs"]
-	path = nextjs
-	url = https://github.com/potentialInc/claude-nextjs.git
+[submodule "nextjs_ai"]
+	path = nextjs_ai
+	url = https://github.com/Dolan001/nextjs_ai.git
 	branch = dev
-[submodule "react"]
-	path = react
-	url = https://github.com/potentialInc/claude-react.git
+[submodule "react_ai"]
+	path = react_ai
+	url = https://github.com/Dolan001/react_ai.git
 	branch = dev

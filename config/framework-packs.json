@@ -3,22 +3,22 @@
   "copy_application_source": false,
   "packs": {
     "django-drf": {
-      "path": "django",
+      "path": "drf_ai",
       "role": "backend",
       "target": "apps/backend"
     },
     "fastapi": {
-      "path": "fastapi",
+      "path": "fastapi_ai",
       "role": "backend",
       "target": "apps/backend"
     },
     "nextjs": {
-      "path": "nextjs",
+      "path": "nextjs_ai",
       "role": "frontend",
       "target": "apps/frontend"
     },
     "react": {
-      "path": "react",
+      "path": "react_ai",
       "role": "frontend",
       "target": "apps/frontend"
     }

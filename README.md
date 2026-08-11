@@ -50,10 +50,10 @@ ai_workflow/
 ├── rules/                   # common and phase scope rules
 ├── skills/                  # orchestration skills
 ├── base_ai/                 # shared AI behavior repository
-├── django/                  # Django DRF behavior repository
-├── fastapi/                 # FastAPI behavior repository
-├── nextjs/                  # Next.js behavior repository
-└── react/                   # React behavior repository
+├── drf_ai/                  # Django DRF behavior repository
+├── fastapi_ai/              # FastAPI behavior repository
+├── nextjs_ai/               # Next.js behavior repository
+└── react_ai/                # React behavior repository
 ```
 
 Clone with `git clone --recurse-submodules <ai_workflow-url>`, or initialize an
@@ -61,9 +61,8 @@ existing clone with `git submodule update --init --recursive`. Submodules track 
 `dev` branches for explicit update operations while the parent repository always pins
 an exact reviewed commit.
 
-The expected private repositories are under the `potentialInc` organization:
-`claude-base-ai`, `claude-django`, `claude-fastapi`, `claude-nextjs`, and
-`claude-react`.
+The linked repositories are `Dolan001/base_ai`, `Dolan001/drf_ai`,
+`Dolan001/fastapi_ai`, `Dolan001/nextjs_ai`, and `Dolan001/react_ai`.
 
 ## Pipeline
 
