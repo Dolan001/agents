@@ -2,6 +2,16 @@
   "version": 1,
   "format": "markdown-first",
   "skills": [
-    {"name": "run-one-shot-delivery", "path": "skills/run-one-shot-delivery/SKILL.md"}
+    {"name": "run-one-shot-delivery", "path": "skills/run-one-shot-delivery/SKILL.md"},
+    {"name": "start-build", "path": "skills/start-build/SKILL.md"},
+    {"name": "start-design", "path": "skills/start-design/SKILL.md"},
+    {"name": "start-generatehtml", "path": "skills/start-generatehtml/SKILL.md"},
+    {"name": "start-frontend", "path": "skills/start-frontend/SKILL.md"},
+    {"name": "start-backend", "path": "skills/start-backend/SKILL.md"},
+    {"name": "start-integration", "path": "skills/start-integration/SKILL.md"},
+    {"name": "start-testing", "path": "skills/start-testing/SKILL.md"},
+    {"name": "start-delivery", "path": "skills/start-delivery/SKILL.md"},
+    {"name": "resume-build", "path": "skills/resume-build/SKILL.md"},
+    {"name": "workflow-status", "path": "skills/workflow-status/SKILL.md"}
   ]
 }

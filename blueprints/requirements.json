@@ -4,7 +4,6 @@
     {"id": "extract-requirements", "type": "deterministic", "action": "parse_prd"},
     {"id": "reconcile-current-state", "type": "agentic", "agent": "requirements-reconciliation-agent", "required_output": "docs/generated/requirement-reconciliation.json", "verification": "schema"},
     {"id": "stabilize-contracts", "type": "agentic", "agent": "api-contract-manager", "required_output": "docs/api/contract-plan.json", "verification": "schema"},
-    {"id": "plan-slices", "type": "agentic", "agent": "dependency-planner", "required_output": ".ai/task-queue.json", "verification": "task-contract-schema"},
-    {"id": "scaffold-target-monorepo", "type": "agentic", "agent": "solution-architect", "required_output": ".ai/evidence/monorepo-bootstrap.json", "verification": "evidence-schema"}
+    {"id": "plan-slices", "type": "agentic", "agent": "dependency-planner", "required_output": ".ai/task-queue.json", "verification": "task-contract-schema"}
   ]
 }

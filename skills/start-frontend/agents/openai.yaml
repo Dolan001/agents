@@ -1,0 +1,4 @@
+interface:
+  display_name: "start-frontend"
+  short_description: "Run the start-frontend workflow stage"
+  default_prompt: "Use $start-frontend to run the requested workflow stage from the current project."

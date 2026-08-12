@@ -15,6 +15,7 @@ from .design import classify_design_inputs, ingest_design_inputs
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
+from .install import install_entrypoints
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
 from .pipeline import ready_phases, validate_control_plane
@@ -45,6 +46,27 @@ def require_prd(project: Path, value: str) -> Path:
     if not path.is_file() or not path.read_text(encoding="utf-8").strip():
         raise RuntimeError(f"required PRD is missing or empty: {path}")
     return path
+
+
+def discover_prd(project: Path, value: str | None) -> Path:
+    if value:
+        return require_prd(project, value)
+    candidates: list[Path] = []
+    identities: set[tuple[int, int]] = set()
+    for relative in ("docs/PRD.md", "PRD.md", "docs/prd.md", "prd.md"):
+        candidate = project / relative
+        if not candidate.is_file():
+            continue
+        metadata = candidate.stat()
+        identity = (metadata.st_dev, metadata.st_ino)
+        if identity not in identities:
+            candidates.append(candidate.resolve())
+            identities.add(identity)
+    if len(candidates) != 1:
+        raise RuntimeError(
+            "provide --prd or keep exactly one PRD at docs/PRD.md, PRD.md, docs/prd.md, or prd.md"
+        )
+    return require_prd(project, str(candidates[0]))
 
 
 def initialize(args: argparse.Namespace, mode: str) -> int:
@@ -311,6 +333,83 @@ def command_one_shot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None:
+    store = StateStore(project)
+    state = store.load()
+    for side in ("frontend", "backend"):
+        selected = getattr(args, side, "unknown")
+        current = state["frameworks"][side]
+        if selected == "unknown":
+            continue
+        if current != "unknown" and current != selected:
+            raise RuntimeError(f"cannot change {side} framework from {current} to {selected}")
+        state["frameworks"][side] = selected
+    store.save(state)
+
+
+def command_start(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    target = args.until
+    if not (project / ".ai" / "state.json").is_file():
+        if not baseline(project)["is_repository"] and not args.github_user:
+            raise RuntimeError("--github-user is required to create a safe feature branch")
+        prd = discover_prd(project, args.prd)
+        args.prd = prd.relative_to(project).as_posix()
+        initialize(args, "new")
+    else:
+        if args.html or args.screenshot:
+            ingest_design_inputs(project, args.html, args.screenshot)
+            classify_design_inputs(project)
+        _apply_framework_selections(project, args)
+
+    if not (project / "docs" / "generated" / "requirements.json").is_file():
+        command_reconcile(args)
+    if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
+        command_plan(args)
+    queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+    selected = [task for task in queue["tasks"] if task["status"] not in {"VERIFIED", "COMMITTED"}]
+    completed = set(StateStore(project).load().get("completed_phases", []))
+    results = []
+    terminal_phase = "design" if target in {"design-spec", "html"} else target
+    for phase in PHASES[1:]:
+        if phase in completed:
+            if phase == terminal_phase:
+                break
+            continue
+        if phase in {"frontend", "backend"}:
+            state = StateStore(project).load()
+            if state["frameworks"][phase] == "unknown":
+                raise RuntimeError(f"--{phase} is required before starting the {phase} phase")
+        stop_after = (
+            "create-design-specification"
+            if target == "design-spec" and phase == "design"
+            else None
+        )
+        results.append(
+            execute_phase(
+                project,
+                phase,
+                args.adapter,
+                selected,
+                commit_verified=args.commit_verified or args.push,
+                push=args.push,
+                stop_after_node=stop_after,
+            )
+        )
+        if phase == "requirements":
+            refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+            selected = [
+                task
+                for task in refreshed["tasks"]
+                if task["status"] not in {"VERIFIED", "COMMITTED"}
+            ]
+        if phase == terminal_phase:
+            break
+    status = "complete" if target == "delivery" else "stopped-at-requested-stage"
+    print_json({"status": status, "requested_stage": target, "results": results})
+    return 0
+
+
 def command_verify(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     state = StateStore(project).load()
@@ -458,8 +557,33 @@ def command_clean_state(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_install_commands(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(install_entrypoints(project, args.workflow_path, args.force))
+    return 0
+
+
 def add_project(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".", help="Project root (default: current directory)")
+
+
+def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
+    add_project(command)
+    command.add_argument("--prd")
+    command.add_argument("--project-id")
+    command.add_argument("--github-user")
+    command.add_argument("--branch-feature")
+    command.add_argument("--html", action="append", default=[])
+    command.add_argument("--screenshot", action="append", default=[])
+    command.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
+    command.add_argument(
+        "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
+    )
+    command.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")
+    command.add_argument("--commit-verified", action="store_true")
+    command.add_argument("--push", action="store_true")
+    command.add_argument("--remaining", action="store_true", default=True)
+    command.set_defaults(handler=command_start, until=until)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -497,6 +621,19 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--push", action="store_true")
     one_shot.add_argument("--remaining", action="store_true", default=True)
     one_shot.set_defaults(handler=command_one_shot)
+    start_commands = {
+        "start-design": "design-spec",
+        "start-generatehtml": "html",
+        "start-frontend": "frontend",
+        "start-backend": "backend",
+        "start-integration": "integration",
+        "start-testing": "testing",
+        "start-delivery": "delivery",
+        "start-build": "delivery",
+        "resume-build": "delivery",
+    }
+    for name, until in start_commands.items():
+        add_start_arguments(commands.add_parser(name), until)
     inspect = commands.add_parser("inspect")
     add_project(inspect)
     inspect.add_argument("--deep", action="store_true")
@@ -552,6 +689,11 @@ def parser() -> argparse.ArgumentParser:
     doctor.set_defaults(handler=command_doctor)
     pipeline = commands.add_parser("pipeline")
     pipeline.set_defaults(handler=command_pipeline)
+    install = commands.add_parser("install-commands")
+    add_project(install)
+    install.add_argument("--workflow-path", default="ai_workflow")
+    install.add_argument("--force", action="store_true")
+    install.set_defaults(handler=command_install_commands)
     clean = commands.add_parser("clean-state")
     add_project(clean)
     clean.add_argument("--yes", action="store_true")

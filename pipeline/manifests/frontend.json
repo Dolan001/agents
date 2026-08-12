@@ -5,7 +5,7 @@
   "skills": ["selected-frontend-pack", "vertical-slice-implementation"],
   "rules": ["rules/common.md", "rules/phases/frontend.md"],
   "inputs": ["HTML/approved/**", "docs/generated/requirements.json"],
-  "outputs": ["apps/frontend/**", ".ai/test-commands.json", ".ai/evidence/features/**"],
-  "scope": {"allowed_paths": ["apps/frontend/**", "packages/shared-types/**", ".ai/evidence/**"]},
+  "outputs": ["root monorepo control files and directories", "apps/frontend/**", ".ai/test-commands.json", ".ai/evidence/features/**"],
+  "scope": {"allowed_paths": ["README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile", "apps/**", "packages/**", "tests/**", "docs/**", ".ai/**"]},
   "gate": "gates/contracts/frontend.json"
 }

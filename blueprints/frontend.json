@@ -1,6 +1,7 @@
 {
   "name": "frontend",
   "nodes": [
+    {"id": "scaffold-target-monorepo", "type": "agentic", "agent": "solution-architect", "required_output": ".ai/evidence/monorepo-bootstrap.json", "verification": "evidence-schema"},
     {"id": "load-frontend-pack", "type": "deterministic", "action": "resolve_selected_framework_pack"},
     {"id": "implement-frontend-slices", "type": "agentic", "agent": "frontend-implementer", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/frontend.json", "verification": "evidence-schema"},
     {"id": "verify-frontend", "type": "agentic", "agent": "frontend-test-agent", "required_output": ".ai/evidence/frontend-verification.json", "verification": "verified-true"}

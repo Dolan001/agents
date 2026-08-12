@@ -1,0 +1,4 @@
+interface:
+  display_name: "start-design"
+  short_description: "Run the start-design workflow stage"
+  default_prompt: "Use $start-design to run the requested workflow stage from the current project."

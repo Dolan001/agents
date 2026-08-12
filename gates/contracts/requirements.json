@@ -1,5 +1,5 @@
 {
   "phase": "requirements",
-  "required": ["docs/generated/requirements.json", "docs/api/contract-plan.json", ".ai/task-queue.json", ".ai/evidence/monorepo-bootstrap.json", ".ai/evidence/structure/monorepo.json", "README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile"],
-  "assertions": ["every_requirement_has_stable_id", "cross_layer_contract_is_stable", "every_task_references_requirement", "task_contracts_validate", "target_monorepo_structure_valid"]
+  "required": ["docs/generated/requirements.json", "docs/api/contract-plan.json", ".ai/task-queue.json"],
+  "assertions": ["every_requirement_has_stable_id", "cross_layer_contract_is_stable", "every_task_references_requirement", "task_contracts_validate"]
 }

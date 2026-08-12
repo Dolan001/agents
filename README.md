@@ -10,7 +10,7 @@ specialized agents read the selected pack and create application code directly i
 separate target monorepo. No demonstration project or prebuilt framework application
 is bundled with this workspace.
 
-The requirements phase also creates and validates the target monorepo root contract:
+The frontend phase creates and validates the target monorepo root contract:
 `README.md`, `.gitignore`, `.env.example`, `compose.yaml`, `Makefile`, and the standard
 `apps`, `packages`, `HTML`, `docs`, `tests`, `artifacts`, and `.ai` directories. The
 frontend and backend phases then populate their selected framework structures.
@@ -19,6 +19,15 @@ frontend and backend phases then populate their selected framework structures.
 
 ```bash
 python -m pip install -e ../base_ai -e .
+./ai_workflow/bin/ai install-commands --project .
+
+# Claude and OpenCode: complete PRD-to-delivery execution
+/start-build --frontend nextjs --backend django-drf --github-user your-github-user
+
+# Codex exposes the same project entrypoint as a skill
+$start-build --frontend nextjs --backend django-drf --github-user your-github-user
+
+# Or invoke the engine directly
 ai one-shot --project /path/to/project --prd docs/PRD.md \
   --frontend nextjs --backend django-drf --github-user your-github-user \
   --branch-feature initial-build \
@@ -55,6 +64,12 @@ target repository and are preserved under `HTML/source/`. With HTML, the design 
 validates and approves it. With screenshots but no HTML, it generates HTML from the
 screenshots plus PRD. With neither, it generates HTML from the PRD. The selected route
 is recorded in `.ai/design-inputs.json`.
+
+Stage commands execute immediately and stop only after their requested evidence gate:
+`start-design`, `start-generatehtml`, `start-frontend`, `start-backend`,
+`start-integration`, `start-testing`, `start-delivery`, and `start-build`. The design
+and HTML commands intentionally do not create the application monorepo. See
+[`docs/start-commands.md`](docs/start-commands.md) for the command matrix and setup.
 
 `ai adopt` captures a Git and repository baseline before any application edit. `ai push`
 is a dry run unless `--execute` is supplied, rejects dirty worktrees, and rejects every

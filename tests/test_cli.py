@@ -59,8 +59,8 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 8
-    assert report["nodes"] == 26
-    assert report["agentic_nodes"] == 16
+    assert report["nodes"] == 27
+    assert report["agentic_nodes"] == 17
     assert report["execution_groups"][3:5] == [["frontend"], ["backend"]]
 
 
@@ -179,7 +179,7 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         approved = project / "HTML" / "approved" / "index.html"
         approved.parent.mkdir(parents=True, exist_ok=True)
         approved.write_text("<!doctype html><title>Approved account</title>")
-    if phase == "requirements" and node == "scaffold-target-monorepo":
+    if phase == "frontend" and node == "scaffold-target-monorepo":
         contract_path = Path(__file__).resolve().parents[1] / "config" / "target-monorepo.json"
         contract = json.loads(contract_path.read_text())
         for relative in contract["required_files"]:
@@ -296,6 +296,87 @@ def test_complete_one_shot_pilot_for_each_design_mode(
     assert (tmp_path / "apps" / "frontend" / frontend_entry).is_file()
     assert (tmp_path / "apps" / "backend" / backend_entry).is_file()
     assert (tmp_path / "packages" / "api-client" / "index.ts").is_file()
+
+
+def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+
+    arguments = [
+        "start-design", "--project", str(tmp_path), "--github-user", "test-user",
+        "--adapter", "codex",
+    ]
+    assert main(arguments) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["completed_phases"] == ["bootstrap", "requirements"]
+    assert (tmp_path / "HTML" / "design-specification.md").is_file()
+    assert not (tmp_path / "HTML" / "approved" / "index.html").exists()
+    assert not (tmp_path / "apps").exists()
+    assert not (tmp_path / "README.md").exists()
+
+    assert main(["start-generatehtml", "--project", str(tmp_path), "--adapter", "codex"]) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["completed_phases"] == ["bootstrap", "requirements", "design"]
+    assert (tmp_path / "HTML" / "approved" / "index.html").is_file()
+    assert not (tmp_path / "apps").exists()
+    assert not (tmp_path / "README.md").exists()
+
+
+def test_install_commands_exposes_all_supported_agent_surfaces(tmp_path: Path) -> None:
+    assert main(["install-commands", "--project", str(tmp_path)]) == 0
+    names = (
+        "start-build", "start-design", "start-generatehtml", "start-frontend",
+        "start-backend", "start-integration", "start-testing", "start-delivery",
+        "resume-build", "workflow-status",
+    )
+    for name in names:
+        assert (tmp_path / ".claude" / "commands" / f"{name}.md").is_file()
+        assert (tmp_path / ".opencode" / "commands" / f"{name}.md").is_file()
+        assert (tmp_path / ".agents" / "skills" / name / "SKILL.md").is_file()
+    claude = (tmp_path / ".claude" / "commands" / "start-build.md").read_text()
+    opencode = (tmp_path / ".opencode" / "commands" / "start-build.md").read_text()
+    assert "--adapter claude" in claude
+    assert "--adapter opencode" in opencode
+    assert main(["install-commands", "--project", str(tmp_path)]) == 0
+
+
+def test_install_commands_refuses_unmanaged_overwrite(tmp_path: Path) -> None:
+    target = tmp_path / ".claude" / "commands" / "start-build.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("user-owned\n")
+    assert main(["install-commands", "--project", str(tmp_path)]) == 1
+    assert target.read_text() == "user-owned\n"
+
+
+def test_start_build_runs_every_phase_from_auto_discovered_prd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    arguments = [
+        "start-build",
+        "--project",
+        str(tmp_path),
+        "--frontend",
+        "react",
+        "--backend",
+        "fastapi",
+        "--github-user",
+        "test-user",
+        "--adapter",
+        "codex",
+    ]
+    assert main(arguments) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["status"] == "complete"
+    assert state["completed_phases"] == list(PHASES)
+    assert (tmp_path / "HTML" / "approved" / "index.html").is_file()
+    assert (tmp_path / "apps" / "frontend" / "src" / "main.tsx").is_file()
+    assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
 
 
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:

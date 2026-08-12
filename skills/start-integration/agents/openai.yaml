@@ -1,0 +1,4 @@
+interface:
+  display_name: "start-integration"
+  short_description: "Run the start-integration workflow stage"
+  default_prompt: "Use $start-integration to run the requested workflow stage from the current project."

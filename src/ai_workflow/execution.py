@@ -78,7 +78,6 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
         for task in tasks:
             if not isinstance(task, dict) or not required <= set(task):
                 raise RuntimeError("requirements phase produced an invalid task contract")
-        validate_monorepo(project, workflow_root() / "config" / "target-monorepo.json")
     if phase == "design":
         routing = read_json(project / ".ai" / "design-inputs.json")
         if not isinstance(routing, dict) or routing.get("mode") not in {
@@ -88,6 +87,8 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
         }:
             raise RuntimeError("design phase lacks a valid deterministic input mode")
     if phase in {"frontend", "backend"}:
+        if phase == "frontend":
+            validate_monorepo(project, workflow_root() / "config" / "target-monorepo.json")
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])
         if pack is None:
             raise RuntimeError(f"selected framework pack is unavailable for {phase}")
@@ -279,6 +280,7 @@ def execute_phase(
     selected_features: list[dict[str, Any]],
     commit_verified: bool = False,
     push: bool = False,
+    stop_after_node: str | None = None,
 ) -> dict[str, Any]:
     if phase not in PHASES:
         raise RuntimeError(f"unknown phase: {phase}")
@@ -298,6 +300,17 @@ def execute_phase(
                 "action": node["action"],
                 "at": utc_now(),
             }
+            write_json(project / ".ai" / "node-state.json", checkpoints)
+            if stop_after_node == node["id"]:
+                state["current_phase"] = phase
+                state["status"] = "running"
+                store.save(state)
+                return {
+                    "phase": phase,
+                    "partial": True,
+                    "stopped_after_node": node["id"],
+                    "executed": executed,
+                }
             continue
         features = selected_features if node.get("fanout") else [None]
         for feature in features:
@@ -333,6 +346,16 @@ def execute_phase(
             }
             write_json(project / ".ai" / "node-state.json", checkpoints)
             executed.append(identity)
+        if stop_after_node == node["id"]:
+            state["current_phase"] = phase
+            state["status"] = "running"
+            store.save(state)
+            return {
+                "phase": phase,
+                "partial": True,
+                "stopped_after_node": node["id"],
+                "executed": executed,
+            }
     _validate_semantic_artifacts(project, phase, state)
     gate = evaluate_phase_gate(project, phase)
     if not gate["passed"]:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "resume-build"
+  short_description: "Run the resume-build workflow stage"
+  default_prompt: "Use $resume-build to run the requested workflow stage from the current project."
