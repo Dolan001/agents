@@ -3,9 +3,12 @@
   "prerequisites": ["bootstrap"],
   "agents": ["requirements-reconciliation-agent", "solution-architect", "api-contract-manager", "dependency-planner"],
   "skills": ["prd-extraction", "requirement-reconciliation", "vertical-slice-planning"],
-  "rules": ["rules/common.md", "rules/phases/requirements.md"],
+  "rules": ["rules/common.md", "rules/phases/requirements.md", "rules/target-monorepo.md"],
   "inputs": ["docs/PRD.md", ".ai/discovery/repository-map.json"],
-  "outputs": ["docs/generated/requirements.json", "docs/api/contract-plan.json", ".ai/task-queue.json"],
-  "scope": {"application_writes": false},
+  "outputs": ["docs/generated/requirements.json", "docs/api/contract-plan.json", ".ai/task-queue.json", ".ai/evidence/monorepo-bootstrap.json", "root monorepo control files and directories"],
+  "scope": {
+    "application_writes": false,
+    "allowed_paths": ["README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile", "apps/**", "packages/**", "docs/**", "HTML/**", "tests/**", "artifacts/**", ".ai/evidence/**"]
+  },
   "gate": "gates/contracts/requirements.json"
 }

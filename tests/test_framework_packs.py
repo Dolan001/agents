@@ -50,6 +50,8 @@ def test_framework_packs_are_code_free_behavior_only() -> None:
             assert skill_path.is_file()
             assert skill_path.name == "SKILL.md"
         assert structure["required_paths"]
+        assert "required_directories" in structure
+        assert set(structure.get("required_directories", [])) <= set(structure["required_paths"])
         assert (pack / "rules" / "project-structure.md").is_file()
         lifecycle = json.loads((pack / "hooks" / "lifecycle.json").read_text())
         assert "validate_generated_structure" in lifecycle["hooks"]["post_write"]

@@ -10,6 +10,19 @@ If acceptable HTML exists, preserve and validate it. Otherwise generate static H
 from higher-confidence visual sources, falling back to the PRD, then approve it before
 framework source begins.
 
+The deterministic router writes `.ai/design-inputs.json` with exactly one mode:
+
+- `html_supplied`: validate and approve supplied HTML; do not regenerate it merely
+  because screenshots also exist. Use screenshots as comparison evidence.
+- `screenshot_supplied`: generate static HTML from screenshots/design files and fill
+  behavioral gaps from the PRD.
+- `prd_only`: generate static HTML from requirements because no visual source exists.
+
+Users may place inputs under `HTML/source/` or pass repeatable `--html` and
+`--screenshot` paths. Explicit paths must remain inside the target and are copied into
+`HTML/source/`. Frontend execution is blocked until `HTML/approved/` and independent
+design verification exist.
+
 ## Execution
 
 Each phase loads one manifest, blueprint, rule set, gate, primary agent, and only the

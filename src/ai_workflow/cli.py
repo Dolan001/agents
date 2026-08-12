@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .commands import run_command_groups
+from .design import classify_design_inputs, ingest_design_inputs
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
@@ -49,6 +50,11 @@ def require_prd(project: Path, value: str) -> Path:
 def initialize(args: argparse.Namespace, mode: str) -> int:
     project = resolved_project(args.project)
     prd = require_prd(project, args.prd)
+    ingested_design = ingest_design_inputs(
+        project,
+        getattr(args, "html", None),
+        getattr(args, "screenshot", None),
+    )
     github_user = getattr(args, "github_user", None)
     if github_user:
         prepare_feature_branch(
@@ -80,6 +86,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
         ],
     )
     save_inventory(project, inventory(project))
+    design_inputs = classify_design_inputs(project)
     state["completed_phases"] = ["bootstrap"]
     StateStore(project).save(state)
     bootstrap_gate = evaluate_phase_gate(project, "bootstrap")
@@ -92,6 +99,8 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             "decision": "workflow_initialized",
             "mode": mode,
             "frameworks": frameworks,
+            "design_mode": design_inputs["mode"],
+            "ingested_design_inputs": ingested_design,
         },
     )
     if mode == "brownfield":
@@ -257,6 +266,9 @@ def command_one_shot(args: argparse.Namespace) -> int:
     state_exists = (project / ".ai" / "state.json").is_file()
     if not state_exists:
         initialize(args, "new")
+    elif args.html or args.screenshot:
+        ingest_design_inputs(project, args.html, args.screenshot)
+        classify_design_inputs(project)
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
@@ -460,6 +472,8 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--project-id")
         command.add_argument("--github-user")
         command.add_argument("--branch-feature")
+        command.add_argument("--html", action="append", default=[])
+        command.add_argument("--screenshot", action="append", default=[])
         command.add_argument(
             "--frontend", choices=["react", "nextjs", "unknown"], default="unknown"
         )
@@ -473,6 +487,8 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--project-id")
     one_shot.add_argument("--github-user")
     one_shot.add_argument("--branch-feature")
+    one_shot.add_argument("--html", action="append", default=[])
+    one_shot.add_argument("--screenshot", action="append", default=[])
     one_shot.add_argument("--frontend", choices=["react", "nextjs"], required=True)
     one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
     one_shot.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")

@@ -10,13 +10,20 @@ specialized agents read the selected pack and create application code directly i
 separate target monorepo. No demonstration project or prebuilt framework application
 is bundled with this workspace.
 
+The requirements phase also creates and validates the target monorepo root contract:
+`README.md`, `.gitignore`, `.env.example`, `compose.yaml`, `Makefile`, and the standard
+`apps`, `packages`, `HTML`, `docs`, `tests`, `artifacts`, and `.ai` directories. The
+frontend and backend phases then populate their selected framework structures.
+
 ## Install and use
 
 ```bash
 python -m pip install -e ../base_ai -e .
 ai one-shot --project /path/to/project --prd docs/PRD.md \
   --frontend nextjs --backend django-drf --github-user your-github-user \
-  --branch-feature initial-build
+  --branch-feature initial-build \
+  --html HTML/input/home.html \
+  --screenshot HTML/input/home-mobile.png
 # After reviewing the dry-run plan:
 ai one-shot --project /path/to/project --prd docs/PRD.md \
   --frontend nextjs --backend django-drf --github-user your-github-user \
@@ -42,6 +49,12 @@ The repository-local `bin/ai` launcher works without installation. `one-shot` is
 run unless `--execute` is present. Agent adapters receive prompts on standard input and
 are invoked without a shell. Project-owned tests are argv arrays in
 `.ai/test-commands.json`; command strings are not evaluated.
+
+`--html` and `--screenshot` are optional and repeatable. Paths must be inside the
+target repository and are preserved under `HTML/source/`. With HTML, the design phase
+validates and approves it. With screenshots but no HTML, it generates HTML from the
+screenshots plus PRD. With neither, it generates HTML from the PRD. The selected route
+is recorded in `.ai/design-inputs.json`.
 
 `ai adopt` captures a Git and repository baseline before any application edit. `ai push`
 is a dry run unless `--execute` is supplied, rejects dirty worktrees, and rejects every

@@ -4,7 +4,7 @@
   "agents": ["design-interpreter", "html-quality-agent", "accessibility-agent"],
   "skills": ["design-baseline", "html-validation", "responsive-review"],
   "rules": ["rules/common.md", "rules/phases/design.md"],
-  "inputs": ["docs/generated/requirements.json", "HTML/source/**"],
+  "inputs": ["docs/generated/requirements.json", ".ai/design-inputs.json", "HTML/source/**"],
   "outputs": ["HTML/approved/**", ".ai/evidence/design/**"],
   "scope": {"application_writes": false, "allowed_paths": ["HTML/**", ".ai/evidence/design/**"]},
   "gate": "gates/contracts/design.json"

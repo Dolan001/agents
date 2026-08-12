@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "mode", "required_action", "html", "screenshots", "design_files", "precedence", "classified_at"],
+  "properties": {
+    "version": {"const": 1},
+    "mode": {"enum": ["html_supplied", "screenshot_supplied", "prd_only"]},
+    "required_action": {"enum": ["validate_and_approve_supplied_html", "generate_html_from_visual_evidence_and_prd", "generate_html_from_prd"]},
+    "html": {"$ref": "#/$defs/assets"},
+    "screenshots": {"$ref": "#/$defs/assets"},
+    "design_files": {"$ref": "#/$defs/assets"},
+    "precedence": {"const": ["html", "screenshots_or_design", "prd"]},
+    "classified_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "media_type", "bytes", "sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^HTML/source/"},
+          "media_type": {"type": "string", "minLength": 1},
+          "bytes": {"type": "integer", "minimum": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

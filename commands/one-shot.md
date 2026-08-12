@@ -11,6 +11,11 @@ The target may be empty or brownfield. The workflow repository remains the contr
 plane; selected framework repositories are read as behavior packs. Agents create or
 complete the monorepo only inside the target.
 
+Accept repeatable optional `--html` and `--screenshot` paths inside the target. Record
+the deterministic input route in `.ai/design-inputs.json`: supplied HTML is validated;
+otherwise screenshots generate HTML with PRD guidance; otherwise the PRD generates
+HTML. Never start frontend work before approved HTML passes the design gate.
+
 Dry-run is the default. With `--execute`, invoke the selected Claude, OpenCode, or
 Codex adapter without a shell. Every node must create its declared artifact and every
 phase must pass its evidence gate. Stop at failure and resume from the last verified

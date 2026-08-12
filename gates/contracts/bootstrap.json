@@ -1,5 +1,5 @@
 {
   "phase": "bootstrap",
-  "required": [".ai/state.json", ".ai/discovery/repository-map.json"],
-  "assertions": ["prd_is_non_empty", "frameworks_are_resolved", "branch_is_safe_when_present"]
+  "required": [".ai/state.json", ".ai/discovery/repository-map.json", ".ai/design-inputs.json"],
+  "assertions": ["prd_is_non_empty", "frameworks_are_resolved", "design_mode_is_recorded", "branch_is_safe_when_present"]
 }
