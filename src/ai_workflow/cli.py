@@ -559,7 +559,14 @@ def command_clean_state(args: argparse.Namespace) -> int:
 
 def command_install_commands(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
-    print_json(install_entrypoints(project, args.workflow_path, args.force))
+    platforms = ("claude", "opencode", "codex") if args.platform == "all" else (args.platform,)
+    print_json(install_entrypoints(project, args.workflow_path, args.force, platforms))
+    return 0
+
+
+def command_install_skills(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(install_entrypoints(project, args.workflow_path, args.force, ("codex",)))
     return 0
 
 
@@ -692,8 +699,16 @@ def parser() -> argparse.ArgumentParser:
     install = commands.add_parser("install-commands")
     add_project(install)
     install.add_argument("--workflow-path", default="ai_workflow")
+    install.add_argument(
+        "--platform", choices=["all", "codex", "claude", "opencode"], default="all"
+    )
     install.add_argument("--force", action="store_true")
     install.set_defaults(handler=command_install_commands)
+    install_skills = commands.add_parser("install-skills")
+    add_project(install_skills)
+    install_skills.add_argument("--workflow-path", default="ai_workflow")
+    install_skills.add_argument("--force", action="store_true")
+    install_skills.set_defaults(handler=command_install_skills)
     clean = commands.add_parser("clean-state")
     add_project(clean)
     clean.add_argument("--yes", action="store_true")

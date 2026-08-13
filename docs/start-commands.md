@@ -1,14 +1,14 @@
 # Start commands
 
-Install project-local entrypoints once after cloning or updating the workflow submodule:
+Install Codex project skills once after cloning or updating the workflow submodule:
 
 ```bash
-./ai_workflow/bin/ai install-commands --project .
+./ai_workflow/bin/ai install-skills --project .
 ```
 
-Restart or reopen the agent client so it refreshes project command discovery. Claude
-and OpenCode use `/start-build`; Codex loads the same behavior as the project skill
-`$start-build`. Direct CLI commands are always available.
+Restart or reopen Codex so it refreshes project skill discovery, then invoke
+`$start-build`. This installation creates only `.agents/skills`; it does not create
+`.claude`, `.opencode`, or runtime `.ai` state. Direct CLI commands remain available.
 
 | Entrypoint | Result | Monorepo created? |
 |---|---|---:|
@@ -32,12 +32,12 @@ backend selection is required only when it reaches backend.
 Examples:
 
 ```text
-/start-design --github-user dolan
-/start-generatehtml
-/start-frontend --frontend nextjs
-/start-build --frontend nextjs --backend django-drf --github-user dolan
-/workflow-status
-/resume-build
+$start-design --github-user dolan
+$start-generatehtml
+$start-frontend --frontend nextjs
+$start-build --frontend nextjs --backend django-drf --github-user dolan
+$workflow-status
+$resume-build
 ```
 
 No start command pushes by default. Add `--commit-verified` or `--push` only when that

@@ -7,9 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .io import write_json
-
 MANAGED_MARKER = "managed-by: ai_workflow"
+PLATFORMS = ("claude", "opencode", "codex")
 
 
 def _atomic_text(path: Path, content: str) -> None:
@@ -48,9 +47,15 @@ def _write_managed(path: Path, content: str, force: bool) -> str:
 
 
 def install_entrypoints(
-    project: Path, workflow_path: str = "ai_workflow", force: bool = False
+    project: Path,
+    workflow_path: str = "ai_workflow",
+    force: bool = False,
+    platforms: tuple[str, ...] = PLATFORMS,
 ) -> dict[str, Any]:
-    """Expose workflow commands to Claude, OpenCode, and Codex project discovery."""
+    """Expose canonical workflow entrypoints to selected project clients."""
+    unknown = sorted(set(platforms) - set(PLATFORMS))
+    if unknown:
+        raise RuntimeError(f"unsupported entrypoint platforms: {unknown}")
     root = Path(__file__).resolve().parents[2]
     source_commands = root / "commands"
     source_skills = root / "skills"
@@ -59,7 +64,15 @@ def install_entrypoints(
     installed: list[str] = []
     unchanged: list[str] = []
 
-    for adapter, directory in (("claude", ".claude/commands"), ("opencode", ".opencode/commands")):
+    command_platforms = (
+        (adapter, directory)
+        for adapter, directory in (
+            ("claude", ".claude/commands"),
+            ("opencode", ".opencode/commands"),
+        )
+        if adapter in platforms
+    )
+    for adapter, directory in command_platforms:
         for name in command_names:
             source = source_commands / f"{name}.md"
             content = source.read_text(encoding="utf-8").replace("{{ADAPTER}}", adapter)
@@ -70,28 +83,29 @@ def install_entrypoints(
                 destination.relative_to(project).as_posix()
             )
 
-    for name in command_names:
-        source_dir = source_skills / name
-        for filename in ("SKILL.md", "agents/openai.yaml"):
-            source = source_dir / filename
-            if not source.is_file():
-                raise RuntimeError(f"missing Codex skill source: {source}")
-            content = source.read_text(encoding="utf-8")
-            content = content.replace("{{WORKFLOW_PATH}}", workflow_path)
-            if MANAGED_MARKER not in content:
-                content = content.rstrip() + f"\n\n<!-- {MANAGED_MARKER} -->\n"
-            destination = _safe_destination(project, f".agents/skills/{name}/{filename}")
-            result = _write_managed(destination, content, force)
-            (installed if result == "installed" else unchanged).append(
-                destination.relative_to(project).as_posix()
-            )
+    if "codex" in platforms:
+        for name in command_names:
+            source_dir = source_skills / name
+            for filename in ("SKILL.md", "agents/openai.yaml"):
+                source = source_dir / filename
+                if not source.is_file():
+                    raise RuntimeError(f"missing Codex skill source: {source}")
+                content = source.read_text(encoding="utf-8")
+                content = content.replace("{{WORKFLOW_PATH}}", workflow_path)
+                if MANAGED_MARKER not in content:
+                    content = content.rstrip() + f"\n\n<!-- {MANAGED_MARKER} -->\n"
+                destination = _safe_destination(project, f".agents/skills/{name}/{filename}")
+                result = _write_managed(destination, content, force)
+                (installed if result == "installed" else unchanged).append(
+                    destination.relative_to(project).as_posix()
+                )
 
     manifest = {
         "version": 1,
         "workflow_path": workflow_path,
+        "platforms": list(platforms),
         "commands": command_names,
         "installed": installed,
         "unchanged": unchanged,
     }
-    write_json(project / ".ai" / "installed-entrypoints.json", manifest)
     return manifest

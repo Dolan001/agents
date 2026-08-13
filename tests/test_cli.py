@@ -328,6 +328,7 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
 
 def test_install_commands_exposes_all_supported_agent_surfaces(tmp_path: Path) -> None:
     assert main(["install-commands", "--project", str(tmp_path)]) == 0
+    assert not (tmp_path / ".ai").exists()
     names = (
         "start-build", "start-design", "start-generatehtml", "start-frontend",
         "start-backend", "start-integration", "start-testing", "start-delivery",
@@ -342,6 +343,17 @@ def test_install_commands_exposes_all_supported_agent_surfaces(tmp_path: Path) -
     assert "--adapter claude" in claude
     assert "--adapter opencode" in opencode
     assert main(["install-commands", "--project", str(tmp_path)]) == 0
+
+
+def test_install_skills_is_codex_only_and_does_not_initialize_runtime_state(
+    tmp_path: Path,
+) -> None:
+    assert main(["install-skills", "--project", str(tmp_path)]) == 0
+    assert (tmp_path / ".agents" / "skills" / "start-build" / "SKILL.md").is_file()
+    assert (tmp_path / ".agents" / "skills" / "workflow-status" / "SKILL.md").is_file()
+    assert not (tmp_path / ".claude").exists()
+    assert not (tmp_path / ".opencode").exists()
+    assert not (tmp_path / ".ai").exists()
 
 
 def test_install_commands_refuses_unmanaged_overwrite(tmp_path: Path) -> None:
