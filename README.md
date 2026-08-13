@@ -19,7 +19,7 @@ frontend and backend phases then populate their selected framework structures.
 
 ```bash
 python -m pip install -e ../base_ai -e .
-./ai_workflow/bin/ai install-skills --project .
+./ai_workflow/bin/ai setup --project .
 
 # Codex project skill: complete PRD-to-delivery execution
 $start-build --frontend nextjs --backend django-drf --github-user your-github-user

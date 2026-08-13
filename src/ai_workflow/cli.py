@@ -21,6 +21,7 @@ from .model import PHASES, StateStore, utc_now
 from .pipeline import ready_phases, validate_control_plane
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
+from .setup import setup_project
 
 Command = Callable[[argparse.Namespace], int]
 
@@ -570,6 +571,19 @@ def command_install_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_setup(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(
+        setup_project(
+            project,
+            args.workflow_path,
+            args.force,
+            initialize_submodules=not args.skip_submodules,
+        )
+    )
+    return 0
+
+
 def add_project(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".", help="Project root (default: current directory)")
 
@@ -709,6 +723,12 @@ def parser() -> argparse.ArgumentParser:
     install_skills.add_argument("--workflow-path", default="ai_workflow")
     install_skills.add_argument("--force", action="store_true")
     install_skills.set_defaults(handler=command_install_skills)
+    setup = commands.add_parser("setup")
+    add_project(setup)
+    setup.add_argument("--workflow-path", default="ai_workflow")
+    setup.add_argument("--force", action="store_true")
+    setup.add_argument("--skip-submodules", action="store_true")
+    setup.set_defaults(handler=command_setup)
     clean = commands.add_parser("clean-state")
     add_project(clean)
     clean.add_argument("--yes", action="store_true")
