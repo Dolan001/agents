@@ -2,7 +2,6 @@
   "name": "design",
   "prerequisites": ["requirements"],
   "agents": ["design-interpreter", "html-quality-agent", "accessibility-agent"],
-  "skills": ["design-baseline", "html-validation", "responsive-review"],
   "rules": ["rules/common.md", "rules/phases/design.md"],
   "inputs": ["docs/generated/requirements.json", ".ai/design-inputs.json", "HTML/source/**"],
   "outputs": ["HTML/design-specification.md", "HTML/approved/**", ".ai/evidence/design/**"],

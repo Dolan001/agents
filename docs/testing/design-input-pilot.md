@@ -4,7 +4,7 @@ Last run: 2026-08-12
 
 The automated pilot executes the complete eight-phase state machine in isolated empty
 Git repositories with a controlled adapter. The adapter satisfies the same artifact
-contracts as a real Claude, OpenCode, or Codex process, allowing orchestration,
+contracts as a real Codex process, allowing orchestration,
 sequencing, input routing, gates, and filesystem results to be tested deterministically
 without consuming model tokens.
 
@@ -35,7 +35,7 @@ application paths, and fail-closed behavior for incomplete structures.
 At the latest run, 17 workflow tests and 6 shared-foundation tests passed. The control
 plane contains 8 sequential phases and 26 nodes, including 16 agentic nodes with
 required output contracts. Installed adapter command shapes were checked against
-Claude Code 2.1.72, OpenCode 1.14.47, and Codex CLI 0.146.0-alpha.9.2.
+Codex CLI 0.146.0-alpha.9.2.
 
 This proves the workflow engine and contracts. It does not substitute for a real-model
 acceptance pilot, because generated application quality, package installation, runtime

@@ -1,8 +1,6 @@
 {
   "version": 1,
   "adapters": {
-    "claude": {"argv": ["claude", "-p", "--permission-mode", "acceptEdits", "--no-session-persistence"], "prompt_transport": "stdin"},
-    "opencode": {"argv": ["opencode", "run"], "prompt_transport": "stdin"},
     "codex": {"argv": ["codex", "exec", "--sandbox", "workspace-write", "--ephemeral", "-"], "prompt_transport": "stdin"}
   },
   "timeout_seconds": 3600

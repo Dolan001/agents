@@ -330,12 +330,58 @@ def test_codex_skills_are_directly_discoverable_from_agents_submodule() -> None:
     root = Path(__file__).resolve().parents[1]
     catalog = json.loads((root / "skills" / "catalog.json").read_text())
     for item in catalog["skills"]:
-        if item["name"] == "run-one-shot-delivery":
-            continue
         skill = root / item["path"]
         content = skill.read_text()
         assert "{{WORKFLOW_PATH}}" not in content
         assert ".agents" in content
+
+
+def test_agent_node_retries_with_failure_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    attempts = 0
+
+    def flaky_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {"returncode": 1, "stdout_tail": "", "stderr_tail": "temporary failure"}
+        if attempts == 2:
+            assert "Retry context from the prior failed attempt" in prompt
+        return _fake_agent(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", flaky_agent)
+    arguments = [
+        "start-design",
+        "--project",
+        str(tmp_path),
+        "--github-user",
+        "test-user",
+        "--adapter",
+        "codex",
+    ]
+    assert main(arguments) == 0
+    failures = (tmp_path / ".ai" / "failures.jsonl").read_text().splitlines()
+    record = json.loads(failures[0])
+    assert record["status"] == "resolved"
+    assert record["attempts"] == 1
+
+
+def test_resume_build_rejects_a_different_git_branch(tmp_path: Path) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    arguments = [
+        "init",
+        "--project",
+        str(tmp_path),
+        "--prd",
+        "PRD.md",
+        "--github-user",
+        "test-user",
+    ]
+    assert main(arguments) == 0
+    assert run_git(tmp_path, "switch", "-c", "ai/test-user/other-feature")[0] == 0
+    assert main(["resume-build", "--project", str(tmp_path)]) == 1
 
 
 def test_start_build_runs_every_phase_from_auto_discovered_prd(

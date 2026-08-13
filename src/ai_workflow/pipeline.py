@@ -35,6 +35,25 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
     if not isinstance(phases, dict) or set(phases) != set(PHASES):
         raise RuntimeError("pipeline configuration must define every workflow phase exactly once")
 
+    lifecycle = read_json(repository / "hooks" / "lifecycle.json")
+    instructions = lifecycle.get("instructions") if isinstance(lifecycle, dict) else None
+    if not isinstance(instructions, dict) or not instructions:
+        raise RuntimeError("hook lifecycle instructions are missing")
+    for event, relative in instructions.items():
+        if not isinstance(event, str) or not isinstance(relative, str):
+            raise RuntimeError("hook lifecycle instructions are invalid")
+        path = _owned_path(repository, relative)
+        if not path.is_file() or not path.read_text(encoding="utf-8").strip():
+            raise RuntimeError(f"hook instruction is missing or empty: {relative}")
+
+    evaluation = read_json(repository / "pipeline" / "evaluation" / "criteria.json")
+    completion = evaluation.get("completion") if isinstance(evaluation, dict) else None
+    if not isinstance(completion, dict) or completion.get("required_gate_pass_rate") != 1.0:
+        raise RuntimeError("evaluation policy must require every gate to pass")
+    recovery = repository / "pipeline" / "loop" / "policy.md"
+    if not recovery.is_file() or not recovery.read_text(encoding="utf-8").strip():
+        raise RuntimeError("bounded recovery policy is missing")
+
     groups = config.get("execution_groups")
     if not isinstance(groups, list) or not all(isinstance(group, list) for group in groups):
         raise RuntimeError("pipeline execution_groups must be a list of phase lists")
@@ -106,6 +125,8 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
         "phases": len(PHASES),
         "nodes": node_count,
         "agentic_nodes": agentic_count,
+        "hooks": len(instructions),
+        "evaluation_policy": True,
         "valid": True,
     }
 

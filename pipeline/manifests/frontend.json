@@ -2,7 +2,6 @@
   "name": "frontend",
   "prerequisites": ["design"],
   "agents": ["frontend-architect", "frontend-implementer", "frontend-test-agent"],
-  "skills": ["selected-frontend-pack", "vertical-slice-implementation"],
   "rules": ["rules/common.md", "rules/phases/frontend.md"],
   "inputs": ["HTML/approved/**", "docs/generated/requirements.json"],
   "outputs": ["root monorepo control files and directories", "apps/frontend/**", ".ai/test-commands.json", ".ai/evidence/features/**"],

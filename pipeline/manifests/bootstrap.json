@@ -2,7 +2,6 @@
   "name": "bootstrap",
   "prerequisites": [],
   "agents": ["workflow-orchestrator", "project-analyzer"],
-  "skills": ["repository-discovery", "safe-git-baseline"],
   "rules": ["rules/common.md", "rules/phases/bootstrap.md"],
   "inputs": ["PRD", "optional design assets", "optional existing code"],
   "outputs": [".ai/state.json", ".ai/discovery/repository-map.json"],

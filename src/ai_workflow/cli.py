@@ -346,8 +346,21 @@ def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None
     store.save(state)
 
 
+def _verify_resume_boundary(project: Path) -> None:
+    state = StateStore(project).load()
+    current = baseline(project)
+    if not current["is_repository"]:
+        raise RuntimeError("cannot resume because the target is no longer a Git repository")
+    branch = current["branch"] if isinstance(current["branch"], str) else None
+    recorded = state.get("git", {}).get("branch")
+    assert_safe_branch(branch)
+    if not isinstance(recorded, str) or branch != recorded:
+        raise RuntimeError(f"resume branch mismatch: recorded={recorded}, current={branch}")
+
+
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    validate_control_plane()
     target = args.until
     if not (project / ".ai" / "state.json").is_file():
         if not baseline(project)["is_repository"] and not args.github_user:
@@ -356,6 +369,7 @@ def command_start(args: argparse.Namespace) -> int:
         args.prd = prd.relative_to(project).as_posix()
         initialize(args, "new")
     else:
+        _verify_resume_boundary(project)
         if args.html or args.screenshot:
             ingest_design_inputs(project, args.html, args.screenshot)
             classify_design_inputs(project)
@@ -572,7 +586,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument(
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
-    command.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")
+    command.add_argument("--adapter", choices=["codex"], default="codex")
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
     command.add_argument("--remaining", action="store_true", default=True)
@@ -608,7 +622,7 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--screenshot", action="append", default=[])
     one_shot.add_argument("--frontend", choices=["react", "nextjs"], required=True)
     one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
-    one_shot.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")
+    one_shot.add_argument("--adapter", choices=["codex"], default="codex")
     one_shot.add_argument("--execute", action="store_true")
     one_shot.add_argument("--commit-verified", action="store_true")
     one_shot.add_argument("--push", action="store_true")
@@ -644,7 +658,7 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--feature")
     build.add_argument("--remaining", action="store_true")
     build.add_argument("--execute", action="store_true")
-    build.add_argument("--adapter", choices=["claude", "opencode", "codex"], default="claude")
+    build.add_argument("--adapter", choices=["codex"], default="codex")
     build.add_argument("--commit-verified", action="store_true")
     build.add_argument("--push", action="store_true")
     build.set_defaults(handler=command_build)

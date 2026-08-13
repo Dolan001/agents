@@ -2,7 +2,6 @@
   "name": "backend",
   "prerequisites": ["frontend"],
   "agents": ["api-contract-manager", "selected-backend-agent", "backend-test-agent"],
-  "skills": ["selected-backend-pack", "api-contract-design", "vertical-slice-implementation"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],
   "inputs": ["docs/generated/requirements.json", "apps/frontend/**"],
   "outputs": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/features/**"],

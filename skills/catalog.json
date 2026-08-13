@@ -2,7 +2,6 @@
   "version": 1,
   "format": "markdown-first",
   "skills": [
-    {"name": "run-one-shot-delivery", "path": "skills/run-one-shot-delivery/SKILL.md"},
     {"name": "start-build", "path": "skills/start-build/SKILL.md"},
     {"name": "start-design", "path": "skills/start-design/SKILL.md"},
     {"name": "start-generatehtml", "path": "skills/start-generatehtml/SKILL.md"},
