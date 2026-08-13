@@ -14,6 +14,7 @@ from .commands import run_command_groups
 from .design import classify_design_inputs, ingest_design_inputs
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
+from .frameworks import ALLOWED_FRAMEWORKS, resolve_frameworks
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
@@ -363,10 +364,26 @@ def command_start(args: argparse.Namespace) -> int:
     validate_control_plane()
     target = args.until
     if not (project / ".ai" / "state.json").is_file():
-        if not baseline(project)["is_repository"] and not args.github_user:
-            raise RuntimeError("--github-user is required to create a safe feature branch")
         prd = discover_prd(project, args.prd)
         args.prd = prd.relative_to(project).as_posix()
+        resolved = resolve_frameworks(prd, args.frontend, args.backend)
+        args.frontend = resolved["frontend"]
+        args.backend = resolved["backend"]
+        required_sides = (
+            ()
+            if target in {"design-spec", "html"}
+            else ("frontend",)
+            if target == "frontend"
+            else ("frontend", "backend")
+        )
+        missing = [side for side in required_sides if resolved[side] == "unknown"]
+        if missing:
+            choices = "; ".join(
+                f"{side}: {' or '.join(ALLOWED_FRAMEWORKS[side])}" for side in missing
+            )
+            raise RuntimeError(f"framework selection required ({choices})")
+        if not baseline(project)["is_repository"] and not args.github_user:
+            raise RuntimeError("--github-user is required to create a safe feature branch")
         initialize(args, "new")
     else:
         _verify_resume_boundary(project)

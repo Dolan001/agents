@@ -22,7 +22,7 @@ git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
 git submodule update --init --recursive
 
 # Reopen Codex, then run the complete PRD-to-delivery skill
-$start-build --frontend nextjs --backend django-drf --github-user your-github-user
+$start-build
 
 # Or invoke the engine directly
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
@@ -49,6 +49,11 @@ $start-build --frontend nextjs --backend django-drf --github-user your-github-us
 Framework selection is defined in `config/framework-packs.json`. Pack contents are
 instructions, not files to copy. A new target starts from its PRD and generated
 requirements; a brownfield target starts from discovery and reconciliation.
+
+`start-build` accepts only React or Next.js for frontend and Django REST Framework or
+FastAPI for backend. Explicit PRD declarations are selected automatically. Codex asks
+only for a missing side; unsupported, conflicting, or multiple declarations fail
+before runtime state or application code is created.
 
 When this repository is mounted at `.agents`, Codex discovers `skills/` directly and
 the repository-local `bin/ai` launcher works without installation. `one-shot` is a dry

@@ -1,0 +1,92 @@
+"""Resolve and validate supported framework selections from PRD text."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ALLOWED_FRAMEWORKS = {
+    "frontend": ("react", "nextjs"),
+    "backend": ("django-drf", "fastapi"),
+}
+
+_PATTERNS = {
+    "react": re.compile(r"(?:\bReact\b|\breact(?:\.js|js)\b)"),
+    "nextjs": re.compile(r"\bnext(?:\.js|js)\b", re.IGNORECASE),
+    "django-drf": re.compile(
+        r"\b(?:django\s+rest\s+framework|django[- ]?drf|drf)\b", re.IGNORECASE
+    ),
+    "fastapi": re.compile(r"\bfastapi\b", re.IGNORECASE),
+}
+
+_DECLARATION = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*{1,2})?"
+    r"(?P<side>frontend|backend)\s+(?:framework|technology|stack)"
+    r"(?:\*{1,2})?\s*:\s*(?P<value>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def validate_framework(side: str, value: str) -> str:
+    """Return a supported canonical value or fail with the complete allowlist."""
+    allowed = ALLOWED_FRAMEWORKS[side]
+    if value not in allowed:
+        raise RuntimeError(
+            f"unsupported {side} framework {value!r}; choose one of: {', '.join(allowed)}"
+        )
+    return value
+
+
+def detect_prd_frameworks(prd: Path) -> dict[str, str]:
+    """Detect explicit supported framework names and reject invalid declarations."""
+    text = prd.read_text(encoding="utf-8")
+    detected: dict[str, str] = {}
+    for side, allowed in ALLOWED_FRAMEWORKS.items():
+        matches = [name for name in allowed if _PATTERNS[name].search(text)]
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"PRD declares multiple {side} frameworks: {', '.join(matches)}; choose exactly one"
+            )
+        if matches:
+            detected[side] = matches[0]
+
+    for line in text.splitlines():
+        declaration = _DECLARATION.match(line)
+        if not declaration:
+            continue
+        side = declaration.group("side").lower()
+        value = declaration.group("value")
+        side_matches = [
+            name for name in ALLOWED_FRAMEWORKS[side] if _PATTERNS[name].search(value)
+        ]
+        if not side_matches:
+            raise RuntimeError(
+                f"unsupported {side} framework declaration {value!r}; choose one of: "
+                f"{', '.join(ALLOWED_FRAMEWORKS[side])}"
+            )
+        if len(side_matches) > 1:
+            raise RuntimeError(
+                f"PRD declares multiple {side} frameworks in {value!r}; choose exactly one"
+            )
+        detected[side] = side_matches[0]
+    return detected
+
+
+def resolve_frameworks(
+    prd: Path, frontend: str = "unknown", backend: str = "unknown"
+) -> dict[str, str]:
+    """Combine CLI and PRD selections while rejecting conflicts and unsupported values."""
+    provided = {"frontend": frontend, "backend": backend}
+    declared = detect_prd_frameworks(prd)
+    resolved: dict[str, str] = {}
+    for side in ("frontend", "backend"):
+        selected = provided[side]
+        if selected != "unknown":
+            validate_framework(side, selected)
+        from_prd = declared.get(side)
+        if selected != "unknown" and from_prd and selected != from_prd:
+            raise RuntimeError(
+                f"{side} framework conflict: command selects {selected}, PRD declares {from_prd}"
+            )
+        resolved[side] = selected if selected != "unknown" else from_prd or "unknown"
+    return resolved

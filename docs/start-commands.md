@@ -29,8 +29,9 @@ gitlink to the real project so every developer receives the same pinned workflow
 The PRD is required. Without `--prd`, the engine accepts exactly one of `docs/PRD.md`,
 `PRD.md`, `docs/prd.md`, or `prd.md`. HTML and screenshots are optional repeatable
 arguments. The engine prioritizes supplied HTML, otherwise screenshots, otherwise PRD
-generation. Frontend selection is required only when execution reaches frontend;
-backend selection is required only when it reaches backend.
+generation. The engine automatically uses explicit PRD declarations for React,
+Next.js, Django REST Framework, or FastAPI. Codex asks only for a side that is still
+missing. Unsupported, conflicting, or multiple declarations fail before build work.
 
 Examples:
 
@@ -38,7 +39,7 @@ Examples:
 $start-design --github-user dolan
 $start-generatehtml
 $start-frontend --frontend nextjs
-$start-build --frontend nextjs --backend django-drf --github-user dolan
+$start-build
 $workflow-status
 $resume-build
 ```

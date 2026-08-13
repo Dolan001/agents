@@ -7,6 +7,7 @@ import pytest
 from ai_workflow.cli import main
 from ai_workflow.design import classify_design_inputs
 from ai_workflow.discovery import detect
+from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.model import PHASES
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
@@ -19,6 +20,37 @@ def test_detects_frameworks() -> None:
         "backend": "django-drf",
         "reasons": ["Django manage.py detected"],
     }
+
+
+def test_resolves_supported_frameworks_declared_in_prd(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(
+        "# Stack\n\nFrontend framework: Next.js\nBackend framework: Django REST Framework\n"
+    )
+    assert detect_prd_frameworks(prd) == {"frontend": "nextjs", "backend": "django-drf"}
+    assert resolve_frameworks(prd) == {"frontend": "nextjs", "backend": "django-drf"}
+
+
+def test_rejects_unsupported_prd_framework_declaration(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Stack\n\nFrontend framework: Vue.js\nBackend framework: FastAPI\n")
+    with pytest.raises(RuntimeError, match="unsupported frontend framework declaration"):
+        resolve_frameworks(prd)
+
+
+def test_rejects_conflicting_command_and_prd_frameworks(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Stack\n\nFrontend: React\nBackend: FastAPI\n")
+    with pytest.raises(RuntimeError, match="frontend framework conflict"):
+        resolve_frameworks(prd, frontend="nextjs")
+
+
+def test_plain_frontend_description_is_not_treated_as_framework_declaration(
+    tmp_path: Path,
+) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Product\n\nFrontend: responsive customer dashboard\n")
+    assert resolve_frameworks(prd) == {"frontend": "unknown", "backend": "unknown"}
 
 
 def test_init_inspect_reconcile_plan(tmp_path: Path, capsys: object) -> None:
@@ -409,6 +441,43 @@ def test_start_build_runs_every_phase_from_auto_discovered_prd(
     assert (tmp_path / "HTML" / "approved" / "index.html").is_file()
     assert (tmp_path / "apps" / "frontend" / "src" / "main.tsx").is_file()
     assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
+
+
+def test_start_build_uses_frameworks_declared_in_prd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\n"
+        "Frontend framework: Next.js\n"
+        "Backend framework: Django REST Framework\n\n"
+        "- ACC-001 User can view an account.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    arguments = [
+        "start-build",
+        "--project",
+        str(tmp_path),
+        "--github-user",
+        "test-user",
+        "--adapter",
+        "codex",
+    ]
+    assert main(arguments) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"] == {"frontend": "nextjs", "backend": "django-drf"}
+    assert (tmp_path / "apps" / "frontend" / "app" / "page.tsx").is_file()
+    assert (tmp_path / "apps" / "backend" / "manage.py").is_file()
+
+
+def test_start_build_requires_only_missing_framework_before_initialization(
+    tmp_path: Path, capsys: object
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nFrontend framework: React\n\n- ACC-001 User can view an account.\n"
+    )
+    assert main(["start-build", "--project", str(tmp_path), "--github-user", "test-user"]) == 1
+    assert "backend: django-drf or fastapi" in capsys.readouterr().err
+    assert not (tmp_path / ".ai").exists()
 
 
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:
