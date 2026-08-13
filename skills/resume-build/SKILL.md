@@ -5,6 +5,6 @@ description: Resume an interrupted complete build from durable verified checkpoi
 
 # Resume complete build
 
-Read `{{WORKFLOW_PATH}}/commands/references/start-command-contract.md`, inspect workflow status,
-then invoke `./{{WORKFLOW_PATH}}/bin/ai resume-build` with `--adapter codex`. Preserve existing
+Read `.agents/commands/references/start-command-contract.md`, inspect workflow status,
+then invoke `./.agents/bin/ai resume-build` with `--adapter codex`. Preserve existing
 framework choices and do not push unless explicitly requested.

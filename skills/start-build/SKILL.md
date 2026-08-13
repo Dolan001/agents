@@ -5,7 +5,7 @@ description: Start or continue the complete PRD-to-production workflow through d
 
 # Start complete build
 
-Read `{{WORKFLOW_PATH}}/commands/references/start-command-contract.md`, resolve missing required
-inputs, then invoke `./{{WORKFLOW_PATH}}/bin/ai start-build` with `--adapter codex` and the
+Read `.agents/commands/references/start-command-contract.md`, resolve missing required
+inputs, then invoke `./.agents/bin/ai start-build` with `--adapter codex` and the
 validated arguments. Run through delivery. Do not add `--push` unless explicitly
 requested.

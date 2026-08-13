@@ -5,6 +5,6 @@ description: Generate, validate, and approve static HTML from a PRD, screenshots
 
 # Generate approved HTML
 
-Read `{{WORKFLOW_PATH}}/commands/references/start-command-contract.md`, then invoke
-`./{{WORKFLOW_PATH}}/bin/ai start-generatehtml` with `--adapter codex`. Complete the design
+Read `.agents/commands/references/start-command-contract.md`, then invoke
+`./.agents/bin/ai start-generatehtml` with `--adapter codex`. Complete the design
 gate and stop before frontend implementation.

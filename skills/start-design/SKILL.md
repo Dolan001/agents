@@ -5,6 +5,6 @@ description: Create only the design specification from the required PRD and opti
 
 # Start design specification
 
-Read `{{WORKFLOW_PATH}}/commands/references/start-command-contract.md`, then invoke
-`./{{WORKFLOW_PATH}}/bin/ai start-design` with `--adapter codex`. Stop after
+Read `.agents/commands/references/start-command-contract.md`, then invoke
+`./.agents/bin/ai start-design` with `--adapter codex`. Stop after
 `HTML/design-specification.md`; do not continue to HTML or application code.

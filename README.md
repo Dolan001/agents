@@ -18,40 +18,40 @@ frontend and backend phases then populate their selected framework structures.
 ## Install and use
 
 ```bash
-python -m pip install -e ../base_ai -e .
-./ai_workflow/bin/ai setup --project .
+git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
+git submodule update --init --recursive
 
-# Codex project skill: complete PRD-to-delivery execution
+# Reopen Codex, then run the complete PRD-to-delivery skill
 $start-build --frontend nextjs --backend django-drf --github-user your-github-user
 
 # Or invoke the engine directly
-ai one-shot --project /path/to/project --prd docs/PRD.md \
+./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
   --frontend nextjs --backend django-drf --github-user your-github-user \
   --branch-feature initial-build \
   --html HTML/input/home.html \
   --screenshot HTML/input/home-mobile.png
 # After reviewing the dry-run plan:
-ai one-shot --project /path/to/project --prd docs/PRD.md \
+./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
   --frontend nextjs --backend django-drf --github-user your-github-user \
-  --branch-feature initial-build --adapter claude --execute \
+  --branch-feature initial-build --adapter codex --execute \
   --commit-verified --push
 
 # Individual control-plane commands remain available:
-ai init --project /path/to/project --prd docs/PRD.md --frontend nextjs --backend django-drf
-ai inspect --project /path/to/project --deep
-ai reconcile --project /path/to/project
-ai plan --project /path/to/project --remaining
-ai build --project /path/to/project --remaining --execute --adapter claude
-ai status --project /path/to/project
-ai resume --project /path/to/project
-ai pipeline
+./.agents/bin/ai init --project . --prd docs/PRD.md --frontend nextjs --backend django-drf
+./.agents/bin/ai inspect --project . --deep
+./.agents/bin/ai reconcile --project .
+./.agents/bin/ai plan --project . --remaining
+./.agents/bin/ai status --project .
+./.agents/bin/ai resume --project .
+./.agents/bin/ai pipeline
 ```
 
 Framework selection is defined in `config/framework-packs.json`. Pack contents are
 instructions, not files to copy. A new target starts from its PRD and generated
 requirements; a brownfield target starts from discovery and reconciliation.
 
-The repository-local `bin/ai` launcher works without installation. `one-shot` is a dry
+When this repository is mounted at `.agents`, Codex discovers `skills/` directly and
+the repository-local `bin/ai` launcher works without installation. `one-shot` is a dry
 run unless `--execute` is present. Agent adapters receive prompts on standard input and
 are invoked without a shell. Project-owned tests are argv arrays in
 `.ai/test-commands.json`; command strings are not evaluated.
@@ -78,7 +78,7 @@ protected or malformed branch.
 submodules:
 
 ```text
-ai_workflow/
+.agents/                     # ai_workflow mounted as the Codex project submodule
 ├── agents/                  # orchestration-only agents
 ├── blueprints/              # deterministic + agentic node graphs
 ├── commands/                # workflow entry contracts

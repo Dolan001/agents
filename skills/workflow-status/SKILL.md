@@ -5,7 +5,7 @@ description: Inspect durable workflow checkpoints, completed phases, evidence, b
 
 # Inspect workflow status
 
-Run `./{{WORKFLOW_PATH}}/bin/ai status --project . --json`. Report completed phases,
+Run `./.agents/bin/ai status --project . --json`. Report completed phases,
 the current phase, failed evidence, and the exact next command. Do not mutate files,
 Git state, or remote systems.
 

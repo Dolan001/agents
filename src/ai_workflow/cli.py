@@ -15,13 +15,11 @@ from .design import classify_design_inputs, ingest_design_inputs
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
-from .install import install_entrypoints
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
 from .pipeline import ready_phases, validate_control_plane
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
-from .setup import setup_project
 
 Command = Callable[[argparse.Namespace], int]
 
@@ -558,32 +556,6 @@ def command_clean_state(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_install_commands(args: argparse.Namespace) -> int:
-    project = resolved_project(args.project)
-    platforms = ("claude", "opencode", "codex") if args.platform == "all" else (args.platform,)
-    print_json(install_entrypoints(project, args.workflow_path, args.force, platforms))
-    return 0
-
-
-def command_install_skills(args: argparse.Namespace) -> int:
-    project = resolved_project(args.project)
-    print_json(install_entrypoints(project, args.workflow_path, args.force, ("codex",)))
-    return 0
-
-
-def command_setup(args: argparse.Namespace) -> int:
-    project = resolved_project(args.project)
-    print_json(
-        setup_project(
-            project,
-            args.workflow_path,
-            args.force,
-            initialize_submodules=not args.skip_submodules,
-        )
-    )
-    return 0
-
-
 def add_project(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".", help="Project root (default: current directory)")
 
@@ -710,25 +682,6 @@ def parser() -> argparse.ArgumentParser:
     doctor.set_defaults(handler=command_doctor)
     pipeline = commands.add_parser("pipeline")
     pipeline.set_defaults(handler=command_pipeline)
-    install = commands.add_parser("install-commands")
-    add_project(install)
-    install.add_argument("--workflow-path", default="ai_workflow")
-    install.add_argument(
-        "--platform", choices=["all", "codex", "claude", "opencode"], default="all"
-    )
-    install.add_argument("--force", action="store_true")
-    install.set_defaults(handler=command_install_commands)
-    install_skills = commands.add_parser("install-skills")
-    add_project(install_skills)
-    install_skills.add_argument("--workflow-path", default="ai_workflow")
-    install_skills.add_argument("--force", action="store_true")
-    install_skills.set_defaults(handler=command_install_skills)
-    setup = commands.add_parser("setup")
-    add_project(setup)
-    setup.add_argument("--workflow-path", default="ai_workflow")
-    setup.add_argument("--force", action="store_true")
-    setup.add_argument("--skip-submodules", action="store_true")
-    setup.set_defaults(handler=command_setup)
     clean = commands.add_parser("clean-state")
     add_project(clean)
     clean.add_argument("--yes", action="store_true")

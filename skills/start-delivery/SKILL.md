@@ -5,6 +5,6 @@ description: Run missing prerequisites through final release-readiness and safe 
 
 # Start delivery
 
-Read `{{WORKFLOW_PATH}}/commands/references/start-command-contract.md`, then invoke
-`./{{WORKFLOW_PATH}}/bin/ai start-delivery` with `--adapter codex`. Add `--commit-verified` or
+Read `.agents/commands/references/start-command-contract.md`, then invoke
+`./.agents/bin/ai start-delivery` with `--adapter codex`. Add `--commit-verified` or
 `--push` only when the user explicitly requests those Git mutations.

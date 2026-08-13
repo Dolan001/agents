@@ -5,6 +5,6 @@ description: Run all missing prerequisites and build the selected React or Next.
 
 # Start frontend
 
-Read `{{WORKFLOW_PATH}}/commands/references/start-command-contract.md`, resolve the frontend choice,
-then invoke `./{{WORKFLOW_PATH}}/bin/ai start-frontend` with `--adapter codex`. Stop after the
+Read `.agents/commands/references/start-command-contract.md`, resolve the frontend choice,
+then invoke `./.agents/bin/ai start-frontend` with `--adapter codex`. Stop after the
 frontend gate.

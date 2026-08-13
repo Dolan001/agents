@@ -326,92 +326,16 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
     assert not (tmp_path / "README.md").exists()
 
 
-def test_install_commands_exposes_all_supported_agent_surfaces(tmp_path: Path) -> None:
-    assert main(["install-commands", "--project", str(tmp_path)]) == 0
-    assert not (tmp_path / ".ai").exists()
-    names = (
-        "start-build", "start-design", "start-generatehtml", "start-frontend",
-        "start-backend", "start-integration", "start-testing", "start-delivery",
-        "resume-build", "workflow-status",
-    )
-    for name in names:
-        assert (tmp_path / ".claude" / "commands" / f"{name}.md").is_file()
-        assert (tmp_path / ".opencode" / "commands" / f"{name}.md").is_file()
-        assert (tmp_path / ".agents" / "skills" / name / "SKILL.md").is_file()
-    claude = (tmp_path / ".claude" / "commands" / "start-build.md").read_text()
-    opencode = (tmp_path / ".opencode" / "commands" / "start-build.md").read_text()
-    assert "--adapter claude" in claude
-    assert "--adapter opencode" in opencode
-    assert main(["install-commands", "--project", str(tmp_path)]) == 0
-
-
-def test_install_skills_is_codex_only_and_does_not_initialize_runtime_state(
-    tmp_path: Path,
-) -> None:
-    assert main(["install-skills", "--project", str(tmp_path)]) == 0
-    assert (tmp_path / ".agents" / "skills" / "start-build" / "SKILL.md").is_file()
-    assert (tmp_path / ".agents" / "skills" / "workflow-status" / "SKILL.md").is_file()
-    assert not (tmp_path / ".claude").exists()
-    assert not (tmp_path / ".opencode").exists()
-    assert not (tmp_path / ".ai").exists()
-
-
-def test_setup_bootstraps_only_codex_and_reports_prd_readiness(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    launcher = tmp_path / "ai_workflow" / "bin" / "ai"
-    launcher.parent.mkdir(parents=True)
-    launcher.write_text("#!/bin/sh\n")
-    (tmp_path / "PRD.md").write_text("# Account\n")
-    assert main(["setup", "--project", str(tmp_path)]) == 0
-    result = json.loads(capsys.readouterr().out)
-    assert result["status"] == "installed"
-    assert result["platform"] == "codex"
-    assert result["prd"] == {"path": "PRD.md", "status": "ready"}
-    assert result["runtime_state_created"] is False
-    assert result["submodules"]["status"] == "skipped"
-    assert (tmp_path / ".agents" / "skills" / "start-build" / "SKILL.md").is_file()
-    assert not (tmp_path / ".ai").exists()
-    assert not (tmp_path / ".claude").exists()
-    assert not (tmp_path / ".opencode").exists()
-
-
-def test_setup_reports_missing_prd_without_blocking_skill_install(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    launcher = tmp_path / "ai_workflow" / "bin" / "ai"
-    launcher.parent.mkdir(parents=True)
-    launcher.write_text("#!/bin/sh\n")
-    assert main(["setup", "--project", str(tmp_path), "--skip-submodules"]) == 0
-    result = json.loads(capsys.readouterr().out)
-    assert result["prd"]["status"] == "missing"
-    assert result["next_action"] == "add exactly one non-empty PRD.md or docs/PRD.md"
-    assert (tmp_path / ".agents" / "skills" / "workflow-status" / "SKILL.md").is_file()
-    assert not (tmp_path / ".ai").exists()
-
-
-def test_setup_locally_excludes_generated_skills_in_git_project(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert run_git(tmp_path, "init")[0] == 0
-    launcher = tmp_path / "ai_workflow" / "bin" / "ai"
-    launcher.parent.mkdir(parents=True)
-    launcher.write_text("#!/bin/sh\n")
-    (tmp_path / "PRD.md").write_text("# Account\n")
-    assert main(["setup", "--project", str(tmp_path), "--skip-submodules"]) == 0
-    result = json.loads(capsys.readouterr().out)
-    assert result["git_exclude"] == {"path": ".agents/", "status": "locally-excluded"}
-    assert "/.agents/" in (tmp_path / ".git" / "info" / "exclude").read_text()
-    status = run_git(tmp_path, "status", "--short")[1].splitlines()
-    assert status == ["?? PRD.md", "?? ai_workflow/"]
-
-
-def test_install_commands_refuses_unmanaged_overwrite(tmp_path: Path) -> None:
-    target = tmp_path / ".claude" / "commands" / "start-build.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("user-owned\n")
-    assert main(["install-commands", "--project", str(tmp_path)]) == 1
-    assert target.read_text() == "user-owned\n"
+def test_codex_skills_are_directly_discoverable_from_agents_submodule() -> None:
+    root = Path(__file__).resolve().parents[1]
+    catalog = json.loads((root / "skills" / "catalog.json").read_text())
+    for item in catalog["skills"]:
+        if item["name"] == "run-one-shot-delivery":
+            continue
+        skill = root / item["path"]
+        content = skill.read_text()
+        assert "{{WORKFLOW_PATH}}" not in content
+        assert ".agents" in content
 
 
 def test_start_build_runs_every_phase_from_auto_discovered_prd(

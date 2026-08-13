@@ -1,19 +1,17 @@
 # Start commands
 
-Run the one-command Codex bootstrap after cloning the project:
+Add this repository directly at Codex's canonical project path:
 
 ```bash
+git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
 git submodule update --init --recursive
-./ai_workflow/bin/ai setup --project .
 ```
 
-Setup initializes registered nested submodules, checks Python/Git/Codex, installs the
-Codex skills, and reports PRD readiness and the exact next action. Restart or reopen
-Codex so it refreshes project skill discovery, then invoke `$start-build`. Setup
-creates only `.agents/skills`; it does not create `.claude`, `.opencode`, or runtime
-`.ai` state. In a Git project it adds `.agents/` to the local `.git/info/exclude`, so
-generated skills stay off GitHub without changing the tracked `.gitignore`. Direct CLI
-commands remain available.
+The `.agents` directory is the tracked `ai_workflow` submodule itself, not a generated
+copy. Codex discovers `.agents/skills` directly. Commit `.gitmodules` and the `.agents`
+gitlink to the real project so every developer receives the same pinned workflow with
+`git clone --recurse-submodules`. No setup or skill-copy command is required. Runtime
+`.ai` state remains separate and appears only when development starts.
 
 | Entrypoint | Result | Monorepo created? |
 |---|---|---:|
