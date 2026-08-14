@@ -84,7 +84,7 @@ missing phase through delivery. It does not push by default.
 ### 1. Install and pin the workflow
 
 The real project stores `ai_workflow` directly at `.agents`. The nested `base_ai`,
-`drf_ai`, `fastapi_ai`, `react_ai`, and `nextjs_ai` repositories are initialized
+`drf_ai`, `fastapi_ai`, `flutter_ai`, `react_ai`, and `nextjs_ai` repositories are initialized
 recursively. Commit `.gitmodules` and the `.agents` gitlink so every collaborator gets
 the same reviewed workflow version:
 
