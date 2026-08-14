@@ -1,6 +1,6 @@
 ---
 name: start-testing
-description: Run missing prerequisites followed by the complete independent test, browser, design, accessibility, API, integration, and security gates. Use when the user invokes start-testing.
+description: Run missing prerequisites followed by complete independent web, Flutter mobile, design, accessibility, API, integration, security, and platform release-readiness gates. Use when the user invokes start-testing.
 ---
 
 # Start testing

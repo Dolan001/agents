@@ -87,8 +87,8 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             "prd_only",
         }:
             raise RuntimeError("design phase lacks a valid deterministic input mode")
-    if phase in {"frontend", "backend"}:
-        if phase == "frontend":
+    if phase in {"frontend", "mobile", "backend"}:
+        if phase in {"frontend", "mobile"}:
             validate_monorepo(project, workflow_root() / "config" / "target-monorepo.json")
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])
         if pack is None:
@@ -100,6 +100,7 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     candidates = [root / "base_ai" / "agents" / f"{name}.md", root / "agents" / f"{name}.md"]
     selected = {
         "frontend": {"nextjs": "nextjs_ai", "react": "react_ai"}.get(frameworks["frontend"]),
+        "mobile": {"flutter": "flutter_ai"}.get(frameworks["mobile"]),
         "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"}.get(frameworks["backend"]),
     }
     for pack in selected.values():
@@ -109,7 +110,7 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     if exact:
         return exact[0]
     if name.startswith("selected-"):
-        side = "backend" if "backend" in name else "frontend"
+        side = "backend" if "backend" in name else "mobile" if "mobile" in name else "frontend"
         pack = selected[side]
         if pack:
             implementers = sorted((root / pack / "agents").glob("*-implementer.md"))
@@ -121,6 +122,7 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
 def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path | None:
     mapping = {
         "frontend": {"nextjs": "nextjs_ai", "react": "react_ai"},
+        "mobile": {"flutter": "flutter_ai"},
         "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"},
     }
     if phase not in mapping:
@@ -140,6 +142,7 @@ def _skill_paths(
         "requirements": ["reconcile-requirements", "plan-vertical-slices"],
         "design": ["prepare-design-baseline"],
         "frontend": ["execute-task-contract"],
+        "mobile": ["execute-task-contract"],
         "backend": ["execute-task-contract"],
         "integration": ["execute-task-contract"],
         "testing": ["verify-feature"],
@@ -335,7 +338,7 @@ def _prompt(
     )
     design_line = (
         str(project / ".ai" / "design-inputs.json")
-        if phase in {"design", "frontend"}
+        if phase in {"design", "frontend", "mobile"}
         else "Not applicable to this phase."
     )
     return f"""You are executing one controlled node of a production workflow.
@@ -462,7 +465,14 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
     elif action == "run_project_owned_openapi_client_command":
         run_command_groups(project, ["generate-client"])
     elif action == "run_project_owned_test_commands":
-        run_command_groups(project, ["backend", "frontend", "contract", "integration", "e2e"])
+        manifest = read_json(project / ".ai" / "test-commands.json", {"commands": {}})
+        configured = manifest.get("commands", {}) if isinstance(manifest, dict) else {}
+        groups = [
+            group
+            for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
+            if isinstance(configured, dict) and configured.get(group)
+        ]
+        run_command_groups(project, groups)
     elif action == "aggregate_feature_evidence":
         evidence = project / ".ai" / "evidence" / "features"
         files = (

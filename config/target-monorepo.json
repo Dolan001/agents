@@ -6,7 +6,7 @@
     "HTML/source",
     "HTML/generated",
     "HTML/approved",
-    "apps/frontend",
+    "apps",
     "apps/backend",
     "packages",
     "docs/generated",
@@ -20,6 +20,7 @@
   ],
   "ownership": {
     "apps/frontend": "selected frontend pack",
+    "apps/mobile": "selected mobile pack",
     "apps/backend": "selected backend pack",
     "packages/api-client": "integration phase",
     "HTML": "design phase",

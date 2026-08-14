@@ -1,0 +1,10 @@
+{
+  "name": "mobile",
+  "prerequisites": ["design"],
+  "agents": ["flutter-solution-architect", "selected-mobile-agent", "flutter-independent-verifier"],
+  "rules": ["rules/common.md", "rules/phases/mobile.md"],
+  "inputs": ["HTML/approved/**", "docs/generated/requirements.json", "docs/api/**"],
+  "outputs": ["root monorepo control files and directories", "apps/mobile/**", ".ai/test-commands.json", ".ai/evidence/features/**"],
+  "scope": {"allowed_paths": ["README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile", "apps/mobile/**", "packages/**", "tests/**", "docs/**", ".ai/**"]},
+  "gate": "gates/contracts/mobile.json"
+}

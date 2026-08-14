@@ -11,12 +11,14 @@ These entrypoints execute work; they are not explanatory prompt templates.
    `ai/<github-user>/<feature>` branch. Resolve it from explicit user context when
    available; otherwise ask for it.
 5. Resolve explicit PRD framework declarations first. The only valid selections are
-   React or Next.js for frontend and Django REST Framework or FastAPI for backend. If
+   React or Next.js for web, Flutter for Android/iOS mobile, and Django REST Framework
+   or FastAPI for backend. Require at least one client. If
    the PRD declares a supported framework, use it without asking. Reject unsupported,
    conflicting, or multiple declarations.
-6. Ask only for choices still missing for the requested terminal stage. If both are
-   missing, ask once and wait for both answers: `Frontend: React or Next.js? Backend:
-   Django REST Framework or FastAPI?` Never choose based on implicit PRD requirements.
+6. Ask only for choices still missing for the requested terminal stage. If the client
+   and backend are missing, ask once: `Client: React, Next.js, or Flutter (web plus
+   Flutter is allowed)? Backend: Django REST Framework or FastAPI?` Never choose based
+   on implicit PRD requirements.
    Do not invoke the CLI with a required framework set to `unknown`.
 7. Pass arguments directly to the Codex workflow CLI. Never add `--push`,
    `--commit-verified`, deployment, or merge behavior

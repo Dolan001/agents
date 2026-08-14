@@ -97,13 +97,14 @@ def parse_token(project: Path, value: str) -> dict[str, Any]:
     """Validate the canonical token route, Markdown fields, and sibling images."""
     path = _inside(project, value)
     relative = path.relative_to(project)
-    if len(relative.parts) != 3 or relative.parts[0] not in {"frontend", "backend"}:
+    if len(relative.parts) != 3 or relative.parts[0] not in {"frontend", "mobile", "backend"}:
         raise RuntimeError(
-            "token path must be frontend/<TOKEN_ID>/TOKEN.md or backend/<TOKEN_ID>/TOKEN.md"
+            "token path must be frontend/<TOKEN_ID>/TOKEN.md, "
+            "mobile/<TOKEN_ID>/TOKEN.md, or backend/<TOKEN_ID>/TOKEN.md"
         )
     area, token_id, filename = relative.parts
     if filename != "TOKEN.md" or not TOKEN_ID.fullmatch(token_id):
-        raise RuntimeError("token path must use an uppercase ID such as frontend/TKN001/TOKEN.md")
+        raise RuntimeError("token path must use an uppercase ID such as mobile/TKN001/TOKEN.md")
     content = path.read_text(encoding="utf-8")
     title_match = re.search(r"^#\s+(.+?)\s*$", content, re.MULTILINE)
     description_match = re.search(
@@ -144,7 +145,7 @@ def _worktree_snapshot(project: Path) -> dict[str, str]:
         relative = path.relative_to(project)
         if not path.is_file() or any(part in IGNORED_PARTS for part in relative.parts):
             continue
-        if relative.parts[0] in {"frontend", "backend"}:
+        if relative.parts[0] in {"frontend", "mobile", "backend"}:
             continue
         snapshot[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return snapshot
@@ -191,11 +192,11 @@ def _token_context_bundle(
 
 
 def _allowed(area: str, relative: str) -> bool:
-    roots = (
-        ("apps/frontend/", "packages/api-client/", "tests/")
-        if area == "frontend"
-        else ("apps/backend/", "tests/", "docs/api/")
-    )
+    roots = {
+        "frontend": ("apps/frontend/", "packages/api-client/", "tests/"),
+        "mobile": ("apps/mobile/", "tests/", "docs/api/"),
+        "backend": ("apps/backend/", "tests/", "docs/api/"),
+    }[area]
     return relative.startswith(roots)
 
 
@@ -526,6 +527,7 @@ def resolve_token(
     framework = workflow_state.get("frameworks", {}).get(area)
     packs = {
         "frontend": {"react": "react_ai", "nextjs": "nextjs_ai"},
+        "mobile": {"flutter": "flutter_ai"},
         "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"},
     }
     pack_name = packs[area].get(framework)

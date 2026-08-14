@@ -1,0 +1,9 @@
+{
+  "name": "mobile",
+  "nodes": [
+    {"id": "scaffold-target-monorepo", "type": "agentic", "agent": "solution-architect", "required_output": ".ai/evidence/monorepo-bootstrap.json", "verification": "evidence-schema"},
+    {"id": "load-mobile-pack", "type": "deterministic", "action": "resolve_selected_framework_pack"},
+    {"id": "implement-mobile-slices", "type": "agentic", "agent": "selected-mobile-agent", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/mobile.json", "verification": "evidence-schema"},
+    {"id": "verify-mobile", "type": "agentic", "agent": "flutter-independent-verifier", "required_output": ".ai/evidence/mobile-verification.json", "verification": "verified-true"}
+  ]
+}

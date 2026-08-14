@@ -7,10 +7,11 @@
     "version": {"const": 1},
     "commands": {
       "type": "object",
-      "required": ["frontend", "backend", "generate-client", "contract", "integration", "e2e"],
+      "required": ["backend", "generate-client", "contract", "integration", "e2e"],
+      "anyOf": [{"required": ["frontend"]}, {"required": ["mobile"]}],
       "additionalProperties": false,
       "patternProperties": {
-        "^(frontend|backend|generate-client|contract|integration|e2e)$": {
+        "^(frontend|mobile|backend|generate-client|contract|integration|e2e)$": {
           "type": "array",
           "minItems": 1,
           "items": {

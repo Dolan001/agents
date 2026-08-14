@@ -1,0 +1,4 @@
+interface:
+  display_name: "start-mobile"
+  short_description: "Run the Flutter mobile workflow stage"
+  default_prompt: "Use $start-mobile to build the Flutter Android and iOS application from the current project."

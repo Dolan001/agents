@@ -2,7 +2,7 @@
 
 Last run: 2026-08-12
 
-The automated pilot executes the complete eight-phase state machine in isolated empty
+The automated pilot executes the complete nine-phase state machine in isolated empty
 Git repositories with a controlled adapter. The adapter satisfies the same artifact
 contracts as a real Codex process, allowing orchestration,
 sequencing, input routing, gates, and filesystem results to be tested deterministically
@@ -21,6 +21,7 @@ Every scenario must finish all phases and produce:
 - the required root monorepo control files and directory layout;
 - `HTML/approved/index.html`;
 - the selected framework structure under `apps/frontend/`;
+- the selected Flutter structure under `apps/mobile/` when mobile is enabled;
 - the selected framework structure under `apps/backend/`;
 - `packages/api-client/`;
 - deterministic test-command results;
@@ -32,10 +33,9 @@ missing paths or file/directory type mismatches. Tests also verify HTML preceden
 HTML and screenshots coexist, safe feature-branch creation, dry-run non-mutation of
 application paths, and fail-closed behavior for incomplete structures.
 
-At the latest run, 17 workflow tests and 6 shared-foundation tests passed. The control
-plane contains 8 sequential phases and 26 nodes, including 16 agentic nodes with
-required output contracts. Installed adapter command shapes were checked against
-Codex CLI 0.146.0-alpha.9.2.
+The current control plane contains 9 sequential phases and 31 nodes, including 20
+agentic nodes with required output contracts. Flutter-only and web-plus-Flutter routes
+are covered by deterministic workflow tests.
 
 This proves the workflow engine and contracts. It does not substitute for a real-model
 acceptance pilot, because generated application quality, package installation, runtime

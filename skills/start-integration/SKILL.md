@@ -1,6 +1,6 @@
 ---
 name: start-integration
-description: Run missing prerequisites and connect the generated frontend and backend through the typed API client and contract tests. Use when the user invokes start-integration.
+description: Run missing prerequisites and connect generated web and/or Flutter mobile clients to the backend through typed API boundaries and contract tests. Use when the user invokes start-integration.
 ---
 
 # Start integration

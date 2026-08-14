@@ -13,5 +13,5 @@ The workflow loads those artifacts at runtime. Framework-specific structure and
 implementation guidance comes only from the selected root-level behavior repository.
 
 `phase_order` is the stable reporting order. `execution_groups` is the runtime DAG:
-frontend and backend may run together after requirements/contracts and design pass,
-but only with non-overlapping path leases. Integration waits for both.
+optional web and Flutter mobile clients run sequentially after approved design. Backend
+uses their observed contracts, and integration waits for every selected client.

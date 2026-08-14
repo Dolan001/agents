@@ -18,6 +18,7 @@ from ai_workflow.tokens import parse_token
 def test_detects_frameworks() -> None:
     assert detect(["apps/frontend/next.config.ts", "apps/backend/manage.py"]) == {
         "frontend": "nextjs",
+        "mobile": "unknown",
         "backend": "django-drf",
         "reasons": ["Django manage.py detected"],
     }
@@ -29,7 +30,22 @@ def test_resolves_supported_frameworks_declared_in_prd(tmp_path: Path) -> None:
         "# Stack\n\nFrontend framework: Next.js\nBackend framework: Django REST Framework\n"
     )
     assert detect_prd_frameworks(prd) == {"frontend": "nextjs", "backend": "django-drf"}
-    assert resolve_frameworks(prd) == {"frontend": "nextjs", "backend": "django-drf"}
+    assert resolve_frameworks(prd) == {
+        "frontend": "nextjs",
+        "mobile": "unknown",
+        "backend": "django-drf",
+    }
+
+
+def test_resolves_flutter_mobile_declared_in_prd(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Stack\n\nMobile framework: Flutter\nBackend framework: FastAPI\n")
+    assert detect_prd_frameworks(prd) == {"mobile": "flutter", "backend": "fastapi"}
+    assert resolve_frameworks(prd) == {
+        "frontend": "unknown",
+        "mobile": "flutter",
+        "backend": "fastapi",
+    }
 
 
 def test_rejects_unsupported_prd_framework_declaration(tmp_path: Path) -> None:
@@ -51,7 +67,11 @@ def test_plain_frontend_description_is_not_treated_as_framework_declaration(
 ) -> None:
     prd = tmp_path / "PRD.md"
     prd.write_text("# Product\n\nFrontend: responsive customer dashboard\n")
-    assert resolve_frameworks(prd) == {"frontend": "unknown", "backend": "unknown"}
+    assert resolve_frameworks(prd) == {
+        "frontend": "unknown",
+        "mobile": "unknown",
+        "backend": "unknown",
+    }
 
 
 def _write_token_image(path: Path) -> None:
@@ -111,6 +131,7 @@ def _initialize_token_repository(project: Path, area: str, branch: str) -> None:
     ("area", "framework", "changed_path", "base_branch"),
     [
         ("frontend", "react", "apps/frontend/fix.tsx", "dolan001"),
+        ("mobile", "flutter", "apps/mobile/lib/fix.dart", "dolan-mobile"),
         ("backend", "fastapi", "apps/backend/fix.py", "dolan002"),
         ("frontend", "nextjs", "apps/frontend/fix.tsx", "main"),
     ],
@@ -131,6 +152,7 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         baseline=None,
         branch=None,
         assumptions=[],
+        mobile=framework if area == "mobile" else "unknown",
     )
     _initialize_token_repository(tmp_path, area, base_branch)
     token_dir = tmp_path / area / "TKN001"
@@ -171,6 +193,7 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         calls.append("implementation")
         assert ".ai/token-runs/TKN001/plan.json" in selected
         changed = project / changed_path
+        changed.parent.mkdir(parents=True, exist_ok=True)
         changed.write_text("resolved\n")
         evidence_match = re.search(r"Required evidence: (.+)", prompt)
         assert evidence_match
@@ -356,10 +379,10 @@ def test_clean_state_requires_confirmation(tmp_path: Path) -> None:
 def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
-    assert report["phases"] == 8
-    assert report["nodes"] == 27
-    assert report["agentic_nodes"] == 17
-    assert report["execution_groups"][3:5] == [["frontend"], ["backend"]]
+    assert report["phases"] == 9
+    assert report["nodes"] == 31
+    assert report["agentic_nodes"] == 20
+    assert report["execution_groups"][3:6] == [["frontend"], ["mobile"], ["backend"]]
 
 
 def test_scheduler_unlocks_only_the_next_sequential_phase() -> None:
@@ -367,7 +390,8 @@ def test_scheduler_unlocks_only_the_next_sequential_phase() -> None:
     assert ready_phases({"bootstrap"}, set()) == ["requirements"]
     completed = {"bootstrap", "requirements", "design"}
     assert ready_phases(completed, set()) == ["frontend"]
-    assert ready_phases(completed | {"frontend"}, set()) == ["backend"]
+    assert ready_phases(completed | {"frontend"}, set()) == ["mobile"]
+    assert ready_phases(completed | {"frontend", "mobile"}, set()) == ["backend"]
 
 
 def test_cache_key_changes_only_when_declared_inputs_change(tmp_path: Path) -> None:
@@ -477,7 +501,7 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         approved = project / "HTML" / "approved" / "index.html"
         approved.parent.mkdir(parents=True, exist_ok=True)
         approved.write_text("<!doctype html><title>Approved account</title>")
-    if phase == "frontend" and node == "scaffold-target-monorepo":
+    if phase in {"frontend", "mobile"} and node == "scaffold-target-monorepo":
         contract_path = Path(__file__).resolve().parents[1] / "config" / "target-monorepo.json"
         contract = json.loads(contract_path.read_text())
         for relative in contract["required_files"]:
@@ -486,12 +510,16 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
             root_file.write_text(f"pilot root artifact: {relative}\n")
         for relative in contract["required_directories"]:
             (project / relative).mkdir(parents=True, exist_ok=True)
-    if phase == "frontend" and node == "implement-frontend-slices":
+    if phase in {"frontend", "mobile"} and node in {
+        "implement-frontend-slices",
+        "implement-mobile-slices",
+    }:
         _create_pack_structure(project, prompt)
         commands = {
             group: [{"argv": ["true"], "cwd": "."}]
             for group in (
                 "frontend",
+                "mobile",
                 "backend",
                 "generate-client",
                 "contract",
@@ -745,9 +773,113 @@ def test_start_build_uses_frameworks_declared_in_prd(
     ]
     assert main(arguments) == 0
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
-    assert state["frameworks"] == {"frontend": "nextjs", "backend": "django-drf"}
+    assert state["frameworks"] == {
+        "frontend": "nextjs",
+        "mobile": "unknown",
+        "backend": "django-drf",
+    }
     assert (tmp_path / "apps" / "frontend" / "app" / "page.tsx").is_file()
     assert (tmp_path / "apps" / "backend" / "manage.py").is_file()
+
+
+def test_start_build_supports_flutter_only_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Mobile account\n\n"
+        "Mobile framework: Flutter\n"
+        "Backend framework: FastAPI\n\n"
+        "- ACC-001 User can view an account on Android and iOS.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert (
+        main(
+            [
+                "start-build",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 0
+    )
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"] == {
+        "frontend": "unknown",
+        "mobile": "flutter",
+        "backend": "fastapi",
+    }
+    assert state["completed_phases"] == list(PHASES)
+    assert not (tmp_path / "apps" / "frontend").exists()
+    assert (tmp_path / "apps" / "mobile" / "lib" / "main.dart").is_file()
+    assert (tmp_path / "apps" / "mobile" / "android").is_dir()
+    assert (tmp_path / "apps" / "mobile" / "ios").is_dir()
+    assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
+
+
+def test_start_build_supports_web_and_flutter_clients(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Everywhere account\n\n"
+        "Frontend framework: React\n"
+        "Mobile framework: Flutter\n"
+        "Backend framework: Django REST Framework\n\n"
+        "- ACC-001 User can view an account on web, Android, and iOS.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert (
+        main(
+            [
+                "start-build",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 0
+    )
+    assert (tmp_path / "apps" / "frontend" / "src" / "main.tsx").is_file()
+    assert (tmp_path / "apps" / "mobile" / "lib" / "main.dart").is_file()
+    assert (tmp_path / "apps" / "backend" / "manage.py").is_file()
+
+
+def test_start_mobile_stops_without_building_declared_web(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Everywhere account\n\n"
+        "Frontend framework: React\n"
+        "Mobile framework: Flutter\n"
+        "Backend framework: FastAPI\n\n"
+        "- ACC-001 User can view an account.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert (
+        main(
+            [
+                "start-mobile",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 0
+    )
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["completed_phases"] == ["bootstrap", "requirements", "design", "mobile"]
+    assert not (tmp_path / "apps" / "frontend").exists()
+    assert (tmp_path / "apps" / "mobile" / "lib" / "main.dart").is_file()
+    assert not (tmp_path / "apps" / "backend" / "app" / "main.py").exists()
 
 
 def test_start_build_requires_only_missing_framework_before_initialization(
@@ -759,6 +891,27 @@ def test_start_build_requires_only_missing_framework_before_initialization(
     assert main(["start-build", "--project", str(tmp_path), "--github-user", "test-user"]) == 1
     assert "backend: django-drf or fastapi" in capsys.readouterr().err
     assert not (tmp_path / ".ai").exists()
+
+
+def test_existing_design_run_requires_a_client_before_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert (
+        main(
+            [
+                "start-design",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+            ]
+        )
+        == 0
+    )
+    assert main(["start-backend", "--project", str(tmp_path), "--backend", "fastapi"]) == 1
+    assert "client: react, nextjs, or flutter" in capsys.readouterr().err
 
 
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:

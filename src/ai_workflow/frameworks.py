@@ -7,12 +7,14 @@ from pathlib import Path
 
 ALLOWED_FRAMEWORKS = {
     "frontend": ("react", "nextjs"),
+    "mobile": ("flutter",),
     "backend": ("django-drf", "fastapi"),
 }
 
 _PATTERNS = {
     "react": re.compile(r"(?:\bReact\b|\breact(?:\.js|js)\b)"),
     "nextjs": re.compile(r"\bnext(?:\.js|js)\b", re.IGNORECASE),
+    "flutter": re.compile(r"\bflutter\b", re.IGNORECASE),
     "django-drf": re.compile(
         r"\b(?:django\s+rest\s+framework|django[- ]?drf|drf)\b", re.IGNORECASE
     ),
@@ -21,7 +23,7 @@ _PATTERNS = {
 
 _DECLARATION = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\*{1,2})?"
-    r"(?P<side>frontend|backend)\s+(?:framework|technology|stack)"
+    r"(?P<side>frontend|mobile|backend)\s+(?:framework|technology|stack)"
     r"(?:\*{1,2})?\s*:\s*(?P<value>.+?)\s*$",
     re.IGNORECASE,
 )
@@ -56,9 +58,7 @@ def detect_prd_frameworks(prd: Path) -> dict[str, str]:
             continue
         side = declaration.group("side").lower()
         value = declaration.group("value")
-        side_matches = [
-            name for name in ALLOWED_FRAMEWORKS[side] if _PATTERNS[name].search(value)
-        ]
+        side_matches = [name for name in ALLOWED_FRAMEWORKS[side] if _PATTERNS[name].search(value)]
         if not side_matches:
             raise RuntimeError(
                 f"unsupported {side} framework declaration {value!r}; choose one of: "
@@ -73,13 +73,16 @@ def detect_prd_frameworks(prd: Path) -> dict[str, str]:
 
 
 def resolve_frameworks(
-    prd: Path, frontend: str = "unknown", backend: str = "unknown"
+    prd: Path,
+    frontend: str = "unknown",
+    mobile: str = "unknown",
+    backend: str = "unknown",
 ) -> dict[str, str]:
     """Combine CLI and PRD selections while rejecting conflicts and unsupported values."""
-    provided = {"frontend": frontend, "backend": backend}
+    provided = {"frontend": frontend, "mobile": mobile, "backend": backend}
     declared = detect_prd_frameworks(prd)
     resolved: dict[str, str] = {}
-    for side in ("frontend", "backend"):
+    for side in ("frontend", "mobile", "backend"):
         selected = provided[side]
         if selected != "unknown":
             validate_framework(side, selected)

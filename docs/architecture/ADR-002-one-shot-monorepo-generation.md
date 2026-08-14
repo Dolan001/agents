@@ -14,7 +14,7 @@ the separate target monorepo.
 
 1. Validate the PRD and target location.
 2. Discover supplied code and design evidence without mutation.
-3. Select frontend/backend behavior packs.
+3. Select web and/or Flutter mobile behavior packs plus one backend behavior pack.
 4. Reconcile requirements and current implementation state.
 5. Create architecture decisions, a feature plan, and task contracts.
 6. Acquire target path leases.

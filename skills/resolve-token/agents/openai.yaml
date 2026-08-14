@@ -1,4 +1,4 @@
 interface:
   display_name: "Resolve Token"
-  short_description: "Resolve one scoped frontend or backend token"
+  short_description: "Resolve one scoped web, Flutter, or backend token"
   default_prompt: "Use $resolve-token to resolve the specified project token with verified evidence."

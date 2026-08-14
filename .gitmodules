@@ -18,3 +18,7 @@
 	path = react_ai
 	url = https://github.com/Dolan001/react_ai.git
 	branch = dev
+[submodule "flutter_ai"]
+	path = flutter_ai
+	url = https://github.com/Dolan001/flutter_ai.git
+	branch = dev

@@ -14,7 +14,7 @@ from .commands import run_command_groups
 from .design import classify_design_inputs, ingest_design_inputs
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
-from .frameworks import ALLOWED_FRAMEWORKS, resolve_frameworks
+from .frameworks import resolve_frameworks
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
@@ -89,11 +89,15 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
     branch = git["branch"] if isinstance(git["branch"], str) else None
     if branch:
         assert_safe_branch(branch)
-    frameworks = {"frontend": args.frontend, "backend": args.backend}
+    frameworks = {
+        "frontend": args.frontend,
+        "mobile": getattr(args, "mobile", "unknown"),
+        "backend": args.backend,
+    }
     if mode == "brownfield":
         report = inventory(project)
         detected = report["framework_detection"]
-        for side in ("frontend", "backend"):
+        for side in ("frontend", "mobile", "backend"):
             if frameworks[side] == "unknown":
                 frameworks[side] = detected[side]
     state = StateStore(project).create(
@@ -107,6 +111,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             f"PRD source: {prd.relative_to(project)}",
             "Local work is allowed; remote push requires explicit configuration.",
         ],
+        mobile=frameworks["mobile"],
     )
     save_inventory(project, inventory(project))
     design_inputs = classify_design_inputs(project)
@@ -288,6 +293,12 @@ def command_one_shot(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     state_exists = (project / ".ai" / "state.json").is_file()
     if not state_exists:
+        prd = require_prd(project, args.prd)
+        resolved = resolve_frameworks(prd, args.frontend, args.mobile, args.backend)
+        _require_frameworks("delivery", resolved)
+        args.frontend = resolved["frontend"]
+        args.mobile = resolved["mobile"]
+        args.backend = resolved["backend"]
         initialize(args, "new")
     elif args.html or args.screenshot:
         ingest_design_inputs(project, args.html, args.screenshot)
@@ -313,6 +324,9 @@ def command_one_shot(args: argparse.Namespace) -> int:
     for phase in PHASES[1:]:
         if phase in completed:
             continue
+        if _skip_disabled_client_phase(project, phase):
+            completed.add(phase)
+            continue
         results.append(
             execute_phase(
                 project,
@@ -337,7 +351,7 @@ def command_one_shot(args: argparse.Namespace) -> int:
 def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None:
     store = StateStore(project)
     state = store.load()
-    for side in ("frontend", "backend"):
+    for side in ("frontend", "mobile", "backend"):
         selected = getattr(args, side, "unknown")
         current = state["frameworks"][side]
         if selected == "unknown":
@@ -345,7 +359,49 @@ def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None
         if current != "unknown" and current != selected:
             raise RuntimeError(f"cannot change {side} framework from {current} to {selected}")
         state["frameworks"][side] = selected
+        completed = state.get("completed_phases", [])
+        if current == "unknown" and side in completed:
+            phase_index = PHASES.index(side)
+            state["completed_phases"] = [
+                phase for phase in completed if PHASES.index(phase) < phase_index
+            ]
+            state["status"] = "running"
     store.save(state)
+
+
+def _require_frameworks(target: str, frameworks: dict[str, str]) -> None:
+    missing: list[str] = []
+    if target == "frontend" and frameworks["frontend"] == "unknown":
+        missing.append("frontend: react or nextjs")
+    elif target == "mobile" and frameworks["mobile"] == "unknown":
+        missing.append("mobile: flutter")
+    elif target not in {"design-spec", "html"}:
+        if frameworks["frontend"] == "unknown" and frameworks["mobile"] == "unknown":
+            missing.append("client: react, nextjs, or flutter")
+        if frameworks["backend"] == "unknown":
+            missing.append("backend: django-drf or fastapi")
+    if missing:
+        raise RuntimeError(f"framework selection required ({'; '.join(missing)})")
+
+
+def _skip_disabled_client_phase(project: Path, phase: str) -> bool:
+    side = phase if phase in {"frontend", "mobile"} else None
+    if side is None:
+        return False
+    store = StateStore(project)
+    state = store.load()
+    if state["frameworks"][side] != "unknown":
+        return False
+    completed = state.setdefault("completed_phases", [])
+    if phase not in completed:
+        completed.append(phase)
+    state["current_phase"] = phase
+    store.save(state)
+    append_jsonl(
+        project / ".ai" / "decisions.jsonl",
+        {"at": utc_now(), "decision": "optional_phase_skipped", "phase": phase},
+    )
+    return True
 
 
 def _verify_resume_boundary(project: Path) -> None:
@@ -367,22 +423,11 @@ def command_start(args: argparse.Namespace) -> int:
     if not (project / ".ai" / "state.json").is_file():
         prd = discover_prd(project, args.prd)
         args.prd = prd.relative_to(project).as_posix()
-        resolved = resolve_frameworks(prd, args.frontend, args.backend)
+        resolved = resolve_frameworks(prd, args.frontend, args.mobile, args.backend)
         args.frontend = resolved["frontend"]
+        args.mobile = resolved["mobile"]
         args.backend = resolved["backend"]
-        required_sides = (
-            ()
-            if target in {"design-spec", "html"}
-            else ("frontend",)
-            if target == "frontend"
-            else ("frontend", "backend")
-        )
-        missing = [side for side in required_sides if resolved[side] == "unknown"]
-        if missing:
-            choices = "; ".join(
-                f"{side}: {' or '.join(ALLOWED_FRAMEWORKS[side])}" for side in missing
-            )
-            raise RuntimeError(f"framework selection required ({choices})")
+        _require_frameworks(target, resolved)
         if not baseline(project)["is_repository"] and not args.github_user:
             raise RuntimeError("--github-user is required to create a safe feature branch")
         initialize(args, "new")
@@ -392,6 +437,7 @@ def command_start(args: argparse.Namespace) -> int:
             ingest_design_inputs(project, args.html, args.screenshot)
             classify_design_inputs(project)
         _apply_framework_selections(project, args)
+        _require_frameworks(target, StateStore(project).load()["frameworks"])
 
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
@@ -403,11 +449,18 @@ def command_start(args: argparse.Namespace) -> int:
     results = []
     terminal_phase = "design" if target in {"design-spec", "html"} else target
     for phase in PHASES[1:]:
+        if target == "mobile" and phase == "frontend" and phase not in completed:
+            continue
         if phase in completed:
             if phase == terminal_phase:
                 break
             continue
-        if phase in {"frontend", "backend"}:
+        if _skip_disabled_client_phase(project, phase):
+            completed.add(phase)
+            if phase == terminal_phase:
+                break
+            continue
+        if phase in {"frontend", "mobile", "backend"}:
             state = StateStore(project).load()
             if state["frameworks"][phase] == "unknown":
                 raise RuntimeError(f"--{phase} is required before starting the {phase} phase")
@@ -479,9 +532,15 @@ def command_test(args: argparse.Namespace) -> int:
         )
         return 2
     if args.execute:
-        groups = (
-            ["backend", "frontend", "contract", "integration", "e2e"] if scope == "all" else [scope]
-        )
+        if scope == "all":
+            configured = manifest.get("commands", {})
+            groups = [
+                group
+                for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
+                if isinstance(configured, dict) and configured.get(group)
+            ]
+        else:
+            groups = [scope]
         print_json(run_command_groups(project, groups))
         return 0
     print_json({"scope": scope, "status": "dry-run", "commands": commands})
@@ -614,6 +673,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument("--html", action="append", default=[])
     command.add_argument("--screenshot", action="append", default=[])
     command.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
+    command.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
     command.add_argument(
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
@@ -639,6 +699,7 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--frontend", choices=["react", "nextjs", "unknown"], default="unknown"
         )
+        command.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
         command.add_argument(
             "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
         )
@@ -651,7 +712,8 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--branch-feature")
     one_shot.add_argument("--html", action="append", default=[])
     one_shot.add_argument("--screenshot", action="append", default=[])
-    one_shot.add_argument("--frontend", choices=["react", "nextjs"], required=True)
+    one_shot.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
+    one_shot.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
     one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
     one_shot.add_argument("--adapter", choices=["codex"], default="codex")
     one_shot.add_argument("--execute", action="store_true")
@@ -663,6 +725,7 @@ def parser() -> argparse.ArgumentParser:
         "start-design": "design-spec",
         "start-generatehtml": "html",
         "start-frontend": "frontend",
+        "start-mobile": "mobile",
         "start-backend": "backend",
         "start-integration": "integration",
         "start-testing": "testing",
@@ -703,7 +766,7 @@ def parser() -> argparse.ArgumentParser:
     selection = test.add_mutually_exclusive_group(required=True)
     selection.add_argument("--all", action="store_true")
     selection.add_argument(
-        "--scope", choices=["backend", "frontend", "contract", "integration", "e2e"]
+        "--scope", choices=["backend", "frontend", "mobile", "contract", "integration", "e2e"]
     )
     test.set_defaults(handler=command_test)
     test.add_argument("--execute", action="store_true")

@@ -18,8 +18,9 @@ gitlink to the real project so every developer receives the same pinned workflow
 | `start-design` | Design specification only | No |
 | `start-generatehtml` | Verified approved HTML | No |
 | `start-frontend` | Prerequisites plus selected frontend | Yes |
+| `start-mobile` | Prerequisites plus Flutter Android/iOS app | Yes |
 | `start-backend` | Prerequisites plus selected backend | Yes |
-| `start-integration` | Typed client and frontend/backend integration | Yes |
+| `start-integration` | Typed web/mobile and backend integration | Yes |
 | `start-testing` | Full independent test and security gates | Yes |
 | `start-delivery` | Release-ready evidence; optional explicit Git delivery | Yes |
 | `start-build` | Every missing phase through delivery | Yes |
@@ -30,8 +31,9 @@ The PRD is required. Without `--prd`, the engine accepts exactly one of `docs/PR
 `PRD.md`, `docs/prd.md`, or `prd.md`. HTML and screenshots are optional repeatable
 arguments. The engine prioritizes supplied HTML, otherwise screenshots, otherwise PRD
 generation. The engine automatically uses explicit PRD declarations for React,
-Next.js, Django REST Framework, or FastAPI. Codex asks only for a side that is still
-missing. Unsupported, conflicting, or multiple declarations fail before build work.
+Next.js, Flutter, Django REST Framework, or FastAPI. Complete delivery requires at
+least one web/mobile client and one backend. Unsupported, conflicting, or multiple
+declarations fail before build work.
 
 Examples:
 
@@ -39,6 +41,7 @@ Examples:
 $start-design --github-user dolan
 $start-generatehtml
 $start-frontend --frontend nextjs
+$start-mobile --mobile flutter
 $start-build
 $workflow-status
 $resume-build
@@ -47,8 +50,8 @@ $resume-build
 No start command pushes by default. Add `--commit-verified` or `--push` only when that
 Git mutation is explicitly intended; protected branches remain rejected.
 
-For a scoped post-build bug or change, create `frontend/TKN001/TOKEN.md` or
-`backend/TKN001/TOKEN.md`, optionally add consecutive sibling `currentN` and
+For a scoped post-build bug or change, create `frontend/TKN001/TOKEN.md`,
+`mobile/TKN001/TOKEN.md`, or `backend/TKN001/TOKEN.md`, optionally add consecutive sibling `currentN` and
 `expectedN` PNG/JPEG/WebP images, and invoke:
 
 ```text

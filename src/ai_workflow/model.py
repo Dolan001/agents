@@ -13,6 +13,7 @@ PHASES = (
     "requirements",
     "design",
     "frontend",
+    "mobile",
     "backend",
     "integration",
     "testing",
@@ -48,6 +49,7 @@ class StateStore:
         baseline: str | None,
         branch: str | None,
         assumptions: list[str],
+        mobile: str = "unknown",
     ) -> dict[str, Any]:
         if self.path.exists():
             raise RuntimeError("workflow state already exists; use ai status or ai resume")
@@ -57,7 +59,7 @@ class StateStore:
             "mode": mode,
             "status": "initialized",
             "current_phase": "bootstrap",
-            "frameworks": {"frontend": frontend, "backend": backend},
+            "frameworks": {"frontend": frontend, "mobile": mobile, "backend": backend},
             "git": {"baseline_commit": baseline, "branch": branch},
             "features": {},
             "assumptions": assumptions,

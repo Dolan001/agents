@@ -6,6 +6,7 @@
     "requirements",
     "design",
     "frontend",
+    "mobile",
     "backend",
     "integration",
     "testing",
@@ -16,6 +17,7 @@
     ["requirements"],
     ["design"],
     ["frontend"],
+    ["mobile"],
     ["backend"],
     ["integration"],
     ["testing"],
@@ -46,14 +48,20 @@
       "blueprint": "blueprints/frontend.json",
       "gate": "gates/contracts/frontend.json"
     },
+    "mobile": {
+      "dependencies": ["design"],
+      "manifest": "pipeline/manifests/mobile.json",
+      "blueprint": "blueprints/mobile.json",
+      "gate": "gates/contracts/mobile.json"
+    },
     "backend": {
-      "dependencies": ["frontend"],
+      "dependencies": ["mobile"],
       "manifest": "pipeline/manifests/backend.json",
       "blueprint": "blueprints/backend.json",
       "gate": "gates/contracts/backend.json"
     },
     "integration": {
-      "dependencies": ["frontend", "backend"],
+      "dependencies": ["frontend", "mobile", "backend"],
       "manifest": "pipeline/manifests/integration.json",
       "blueprint": "blueprints/integration.json",
       "gate": "gates/contracts/integration.json"

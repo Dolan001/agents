@@ -28,6 +28,7 @@ def project_files(project: Path, maximum: int = 5000) -> list[str]:
 def detect(files: list[str]) -> dict[str, Any]:
     file_set = set(files)
     frontend = "unknown"
+    mobile = "unknown"
     backend = "unknown"
     reasons: list[str] = []
     package_files = [name for name in files if name.endswith("package.json")]
@@ -39,13 +40,18 @@ def detect(files: list[str]) -> dict[str, Any]:
         frontend = "nextjs"
     elif package_files:
         frontend = "react"
+    if "apps/mobile/pubspec.yaml" in file_set or (
+        "pubspec.yaml" in file_set and any(name.startswith("lib/") for name in files)
+    ):
+        mobile = "flutter"
+        reasons.append("Flutter pubspec.yaml detected")
     if "manage.py" in file_set or any(name.endswith("/manage.py") for name in files):
         backend = "django-drf"
         reasons.append("Django manage.py detected")
     elif any(name.endswith("/app/main.py") or name == "app/main.py" for name in files):
         backend = "fastapi"
         reasons.append("FastAPI app/main.py shape detected")
-    return {"frontend": frontend, "backend": backend, "reasons": reasons}
+    return {"frontend": frontend, "mobile": mobile, "backend": backend, "reasons": reasons}
 
 
 def inventory(project: Path) -> dict[str, Any]:

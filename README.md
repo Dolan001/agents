@@ -16,11 +16,12 @@ The supported application combinations are:
 
 | Layer | Supported frameworks | Target |
 |---|---|---|
-| Frontend | React or Next.js | `apps/frontend` |
+| Web frontend | React or Next.js | `apps/frontend` |
+| Mobile | Flutter for Android and iOS | `apps/mobile` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
 
-The frontend phase creates the monorepo root contract before application code is
-populated:
+Projects may be web only, mobile only, or web plus mobile; every mode includes one
+supported backend. The first selected client phase creates the monorepo root contract:
 
 ```text
 target-project/
@@ -28,6 +29,7 @@ target-project/
 ├── .ai/                     # generated workflow state and evidence
 ├── apps/
 │   ├── frontend/
+│   ├── mobile/
 │   └── backend/
 ├── packages/
 │   └── api-client/
@@ -46,8 +48,8 @@ target-project/
 └── Makefile
 ```
 
-Design-only commands stop before this monorepo is created. `start-frontend` is the
-first command allowed to scaffold the application structure.
+Design-only commands stop before this monorepo is created. `start-frontend` or
+`start-mobile` is the first command allowed to scaffold the application structure.
 
 ## Quick start
 
@@ -114,6 +116,7 @@ explicit declarations such as:
 
 ```markdown
 Frontend framework: Next.js
+Mobile framework: Flutter
 Backend framework: Django REST Framework
 ```
 
@@ -132,8 +135,8 @@ Inputs are preserved under `HTML/source/`, hashed, and treated as untrusted desi
 
 ### 3. Resolve frameworks before building
 
-The workflow accepts only React or Next.js for frontend and Django REST Framework or
-FastAPI for backend.
+The workflow accepts only React or Next.js for web, Flutter for Android/iOS mobile,
+and Django REST Framework or FastAPI for backend. At least one client is required.
 
 - If the PRD explicitly declares a supported framework, Codex uses it without asking.
 - If a framework required by the requested stopping point is absent, Codex asks only
@@ -143,7 +146,9 @@ FastAPI for backend.
 - A saved framework choice cannot be silently changed during resume.
 
 Design specification and HTML generation do not require framework choices.
-`start-frontend` requires frontend selection. Backend and all later stages require both.
+`start-frontend` requires a web selection; `start-mobile` requires Flutter. Backend and
+later stages require one or both clients plus a backend. An absent optional client is
+recorded as a skipped phase and loads no behavior-pack context.
 
 ### 4. Establish a safe Git boundary
 
@@ -178,6 +183,7 @@ Use a narrower command when only part of the lifecycle is required:
 | `$start-design` | Design specification | No |
 | `$start-generatehtml` | Approved static HTML | No |
 | `$start-frontend` | Frontend gate | Yes |
+| `$start-mobile` | Flutter Android/iOS gate | Yes |
 | `$start-backend` | Backend gate | Yes |
 | `$start-integration` | Typed integration gate | Yes |
 | `$start-testing` | Independent testing and security gate | Yes |
@@ -187,7 +193,7 @@ Use a narrower command when only part of the lifecycle is required:
 | `$workflow-status` | Read-only status report | No change |
 
 Every start command runs missing prerequisites. For example, `$start-backend` does not
-skip requirements, design, or frontend when they are incomplete.
+skip requirements, design, or any selected client when they are incomplete.
 
 ### 6. Bootstrap the target
 
@@ -235,9 +241,9 @@ evidence. Accessibility and HTML-quality checks must pass before frontend work.
 `$start-design` intentionally stops after `HTML/design-specification.md`.
 `$start-generatehtml` completes the design gate and stops before application code.
 
-### 9. Build the frontend and create the monorepo
+### 9. Build the optional web frontend
 
-The frontend phase loads only the selected React or Next.js behavior pack. Specialized
+When selected, the frontend phase loads only React or Next.js guidance. Specialized
 agents:
 
 - create and validate the framework-neutral monorepo root;
@@ -247,12 +253,27 @@ agents:
 - produce feature and structure evidence.
 
 The generated `apps/frontend` structure must match the selected behavior pack's exact
-project-structure contract before the frontend gate passes.
+project-structure contract before the frontend gate passes. If web is not selected,
+the phase is checkpointed as skipped without invoking an agent.
 
-### 10. Build the backend
+### 10. Build the optional Flutter mobile application
 
-After frontend approval, the backend phase loads only Django REST Framework or FastAPI
-guidance. It uses the reconciled requirements and observed frontend data needs to:
+When selected, the mobile phase loads only `flutter_ai`, establishes any missing
+monorepo root structure, and generates one application under `apps/mobile/` for Android
+and iOS. It creates feature-first boundaries, validated environments, navigation,
+localization, adaptive design, typed networking, secure storage, lifecycle and offline
+behavior, and unit/widget/golden/integration test foundations.
+
+The gate validates the exact Flutter structure contract, Android and iOS platform
+directories, accessibility and responsive evidence, Flutter analysis/tests, and
+truthful platform release readiness. Unavailable iOS tooling must be reported as
+unverified rather than silently passed. If mobile is not selected, no Flutter context
+is loaded and the phase is checkpointed as skipped.
+
+### 11. Build the backend
+
+After selected client approval, the backend phase loads only Django REST Framework or
+FastAPI guidance. It uses reconciled requirements and observed web/mobile data needs to:
 
 - implement API endpoints, domain logic, persistence, authentication, permissions,
   validation, exceptions, and error responses;
@@ -263,23 +284,22 @@ guidance. It uses the reconciled requirements and observed frontend data needs t
 The backend gate blocks progression when required behavior, evidence, or structure is
 missing.
 
-### 11. Integrate frontend and backend
+### 12. Integrate selected clients and backend
 
-The integration phase generates or updates the typed client in
-`packages/api-client`, connects frontend flows to real backend APIs, and creates
-contract and integration tests. Project-owned OpenAPI/client generation commands run
-without shell evaluation. The gate requires frontend, backend, client, and contract
-evidence to agree.
+The integration phase generates or updates typed web and/or Dart API boundaries,
+connects selected client flows to real backend APIs, and creates contract and
+integration tests. Project-owned OpenAPI/client generation commands run without shell
+evaluation. The gate requires every selected client, backend, and contract to agree.
 
-### 12. Run independent testing and security review
+### 13. Run independent testing and security review
 
 The testing phase runs configured project-owned commands from
-`.ai/test-commands.json`, including the applicable backend, frontend, contract,
+`.ai/test-commands.json`, including applicable backend, frontend, mobile, contract,
 integration, and end-to-end lanes. Independent agents verify:
 
 - PRD acceptance criteria and complete user journeys;
 - API success responses, validation, exceptions, and error behavior;
-- frontend/backend integration and browser behavior;
+- web/mobile/backend integration, browser behavior, and Android/iOS journeys;
 - approved-HTML or screenshot design fidelity;
 - responsiveness and accessibility;
 - security controls and high-risk findings; and
@@ -288,7 +308,7 @@ integration, and end-to-end lanes. Independent agents verify:
 Results are stored under `artifacts/tests/`, `artifacts/security/`, and
 `.ai/evidence/features/`. A task is marked verified only when its final evidence passes.
 
-### 13. Complete delivery
+### 14. Complete delivery
 
 The delivery phase aggregates verified evidence into `artifacts/final/` and evaluates
 release readiness. It does not deploy or merge.
@@ -305,7 +325,7 @@ evidence and commits them on the current safe feature branch. `--push` implies v
 commits and pushes that same branch to `origin`. Unverified or out-of-scope paths fail
 closed.
 
-### 14. Inspect, resume, and recover
+### 15. Inspect, resume, and recover
 
 At any time, inspect state without changing the project:
 
@@ -325,12 +345,13 @@ most two retries. The first attempt does not load recovery guidance. A retry rec
 the concise prior failure and the `recover-failure` skill. Exhausted failures are
 recorded in `.ai/failures.jsonl` and stop the phase.
 
-### 15. Resolve post-build bugs or changes with a token
+### 16. Resolve post-build bugs or changes with a token
 
 Create exactly one scoped token at:
 
 ```text
 frontend/TKN001/TOKEN.md
+mobile/TKN001/TOKEN.md
 backend/TKN001/TOKEN.md
 ```
 
@@ -375,6 +396,8 @@ affected tests, validates observed changed paths, commits, pushes the token bran
 opens an unmerged PR targeting the exact recorded base branch. That base can have any
 valid name, including `main` or `dev`; the token resolver never pushes or merges it.
 GitHub CLI authentication and an existing remote base branch are required.
+The route selects the matching React/Next.js, Flutter, or backend behavior pack and
+enforces changes under `apps/frontend`, `apps/mobile`, or `apps/backend` respectively.
 
 ## Runtime state and evidence
 
@@ -405,8 +428,8 @@ failed artifact and resume after correcting the actual cause.
 ## Accuracy, speed, and token controls
 
 - Every agentic node has a required artifact contract and a phase evidence gate.
-- The scheduler runs phases sequentially to prevent frontend/backend contract drift.
-- Only one frontend and one backend behavior pack are selected.
+- The scheduler runs phases sequentially to prevent client/backend contract drift.
+- Only selected web, mobile, and backend behavior packs are loaded.
 - `build-context-bundle` creates an auditable manifest capped at 12 files and 60,000
   characters, prioritizing requirement anchors, contracts, affected code, and tests.
 - Context manifests store paths, hashes, priorities, and sizes instead of duplicating
@@ -426,7 +449,7 @@ requirements against current files, and preserves verified existing work:
 
 ```bash
 ./.agents/bin/ai adopt --project . --prd docs/PRD.md \
-  --frontend nextjs --backend fastapi --github-user dolan
+  --frontend nextjs --mobile flutter --backend fastapi --github-user dolan
 ./.agents/bin/ai reconcile --project .
 ./.agents/bin/ai plan --project . --remaining
 ./.agents/bin/ai start-build --project . --adapter codex
@@ -447,7 +470,7 @@ available at `./.agents/bin/ai`:
 
 # Initialize or adopt
 ./.agents/bin/ai init --project . --prd docs/PRD.md \
-  --frontend nextjs --backend django-drf --github-user dolan
+  --frontend nextjs --mobile flutter --backend django-drf --github-user dolan
 ./.agents/bin/ai adopt --project . --prd docs/PRD.md \
   --frontend react --backend fastapi --github-user dolan
 
@@ -461,8 +484,9 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai start-design --project . --adapter codex
 ./.agents/bin/ai start-generatehtml --project . --adapter codex
 ./.agents/bin/ai start-frontend --project . --adapter codex --frontend nextjs
+./.agents/bin/ai start-mobile --project . --adapter codex --mobile flutter
 ./.agents/bin/ai start-backend --project . --adapter codex \
-  --frontend nextjs --backend django-drf
+  --frontend nextjs --mobile flutter --backend django-drf
 ./.agents/bin/ai start-integration --project . --adapter codex
 ./.agents/bin/ai start-testing --project . --adapter codex
 ./.agents/bin/ai start-delivery --project . --adapter codex
@@ -478,16 +502,16 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai push --project . --execute
 ```
 
-The lower-level `one-shot` command is a dry run unless `--execute` is supplied and
-requires explicit frontend and backend values:
+The lower-level `one-shot` command is a dry run unless `--execute` is supplied. It
+requires at least one web/mobile client and one backend:
 
 ```bash
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
-  --frontend nextjs --backend django-drf --github-user dolan \
+  --mobile flutter --backend django-drf --github-user dolan \
   --branch-feature initial-build
 
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
-  --frontend nextjs --backend django-drf --github-user dolan \
+  --frontend nextjs --mobile flutter --backend django-drf --github-user dolan \
   --branch-feature initial-build --adapter codex --execute
 ```
 
@@ -496,7 +520,7 @@ not a normal recovery step.
 
 ## Linked repositories
 
-The workflow pins exact reviewed commits for five behavior repositories while each
+The workflow pins exact reviewed commits for six behavior repositories while each
 submodule records `branch = dev` for explicit update operations:
 
 ```text
@@ -512,12 +536,14 @@ submodule records `branch = dev` for explicit update operations:
 ├── base_ai/                 # shared agents and skills
 ├── drf_ai/                  # Django DRF behavior pack
 ├── fastapi_ai/              # FastAPI behavior pack
+├── flutter_ai/              # Flutter Android/iOS behavior pack
 ├── nextjs_ai/               # Next.js behavior pack
 └── react_ai/                # React behavior pack
 ```
 
 The linked repositories are `Dolan001/base_ai`, `Dolan001/drf_ai`,
-`Dolan001/fastapi_ai`, `Dolan001/nextjs_ai`, and `Dolan001/react_ai`.
+`Dolan001/fastapi_ai`, `Dolan001/flutter_ai`, `Dolan001/nextjs_ai`, and
+`Dolan001/react_ai`.
 
 To update the workflow in a target project, review the new `ai_workflow` commit and its
 nested pins, then update the `.agents` gitlink explicitly. Do not copy skills into a
@@ -526,8 +552,8 @@ second `.agents` directory.
 ## Pipeline contract
 
 ```text
-bootstrap → requirements/contracts → design/approved HTML → frontend
-          → backend → integration → testing → delivery
+bootstrap → requirements/contracts → design/approved HTML → optional web
+          → optional Flutter mobile → backend → integration → testing → delivery
 ```
 
 `config/pipeline.json` is the phase registry. Each phase resolves one manifest, one

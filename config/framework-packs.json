@@ -12,6 +12,11 @@
       "role": "backend",
       "target": "apps/backend"
     },
+    "flutter": {
+      "path": "flutter_ai",
+      "role": "mobile",
+      "target": "apps/mobile"
+    },
     "nextjs": {
       "path": "nextjs_ai",
       "role": "frontend",
