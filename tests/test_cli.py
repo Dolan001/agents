@@ -11,7 +11,7 @@ from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.model import PHASES, StateStore
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
-from ai_workflow.structure import validate_structure
+from ai_workflow.structure import validate_database_evidence, validate_structure
 from ai_workflow.tokens import parse_token
 
 
@@ -531,6 +531,8 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         manifest.write_text(json.dumps({"version": 1, "commands": commands}))
     if phase == "backend" and node == "implement-backend-slices":
         _create_pack_structure(project, prompt)
+    if phase == "backend" and node == "verify-backend":
+        _write_database_evidence(project, prompt)
     if phase == "integration" and node == "connect-feature-slices":
         client = project / "packages" / "api-client" / "index.ts"
         client.parent.mkdir(parents=True, exist_ok=True)
@@ -550,6 +552,59 @@ def _create_pack_structure(project: Path, prompt: str) -> None:
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"pilot {contract['framework']} artifact\n")
+    pattern = contract.get("domain_path_pattern")
+    if isinstance(pattern, str) and contract.get("minimum_domain_instances", 0) > 0:
+        domain = target / pattern.replace("<domain>", "sample")
+        domain_directories = set(contract.get("required_domain_directories", []))
+        for relative in contract.get("required_domain_paths", []):
+            path = domain / relative
+            if relative in domain_directories:
+                path.mkdir(parents=True, exist_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"pilot {contract['framework']} domain artifact\n")
+
+
+def _write_database_evidence(project: Path, prompt: str) -> None:
+    pack_text = re.search(r"Selected framework pack: (.+)", prompt).group(1)  # type: ignore[union-attr]
+    contract = json.loads((Path(pack_text) / "rules" / "project-structure.json").read_text())
+    check_names = (
+        "connection",
+        "migrate-empty",
+        "migration-head",
+        "migration-drift",
+        "migrate-second",
+        "schema",
+        "queries",
+    )
+    evidence = {
+        "version": 1,
+        "framework": contract["framework"],
+        "database": "postgresql",
+        "connection": {"passed": True, "server_version": "pilot", "readiness_passed": True},
+        "migrations": {
+            "passed": True,
+            "empty_database_upgrade": True,
+            "at_head": True,
+            "drift_free": True,
+            "second_upgrade_noop": True,
+        },
+        "schema": {
+            "passed": True,
+            "tables": ["sample"],
+            "constraints_checked": True,
+            "indexes_checked": True,
+        },
+        "queries": {"passed": True, "reviewed_hot_paths": 1, "query_budget_tests": True},
+        "checks": [
+            {"name": name, "argv": ["true"], "cwd": "apps/backend", "exit_code": 0}
+            for name in check_names
+        ],
+        "verified": True,
+    }
+    path = project / ".ai" / "evidence" / "database-verification.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(evidence))
 
 
 @pytest.mark.parametrize(
@@ -921,6 +976,40 @@ def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> No
     report = json.loads((tmp_path / ".ai" / "evidence" / "structure" / "frontend.json").read_text())
     assert report["valid"] is False
     assert "package.json" in report["missing_paths"]
+
+
+def test_backend_structure_requires_a_complete_domain(tmp_path: Path) -> None:
+    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    target = tmp_path / contract["target_root"]
+    directories = set(contract["required_directories"])
+    for relative in contract["required_paths"]:
+        path = target / relative
+        if relative in directories:
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("test artifact\n")
+    with pytest.raises(RuntimeError, match="requires at least 1 domain"):
+        validate_structure(tmp_path, pack, "backend")
+
+
+def test_database_evidence_requires_postgresql_and_complete_checks(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    prompt = f"Selected framework pack: {root / 'fastapi_ai'}"
+    _write_database_evidence(tmp_path, prompt)
+    schema = root / "schemas" / "database-verification.schema.json"
+    assert validate_database_evidence(tmp_path, schema, "fastapi")["verified"] is True
+
+    with pytest.raises(RuntimeError, match="does not match the selected backend"):
+        validate_database_evidence(tmp_path, schema, "django-drf")
+
+    evidence_path = tmp_path / ".ai" / "evidence" / "database-verification.json"
+    evidence = json.loads(evidence_path.read_text())
+    evidence["database"] = "sqlite"
+    evidence_path.write_text(json.dumps(evidence))
+    with pytest.raises(RuntimeError, match="database verification evidence is invalid"):
+        validate_database_evidence(tmp_path, schema, "fastapi")
 
 
 def test_rejects_a_fake_screenshot(tmp_path: Path) -> None:

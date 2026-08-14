@@ -132,3 +132,30 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
         verify_controls = _control_paths(root, phase, f"verify-{phase}", frameworks)
         assert pack / "rules" / "verification.md" in verify_controls
         assert pack / "hooks" / "pre-verify.md" in verify_controls
+
+
+def test_backend_packs_require_postgresql_domains_and_database_api_guidance() -> None:
+    root = Path(__file__).resolve().parents[1]
+    for pack_name in ("drf_ai", "fastapi_ai"):
+        pack = root / pack_name
+        structure = json.loads((pack / "rules" / "project-structure.json").read_text())
+        assert structure["minimum_domain_instances"] == 1
+        assert structure["required_domain_paths"]
+        assert structure["required_domain_directories"]
+        forbidden = " ".join(structure["forbidden_patterns"]).lower()
+        assert "sqlite" in forbidden
+        assert "migration" in forbidden or "create_all" in forbidden
+
+        references = list(pack.glob("skills/implement-*/references/database-api-architecture.md"))
+        assert len(references) == 1
+        guidance = references[0].read_text().lower()
+        for concern in (
+            "postgresql",
+            "migration",
+            "constraint",
+            "index",
+            "query",
+            "serializer" if pack_name == "drf_ai" else "schema",
+            "url" if pack_name == "drf_ai" else "router",
+        ):
+            assert concern in guidance, f"{pack_name} lacks {concern} guidance"

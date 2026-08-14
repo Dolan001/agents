@@ -20,6 +20,10 @@ The supported application combinations are:
 | Mobile | Flutter for Android and iOS | `apps/mobile` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
 
+Both backend choices use PostgreSQL. Generated tables and schema changes are owned by
+reviewed Django migrations or Alembic revisions; neither backend may fall back to SQLite
+or create production tables directly during application startup.
+
 Projects may be web only, mobile only, or web plus mobile; every mode includes one
 supported backend. The first selected client phase creates the monorepo root contract:
 
@@ -289,6 +293,12 @@ FastAPI guidance. It uses reconciled requirements and observed web/mobile data n
 The backend gate blocks progression when required behavior, evidence, or structure is
 missing. Its final phase decision belongs to the selected DRF or FastAPI independent
 verifier; API contract verification is repeated at the integration boundary.
+
+The gate also validates `.ai/evidence/database-verification.json`. A disposable
+PostgreSQL database must accept a complete migration from empty state, remain at the
+current migration head with no drift, produce a no-op second upgrade, expose expected
+tables/constraints/indexes, and satisfy measured plans or query budgets for affected
+hot paths.
 
 ### 12. Integrate selected clients and backend
 

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "framework", "database", "connection", "migrations", "schema", "queries", "checks", "verified"],
+  "properties": {
+    "version": {"const": 1},
+    "framework": {"enum": ["django-drf", "fastapi"]},
+    "database": {"const": "postgresql"},
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "server_version", "readiness_passed"],
+      "properties": {
+        "passed": {"const": true},
+        "server_version": {"type": "string", "minLength": 1},
+        "readiness_passed": {"const": true}
+      }
+    },
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "empty_database_upgrade", "at_head", "drift_free", "second_upgrade_noop"],
+      "properties": {
+        "passed": {"const": true},
+        "empty_database_upgrade": {"const": true},
+        "at_head": {"const": true},
+        "drift_free": {"const": true},
+        "second_upgrade_noop": {"const": true}
+      }
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "tables", "constraints_checked", "indexes_checked"],
+      "properties": {
+        "passed": {"const": true},
+        "tables": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "constraints_checked": {"const": true},
+        "indexes_checked": {"const": true}
+      }
+    },
+    "queries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "reviewed_hot_paths", "query_budget_tests"],
+      "properties": {
+        "passed": {"const": true},
+        "reviewed_hot_paths": {"type": "integer", "minimum": 1},
+        "query_budget_tests": {"const": true}
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "argv", "cwd", "exit_code"],
+        "properties": {
+          "name": {"enum": ["connection", "migrate-empty", "migration-head", "migration-drift", "migrate-second", "schema", "queries"]},
+          "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
+          "exit_code": {"const": 0}
+        }
+      },
+      "allOf": [
+        {"contains": {"properties": {"name": {"const": "connection"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "migrate-empty"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "migration-head"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "migration-drift"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "migrate-second"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "schema"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "queries"}}, "required": ["name"]}}
+      ]
+    },
+    "verified": {"const": true}
+  }
+}
