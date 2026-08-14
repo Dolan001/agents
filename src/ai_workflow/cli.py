@@ -588,7 +588,16 @@ def command_clean_state(args: argparse.Namespace) -> int:
 
 def command_resolve_token(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
-    print_json(resolve_token(project, args.token, args.adapter))
+    print_json(
+        resolve_token(
+            project,
+            args.token,
+            args.adapter,
+            approve=args.approve,
+            github_user=args.github_user,
+            remote=args.remote,
+        )
+    )
     return 0
 
 
@@ -726,6 +735,9 @@ def parser() -> argparse.ArgumentParser:
     add_project(token)
     token.add_argument("--token", required=True)
     token.add_argument("--adapter", choices=["codex"], default="codex")
+    token.add_argument("--approve", action="store_true")
+    token.add_argument("--github-user")
+    token.add_argument("--remote", default="origin")
     token.set_defaults(handler=command_resolve_token)
     return root
 

@@ -89,11 +89,30 @@ def test_rejects_invalid_token_route_and_image_number_gap(tmp_path: Path) -> Non
         parse_token(tmp_path, "backend/TKN002/TOKEN.md")
 
 
+def _initialize_token_repository(project: Path, area: str, branch: str) -> None:
+    remote = project.parent / f"{project.name}-remote.git"
+    remote.mkdir()
+    assert run_git(remote, "init", "--bare")[0] == 0
+    assert run_git(project, "init")[0] == 0
+    assert run_git(project, "switch", "-c", branch)[0] == 0
+    assert run_git(project, "config", "user.name", "Token Test")[0] == 0
+    assert run_git(project, "config", "user.email", "token@example.com")[0] == 0
+    (project / ".gitignore").write_text(".ai/\n")
+    application = project / "apps" / area
+    application.mkdir(parents=True)
+    (application / ".keep").write_text("base\n")
+    assert run_git(project, "add", ".gitignore", f"apps/{area}/.keep")[0] == 0
+    assert run_git(project, "commit", "-m", "chore: initialize token test")[0] == 0
+    assert run_git(project, "remote", "add", "origin", str(remote))[0] == 0
+    assert run_git(project, "push", "--set-upstream", "origin", branch)[0] == 0
+
+
 @pytest.mark.parametrize(
-    ("area", "framework", "changed_path"),
+    ("area", "framework", "changed_path", "base_branch"),
     [
-        ("frontend", "react", "apps/frontend/fix.tsx"),
-        ("backend", "fastapi", "apps/backend/fix.py"),
+        ("frontend", "react", "apps/frontend/fix.tsx", "dolan001"),
+        ("backend", "fastapi", "apps/backend/fix.py", "dolan002"),
+        ("frontend", "nextjs", "apps/frontend/fix.tsx", "main"),
     ],
 )
 def test_resolve_token_verifies_and_reuses_checkpoint(
@@ -102,6 +121,7 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
     area: str,
     framework: str,
     changed_path: str,
+    base_branch: str,
 ) -> None:
     StateStore(tmp_path).create(
         project_id="token-test",
@@ -112,18 +132,34 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         branch=None,
         assumptions=[],
     )
-    (tmp_path / "apps" / area).mkdir(parents=True)
+    _initialize_token_repository(tmp_path, area, base_branch)
     token_dir = tmp_path / area / "TKN001"
     token_dir.mkdir(parents=True)
     (token_dir / "TOKEN.md").write_text("# Scoped fix\n\n## Description\nResolve it.\n")
-    calls = 0
+    calls: list[str] = []
+    pull_request_arguments: list[str] = []
 
     def fake_token_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
-        nonlocal calls
         del adapter
-        calls += 1
+        if "Required plan:" in prompt:
+            calls.append("diagnosis")
+            plan_match = re.search(r"Required plan: (.+)", prompt)
+            assert plan_match
+            Path(plan_match.group(1)).write_text(
+                json.dumps(
+                    {
+                        "summary": "Resolve scoped token",
+                        "diagnosis": "The scoped implementation is incomplete.",
+                        "steps": ["Apply the scoped correction."],
+                        "files": [changed_path],
+                        "checks": ["Run the focused test."],
+                        "risks": [],
+                    }
+                )
+            )
+            return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+        calls.append("implementation")
         changed = project / changed_path
-        changed.parent.mkdir(parents=True, exist_ok=True)
         changed.write_text("resolved\n")
         evidence_match = re.search(r"Required evidence: (.+)", prompt)
         assert evidence_match
@@ -140,7 +176,15 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         )
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
 
+    def fake_gh(project: Path, *arguments: str) -> tuple[int, str]:
+        del project
+        if arguments[:2] == ("pr", "view"):
+            return 1, "not found"
+        pull_request_arguments.extend(arguments)
+        return 0, "https://github.com/example/project/pull/1"
+
     monkeypatch.setattr("ai_workflow.tokens._run_adapter", fake_token_agent)
+    monkeypatch.setattr("ai_workflow.tokens._run_gh", fake_gh)
     arguments = [
         "resolve-token",
         "--project",
@@ -149,12 +193,23 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         f"{area}/TKN001/TOKEN.md",
     ]
     assert main(arguments) == 0
+    waiting = json.loads((tmp_path / ".ai" / "token-runs" / "TKN001" / "state.json").read_text())
+    assert waiting["status"] == "awaiting_approval"
+    assert waiting["base_branch"] == base_branch
+    assert run_git(tmp_path, "branch", "--show-current")[1] == base_branch
+    assert main([*arguments, "--approve", "--github-user", "test-user"]) == 0
     assert main(arguments) == 0
-    assert calls == 1
+    assert calls == ["diagnosis", "implementation"]
     token_state = json.loads(
         (tmp_path / ".ai" / "token-runs" / "TKN001" / "state.json").read_text()
     )
-    assert token_state["status"] == "verified"
+    assert token_state["status"] == "pr_created"
+    assert token_state["base_branch"] == base_branch
+    assert token_state["source_branch"] == "ai/test-user/tkn001"
+    assert pull_request_arguments[pull_request_arguments.index("--base") + 1] == base_branch
+    assert (
+        pull_request_arguments[pull_request_arguments.index("--head") + 1] == "ai/test-user/tkn001"
+    )
 
 
 def test_resolve_token_blocks_changes_outside_area_scope(
@@ -169,13 +224,29 @@ def test_resolve_token_blocks_changes_outside_area_scope(
         branch=None,
         assumptions=[],
     )
-    (tmp_path / "apps" / "frontend").mkdir(parents=True)
+    _initialize_token_repository(tmp_path, "frontend", "dolan003")
     token_dir = tmp_path / "frontend" / "TKN003"
     token_dir.mkdir(parents=True)
     (token_dir / "TOKEN.md").write_text("# UI fix\n\n## Description\nResolve it.\n")
 
     def unsafe_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         del adapter
+        if "Required plan:" in prompt:
+            plan_match = re.search(r"Required plan: (.+)", prompt)
+            assert plan_match
+            Path(plan_match.group(1)).write_text(
+                json.dumps(
+                    {
+                        "summary": "Resolve UI token",
+                        "diagnosis": "The UI implementation is incomplete.",
+                        "steps": ["Correct the frontend."],
+                        "files": ["apps/frontend/fix.tsx"],
+                        "checks": ["Run frontend tests."],
+                        "risks": [],
+                    }
+                )
+            )
+            return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
         changed = project / "apps" / "backend" / "unsafe.py"
         changed.parent.mkdir(parents=True, exist_ok=True)
         changed.write_text("unsafe\n")
@@ -195,35 +266,25 @@ def test_resolve_token_blocks_changes_outside_area_scope(
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
 
     monkeypatch.setattr("ai_workflow.tokens._run_adapter", unsafe_agent)
-    assert (
-        main(
-            [
-                "resolve-token",
-                "--project",
-                str(tmp_path),
-                "--token",
-                "frontend/TKN003/TOKEN.md",
-            ]
-        )
-        == 1
+    monkeypatch.setattr(
+        "ai_workflow.tokens._run_gh",
+        lambda project, *arguments: (0, "https://github.com/example/project/pull/3"),
     )
+    diagnose = [
+        "resolve-token",
+        "--project",
+        str(tmp_path),
+        "--token",
+        "frontend/TKN003/TOKEN.md",
+    ]
+    assert main(diagnose) == 0
+    assert main([*diagnose, "--approve", "--github-user", "test-user"]) == 1
     token_state = json.loads(
         (tmp_path / ".ai" / "token-runs" / "TKN003" / "state.json").read_text()
     )
     assert token_state["status"] == "blocked"
     assert token_state["attempts"] == 3
-    assert (
-        main(
-            [
-                "resolve-token",
-                "--project",
-                str(tmp_path),
-                "--token",
-                "frontend/TKN003/TOKEN.md",
-            ]
-        )
-        == 1
-    )
+    assert main([*diagnose, "--approve", "--github-user", "test-user"]) == 1
     resumed_state = json.loads(
         (tmp_path / ".ai" / "token-runs" / "TKN003" / "state.json").read_text()
     )

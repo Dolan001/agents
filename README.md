@@ -86,6 +86,14 @@ as consecutive `current1.png`, `current2.png`, ... and `expected1.png`,
 `expected2.png`, ... files; PNG, JPEG, and WebP are accepted. The route selects the
 application area, and verified state is preserved under `.ai/token-runs/<TOKEN_ID>/`.
 
+The first invocation diagnoses and returns a plan without editing application files.
+After explicit approval, rerun with `--approve`. The resolver records the exact current
+branch as the PR base, creates `ai/<github-user>/<token-id>` from its unchanged remote
+commit, implements and verifies the plan, commits and pushes only the token paths, and
+opens a PR back to the recorded branch. The base may have any valid branch name,
+including `main` or `dev`; it is never pushed or merged by the resolver. GitHub CLI
+authentication and an existing remote base branch are required.
+
 ## Linked repositories
 
 `base_ai` and every framework behavior repository are root-level, pinned Git

@@ -56,5 +56,8 @@ $resolve-token frontend/TKN001/TOKEN.md
 ```
 
 The resolver validates the route and images, loads only the selected area and
-framework behavior, diagnoses, implements, verifies, and saves resumable evidence. It
-does not commit or push.
+framework behavior, diagnoses, and returns a plan without code changes. After the user
+approves, the same command with `--approve` creates a token branch, implements,
+verifies, commits, pushes, and opens a PR. The branch checked out during diagnosis is
+always the PR base, regardless of its name; the resolver never pushes or merges that
+base branch.
