@@ -21,6 +21,7 @@ from .model import PHASES, StateStore, utc_now
 from .pipeline import ready_phases, validate_control_plane
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
+from .tokens import resolve_token
 
 Command = Callable[[argparse.Namespace], int]
 
@@ -411,9 +412,7 @@ def command_start(args: argparse.Namespace) -> int:
             if state["frameworks"][phase] == "unknown":
                 raise RuntimeError(f"--{phase} is required before starting the {phase} phase")
         stop_after = (
-            "create-design-specification"
-            if target == "design-spec" and phase == "design"
-            else None
+            "create-design-specification" if target == "design-spec" and phase == "design" else None
         )
         results.append(
             execute_phase(
@@ -587,6 +586,12 @@ def command_clean_state(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_resolve_token(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(resolve_token(project, args.token, args.adapter))
+    return 0
+
+
 def add_project(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".", help="Project root (default: current directory)")
 
@@ -717,6 +722,11 @@ def parser() -> argparse.ArgumentParser:
     add_project(clean)
     clean.add_argument("--yes", action="store_true")
     clean.set_defaults(handler=command_clean_state)
+    token = commands.add_parser("resolve-token")
+    add_project(token)
+    token.add_argument("--token", required=True)
+    token.add_argument("--adapter", choices=["codex"], default="codex")
+    token.set_defaults(handler=command_resolve_token)
     return root
 
 

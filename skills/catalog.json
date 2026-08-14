@@ -11,6 +11,7 @@
     {"name": "start-testing", "path": "skills/start-testing/SKILL.md"},
     {"name": "start-delivery", "path": "skills/start-delivery/SKILL.md"},
     {"name": "resume-build", "path": "skills/resume-build/SKILL.md"},
-    {"name": "workflow-status", "path": "skills/workflow-status/SKILL.md"}
+    {"name": "workflow-status", "path": "skills/workflow-status/SKILL.md"},
+    {"name": "resolve-token", "path": "skills/resolve-token/SKILL.md"}
   ]
 }

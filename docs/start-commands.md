@@ -46,3 +46,15 @@ $resume-build
 
 No start command pushes by default. Add `--commit-verified` or `--push` only when that
 Git mutation is explicitly intended; protected branches remain rejected.
+
+For a scoped post-build bug or change, create `frontend/TKN001/TOKEN.md` or
+`backend/TKN001/TOKEN.md`, optionally add consecutive sibling `currentN` and
+`expectedN` PNG/JPEG/WebP images, and invoke:
+
+```text
+$resolve-token frontend/TKN001/TOKEN.md
+```
+
+The resolver validates the route and images, loads only the selected area and
+framework behavior, diagnoses, implements, verifies, and saves resumable evidence. It
+does not commit or push.

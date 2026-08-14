@@ -77,6 +77,15 @@ and HTML commands intentionally do not create the application monorepo. See
 is a dry run unless `--execute` is supplied, rejects dirty worktrees, and rejects every
 protected or malformed branch.
 
+## Resolve a scoped work token
+
+After a build, place a token at `frontend/TKN001/TOKEN.md` or
+`backend/TKN001/TOKEN.md` and invoke `$resolve-token <token-path>`. A token requires a
+level-one title and `## Description`. Optional sibling visual evidence is discovered
+as consecutive `current1.png`, `current2.png`, ... and `expected1.png`,
+`expected2.png`, ... files; PNG, JPEG, and WebP are accepted. The route selects the
+application area, and verified state is preserved under `.ai/token-runs/<TOKEN_ID>/`.
+
 ## Linked repositories
 
 `base_ai` and every framework behavior repository are root-level, pinned Git

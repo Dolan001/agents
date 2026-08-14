@@ -9,9 +9,10 @@ from ai_workflow.design import classify_design_inputs
 from ai_workflow.discovery import detect
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
-from ai_workflow.model import PHASES
+from ai_workflow.model import PHASES, StateStore
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
 from ai_workflow.structure import validate_structure
+from ai_workflow.tokens import parse_token
 
 
 def test_detects_frameworks() -> None:
@@ -51,6 +52,182 @@ def test_plain_frontend_description_is_not_treated_as_framework_declaration(
     prd = tmp_path / "PRD.md"
     prd.write_text("# Product\n\nFrontend: responsive customer dashboard\n")
     assert resolve_frameworks(prd) == {"frontend": "unknown", "backend": "unknown"}
+
+
+def _write_token_image(path: Path) -> None:
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"token-image")
+
+
+def test_parses_canonical_token_route_with_multiple_ordered_images(tmp_path: Path) -> None:
+    token_dir = tmp_path / "frontend" / "TKN001"
+    token_dir.mkdir(parents=True)
+    (token_dir / "TOKEN.md").write_text("# Login layout\n\n## Description\nFix the layout.\n")
+    for name in ("current2.png", "expected2.png", "current1.png", "expected1.png"):
+        _write_token_image(token_dir / name)
+
+    token = parse_token(tmp_path, "frontend/TKN001/TOKEN.md")
+
+    assert token["area"] == "frontend"
+    assert token["images"] == {
+        "current": ["frontend/TKN001/current1.png", "frontend/TKN001/current2.png"],
+        "expected": ["frontend/TKN001/expected1.png", "frontend/TKN001/expected2.png"],
+    }
+
+
+def test_rejects_invalid_token_route_and_image_number_gap(tmp_path: Path) -> None:
+    wrong = tmp_path / "tokens" / "TKN001"
+    wrong.mkdir(parents=True)
+    (wrong / "TOKEN.md").write_text("# Bug\n\n## Description\nFix it.\n")
+    with pytest.raises(RuntimeError, match="token path must be frontend"):
+        parse_token(tmp_path, "tokens/TKN001/TOKEN.md")
+
+    token_dir = tmp_path / "backend" / "TKN002"
+    token_dir.mkdir(parents=True)
+    (token_dir / "TOKEN.md").write_text("# API bug\n\n## Description\nFix it.\n")
+    _write_token_image(token_dir / "current2.png")
+    with pytest.raises(RuntimeError, match="consecutively numbered from 1"):
+        parse_token(tmp_path, "backend/TKN002/TOKEN.md")
+
+
+@pytest.mark.parametrize(
+    ("area", "framework", "changed_path"),
+    [
+        ("frontend", "react", "apps/frontend/fix.tsx"),
+        ("backend", "fastapi", "apps/backend/fix.py"),
+    ],
+)
+def test_resolve_token_verifies_and_reuses_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    area: str,
+    framework: str,
+    changed_path: str,
+) -> None:
+    StateStore(tmp_path).create(
+        project_id="token-test",
+        mode="new",
+        frontend=framework if area == "frontend" else "react",
+        backend=framework if area == "backend" else "fastapi",
+        baseline=None,
+        branch=None,
+        assumptions=[],
+    )
+    (tmp_path / "apps" / area).mkdir(parents=True)
+    token_dir = tmp_path / area / "TKN001"
+    token_dir.mkdir(parents=True)
+    (token_dir / "TOKEN.md").write_text("# Scoped fix\n\n## Description\nResolve it.\n")
+    calls = 0
+
+    def fake_token_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal calls
+        del adapter
+        calls += 1
+        changed = project / changed_path
+        changed.parent.mkdir(parents=True, exist_ok=True)
+        changed.write_text("resolved\n")
+        evidence_match = re.search(r"Required evidence: (.+)", prompt)
+        assert evidence_match
+        Path(evidence_match.group(1)).write_text(
+            json.dumps(
+                {
+                    "verified": True,
+                    "summary": "Resolved scoped token",
+                    "changed_paths": [changed_path],
+                    "checks": [{"name": "focused", "passed": True}],
+                    "scope_expansions": [],
+                }
+            )
+        )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.tokens._run_adapter", fake_token_agent)
+    arguments = [
+        "resolve-token",
+        "--project",
+        str(tmp_path),
+        "--token",
+        f"{area}/TKN001/TOKEN.md",
+    ]
+    assert main(arguments) == 0
+    assert main(arguments) == 0
+    assert calls == 1
+    token_state = json.loads(
+        (tmp_path / ".ai" / "token-runs" / "TKN001" / "state.json").read_text()
+    )
+    assert token_state["status"] == "verified"
+
+
+def test_resolve_token_blocks_changes_outside_area_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    StateStore(tmp_path).create(
+        project_id="token-test",
+        mode="new",
+        frontend="react",
+        backend="fastapi",
+        baseline=None,
+        branch=None,
+        assumptions=[],
+    )
+    (tmp_path / "apps" / "frontend").mkdir(parents=True)
+    token_dir = tmp_path / "frontend" / "TKN003"
+    token_dir.mkdir(parents=True)
+    (token_dir / "TOKEN.md").write_text("# UI fix\n\n## Description\nResolve it.\n")
+
+    def unsafe_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter
+        changed = project / "apps" / "backend" / "unsafe.py"
+        changed.parent.mkdir(parents=True, exist_ok=True)
+        changed.write_text("unsafe\n")
+        evidence_match = re.search(r"Required evidence: (.+)", prompt)
+        assert evidence_match
+        Path(evidence_match.group(1)).write_text(
+            json.dumps(
+                {
+                    "verified": True,
+                    "summary": "unsafe",
+                    "changed_paths": ["apps/backend/unsafe.py"],
+                    "checks": [{"name": "focused", "passed": True}],
+                    "scope_expansions": [],
+                }
+            )
+        )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.tokens._run_adapter", unsafe_agent)
+    assert (
+        main(
+            [
+                "resolve-token",
+                "--project",
+                str(tmp_path),
+                "--token",
+                "frontend/TKN003/TOKEN.md",
+            ]
+        )
+        == 1
+    )
+    token_state = json.loads(
+        (tmp_path / ".ai" / "token-runs" / "TKN003" / "state.json").read_text()
+    )
+    assert token_state["status"] == "blocked"
+    assert token_state["attempts"] == 3
+    assert (
+        main(
+            [
+                "resolve-token",
+                "--project",
+                str(tmp_path),
+                "--token",
+                "frontend/TKN003/TOKEN.md",
+            ]
+        )
+        == 1
+    )
+    resumed_state = json.loads(
+        (tmp_path / ".ai" / "token-runs" / "TKN003" / "state.json").read_text()
+    )
+    assert resumed_state["unverified_changed_paths"] == ["apps/backend/unsafe.py"]
 
 
 def test_init_inspect_reconcile_plan(tmp_path: Path, capsys: object) -> None:
@@ -339,8 +516,13 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
     monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
 
     arguments = [
-        "start-design", "--project", str(tmp_path), "--github-user", "test-user",
-        "--adapter", "codex",
+        "start-design",
+        "--project",
+        str(tmp_path),
+        "--github-user",
+        "test-user",
+        "--adapter",
+        "codex",
     ]
     assert main(arguments) == 0
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
