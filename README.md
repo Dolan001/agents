@@ -94,6 +94,12 @@ opens a PR back to the recorded branch. The base may have any valid branch name,
 including `main` or `dev`; it is never pushed or merged by the resolver. GitHub CLI
 authentication and an existing remote base branch are required.
 
+Diagnosis and implementation each receive a generated bounded context manifest under
+`.ai/context-bundles/`. It prioritizes the token, approved plan, requirements,
+contracts, selected application area, and affected tests while enforcing the global
+12-file/60k-character budget. The failure-recovery skill is omitted from successful
+first attempts and added only to a retry together with concise prior-failure evidence.
+
 ## Linked repositories
 
 `base_ai` and every framework behavior repository are root-level, pinned Git
@@ -144,8 +150,10 @@ phase; no behavior repository contains application boilerplate.
   verified-node caching. Frontend precedes backend so approved user experience and
   observed data needs inform the backend contract without concurrent drift.
 - Token use: Markdown progressive disclosure, exactly one frontend/backend pack,
-  cached project summaries, 12-file/60k-character task bundles, and concise failure
-  excerpts.
+  cached project summaries, generated 12-file/60k-character task manifests, exact-range
+  reads, and concise failure excerpts. `build-context-bundle` is the lightweight entry
+  skill for every agentic task; `recover-failure` is loaded only after a real failure,
+  never on the normal success path.
 
 After independent feature and security verification, `--commit-verified` stages only
 paths declared in that feature's evidence. `--push` also pushes each commit to the

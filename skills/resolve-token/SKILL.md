@@ -28,3 +28,7 @@ JPEG or WebP). It records the current branch as the PR base, creates a separate
 `ai/<github-user>/<token-id>` branch only after approval, verifies, commits, pushes,
 and opens a PR back to the recorded base branch. Never merge. Report the plan or final
 token status, evidence, branches, commit, PR URL, and exact recovery command.
+
+The resolver generates a bounded context manifest for each diagnosis and
+implementation stage. It loads failure-recovery guidance only after an unsuccessful
+attempt, keeping the normal path small while preserving evidence-led retries.

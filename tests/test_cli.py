@@ -141,6 +141,16 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
 
     def fake_token_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         del adapter
+        assert "build-context-bundle/SKILL.md" in prompt
+        assert "recover-failure/SKILL.md" not in prompt
+        bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
+        assert bundle_match
+        bundle = json.loads(Path(bundle_match.group(1)).read_text())
+        assert len(bundle["selected_files"]) <= 12
+        assert bundle["selected_characters"] <= 60000
+        selected = {item["path"] for item in bundle["selected_files"]}
+        assert f"{area}/TKN001/TOKEN.md" in selected
+        assert bundle["prior_failure"] is None
         if "Required plan:" in prompt:
             calls.append("diagnosis")
             plan_match = re.search(r"Required plan: (.+)", prompt)
@@ -159,6 +169,7 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
             )
             return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
         calls.append("implementation")
+        assert ".ai/token-runs/TKN001/plan.json" in selected
         changed = project / changed_path
         changed.write_text("resolved\n")
         evidence_match = re.search(r"Required evidence: (.+)", prompt)
@@ -228,10 +239,20 @@ def test_resolve_token_blocks_changes_outside_area_scope(
     token_dir = tmp_path / "frontend" / "TKN003"
     token_dir.mkdir(parents=True)
     (token_dir / "TOKEN.md").write_text("# UI fix\n\n## Description\nResolve it.\n")
+    implementation_attempts = 0
 
     def unsafe_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal implementation_attempts
         del adapter
+        assert "build-context-bundle/SKILL.md" in prompt
+        bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
+        assert bundle_match
+        bundle = json.loads(Path(bundle_match.group(1)).read_text())
+        assert len(bundle["selected_files"]) <= 12
+        assert bundle["selected_characters"] <= 60000
         if "Required plan:" in prompt:
+            assert "recover-failure/SKILL.md" not in prompt
+            assert bundle["prior_failure"] is None
             plan_match = re.search(r"Required plan: (.+)", prompt)
             assert plan_match
             Path(plan_match.group(1)).write_text(
@@ -247,6 +268,13 @@ def test_resolve_token_blocks_changes_outside_area_scope(
                 )
             )
             return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+        implementation_attempts += 1
+        if implementation_attempts == 1:
+            assert "recover-failure/SKILL.md" not in prompt
+            assert bundle["prior_failure"] is None
+        else:
+            assert "recover-failure/SKILL.md" in prompt
+            assert "outside frontend scope" in bundle["prior_failure"]
         changed = project / "apps" / "backend" / "unsafe.py"
         changed.parent.mkdir(parents=True, exist_ok=True)
         changed.write_text("unsafe\n")
@@ -620,10 +648,20 @@ def test_agent_node_retries_with_failure_context(
     def flaky_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         nonlocal attempts
         attempts += 1
+        assert "build-context-bundle/SKILL.md" in prompt
+        bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
+        assert bundle_match
+        bundle = json.loads(Path(bundle_match.group(1)).read_text())
+        assert len(bundle["selected_files"]) <= 12
+        assert bundle["selected_characters"] <= 60000
         if attempts == 1:
+            assert "recover-failure/SKILL.md" not in prompt
+            assert bundle["prior_failure"] is None
             return {"returncode": 1, "stdout_tail": "", "stderr_tail": "temporary failure"}
         if attempts == 2:
             assert "Retry context from the prior failed attempt" in prompt
+            assert "recover-failure/SKILL.md" in prompt
+            assert "temporary failure" in bundle["prior_failure"]
         return _fake_agent(project, adapter, prompt)
 
     monkeypatch.setattr("ai_workflow.execution._run_adapter", flaky_agent)
