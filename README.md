@@ -256,6 +256,11 @@ The generated `apps/frontend` structure must match the selected behavior pack's 
 project-structure contract before the frontend gate passes. If web is not selected,
 the phase is checkpointed as skipped without invoking an agent.
 
+Each framework node receives only its role-specific skill and the relevant selected
+pack rules and hooks. React/Next.js implementation and verification are therefore
+performed by the selected pack's implementer and independent verifier, not generic
+framework-neutral substitutes.
+
 ### 10. Build the optional Flutter mobile application
 
 When selected, the mobile phase loads only `flutter_ai`, establishes any missing
@@ -282,7 +287,8 @@ FastAPI guidance. It uses reconciled requirements and observed web/mobile data n
 - validate the generated `apps/backend` structure against its framework contract.
 
 The backend gate blocks progression when required behavior, evidence, or structure is
-missing.
+missing. Its final phase decision belongs to the selected DRF or FastAPI independent
+verifier; API contract verification is repeated at the integration boundary.
 
 ### 12. Integrate selected clients and backend
 

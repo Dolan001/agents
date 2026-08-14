@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "prerequisites": ["mobile"],
-  "agents": ["api-contract-manager", "selected-backend-agent", "backend-test-agent"],
+  "agents": ["selected-backend-agent", "selected-backend-verifier"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],
   "inputs": ["docs/generated/requirements.json", "apps/frontend/**", "apps/mobile/**"],
   "outputs": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/features/**"],

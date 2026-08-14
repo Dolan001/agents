@@ -106,16 +106,27 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     for pack in selected.values():
         if pack:
             candidates.extend((root / pack / "agents").glob("*.md"))
-    exact = [candidate for candidate in candidates if candidate.name == f"{name}.md"]
+    exact = [
+        candidate
+        for candidate in candidates
+        if candidate.name == f"{name}.md" and candidate.is_file()
+    ]
     if exact:
         return exact[0]
     if name.startswith("selected-"):
         side = "backend" if "backend" in name else "mobile" if "mobile" in name else "frontend"
+        role = (
+            "independent-verifier"
+            if name.endswith("-verifier")
+            else "solution-architect"
+            if name.endswith("-architect")
+            else "implementer"
+        )
         pack = selected[side]
         if pack:
-            implementers = sorted((root / pack / "agents").glob("*-implementer.md"))
-            if implementers:
-                return implementers[0]
+            matches = sorted((root / pack / "agents").glob(f"*-{role}.md"))
+            if matches:
+                return matches[0]
     raise RuntimeError(f"agent instruction not found: {name}")
 
 
@@ -135,15 +146,22 @@ def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path |
 
 
 def _skill_paths(
-    root: Path, phase: str, frameworks: dict[str, str], retrying: bool = False
+    root: Path,
+    phase: str,
+    node: str,
+    frameworks: dict[str, str],
+    retrying: bool = False,
 ) -> list[Path]:
+    framework_task_skill = (
+        "verify-feature" if node.startswith("verify-") else "execute-task-contract"
+    )
     base_names = {
         "bootstrap": ["inspect-project"],
         "requirements": ["reconcile-requirements", "plan-vertical-slices"],
         "design": ["prepare-design-baseline"],
-        "frontend": ["execute-task-contract"],
-        "mobile": ["execute-task-contract"],
-        "backend": ["execute-task-contract"],
+        "frontend": [framework_task_skill],
+        "mobile": [framework_task_skill],
+        "backend": [framework_task_skill],
         "integration": ["execute-task-contract"],
         "testing": ["verify-feature"],
         "delivery": ["deliver-safe-git"],
@@ -154,14 +172,36 @@ def _skill_paths(
     paths = [root / "base_ai" / "skills" / name / "SKILL.md" for name in names]
     pack = _selected_pack(root, phase, frameworks)
     if pack is not None:
-        paths.extend(sorted(pack.glob("skills/*/SKILL.md")))
+        available = sorted(pack.glob("skills/*/SKILL.md"))
+        if node == "scaffold-target-monorepo":
+            selected_skills = [path for path in available if path.parent.name.startswith("create-")]
+        elif node.startswith("implement-"):
+            selected_skills = [
+                path for path in available if path.parent.name.startswith("implement-")
+            ]
+            if phase == "backend":
+                selected_skills = [
+                    *[path for path in available if path.parent.name.startswith("create-")],
+                    *selected_skills,
+                ]
+        elif node.startswith("verify-"):
+            selected_skills = [path for path in available if path.parent.name.startswith("verify-")]
+        else:
+            selected_skills = [
+                path for path in available if path.parent.name.startswith("inspect-")
+            ]
+        if not selected_skills:
+            raise RuntimeError(f"no framework skill is routed for {phase}/{node}")
+        paths.extend(selected_skills)
     missing = [path for path in paths if not path.is_file()]
     if missing:
         raise RuntimeError(f"resolved skill instructions are missing: {missing}")
     return paths
 
 
-def _control_paths(root: Path, phase: str) -> list[Path]:
+def _control_paths(
+    root: Path, phase: str, node: str, frameworks: dict[str, str]
+) -> list[Path]:
     lifecycle = read_json(root / "hooks" / "lifecycle.json")
     raw_instructions = lifecycle.get("instructions") if isinstance(lifecycle, dict) else None
     if not isinstance(raw_instructions, dict) or not all(
@@ -181,6 +221,25 @@ def _control_paths(root: Path, phase: str) -> list[Path]:
             root / "pipeline" / "loop" / "policy.md",
         ]
     )
+    pack = _selected_pack(root, phase, frameworks)
+    if pack is not None:
+        pack_lifecycle = read_json(pack / "hooks" / "lifecycle.json")
+        pack_instructions = (
+            pack_lifecycle.get("instructions") if isinstance(pack_lifecycle, dict) else None
+        )
+        if not isinstance(pack_instructions, dict):
+            raise RuntimeError("selected framework hook instructions are invalid")
+        verifying = node.startswith("verify-")
+        pack_events = (
+            ["pre_task", "pre_verify", "pre_commit"]
+            if verifying
+            else ["pre_task", "pre_write", "post_write"]
+        )
+        paths.extend(pack / pack_instructions[event] for event in pack_events)
+        pack_rules = ["architecture.md", "project-structure.md"]
+        pack_rules.append("verification.md" if verifying else "generation.md")
+        paths.extend(pack / "rules" / name for name in pack_rules)
+        paths.append(pack / "hooks" / "lifecycle.json")
     if any(not path.is_file() for path in paths):
         raise RuntimeError("workflow control instruction is missing")
     return paths
@@ -319,7 +378,13 @@ def _prompt(
     pack_line = str(pack) if pack else "Use base_ai only for this phase."
     skills = "\n".join(
         f"- {path}"
-        for path in _skill_paths(root, phase, state["frameworks"], retrying=bool(retry_context))
+        for path in _skill_paths(
+            root,
+            phase,
+            node["id"],
+            state["frameworks"],
+            retrying=bool(retry_context),
+        )
     )
     context_bundle = _build_context_bundle(
         project,
@@ -330,7 +395,9 @@ def _prompt(
         feature,
         retry_context,
     )
-    controls = "\n".join(f"- {path}" for path in _control_paths(root, phase))
+    controls = "\n".join(
+        f"- {path}" for path in _control_paths(root, phase, node["id"], state["frameworks"])
+    )
     retry = (
         f"\nRetry context from the prior failed attempt:\n{retry_context}\n"
         if retry_context

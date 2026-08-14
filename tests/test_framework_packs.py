@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from ai_workflow.execution import _agent_path, _control_paths, _skill_paths
+
 PACK_NAMES = ("django-drf", "fastapi", "flutter", "nextjs", "react")
 REQUIRED_DIRECTORIES = {"agents", "skills", "commands", "hooks", "rules"}
 ALLOWED_TOP_LEVEL = REQUIRED_DIRECTORIES | {"AGENTS.md", "README.md", ".git", ".gitignore"}
@@ -57,3 +59,76 @@ def test_framework_packs_are_code_free_behavior_only() -> None:
         assert "validate_generated_structure" in lifecycle["hooks"]["post_write"]
         for instruction in lifecycle["instructions"].values():
             assert (pack / instruction).is_file()
+
+
+def test_framework_packs_have_production_roles_and_progressive_references() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = json.loads((root / "config" / "framework-packs.json").read_text())
+
+    for name, specification in config["packs"].items():
+        pack = root / specification["path"]
+        agents = json.loads((pack / "agents" / "catalog.json").read_text())["agents"]
+        agent_names = {agent["agent"] for agent in agents}
+        assert len(agents) == 3, name
+        assert any(agent.endswith("-solution-architect") for agent in agent_names), name
+        assert any(agent.endswith("-implementer") for agent in agent_names), name
+        assert any(agent.endswith("-independent-verifier") for agent in agent_names), name
+
+        references = list(pack.glob("skills/implement-*/references/production-delivery.md"))
+        assert len(references) == 1, name
+        reference = references[0].read_text().lower()
+        for concern in ("security", "verification", "error", "test"):
+            assert concern in reference, f"{name} lacks {concern} production guidance"
+
+
+def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents() -> None:
+    root = Path(__file__).resolve().parents[1]
+    cases = (
+        ("frontend", "react", "react_ai"),
+        ("frontend", "nextjs", "nextjs_ai"),
+        ("mobile", "flutter", "flutter_ai"),
+        ("backend", "django-drf", "drf_ai"),
+        ("backend", "fastapi", "fastapi_ai"),
+    )
+    for phase, framework, pack_name in cases:
+        frameworks = {"frontend": "unknown", "mobile": "unknown", "backend": "unknown"}
+        frameworks[phase] = framework
+        pack = root / pack_name
+
+        implementer = _agent_path(root, f"selected-{phase}-agent", frameworks)
+        verifier = _agent_path(root, f"selected-{phase}-verifier", frameworks)
+        assert implementer.parent == pack / "agents"
+        assert implementer.name.endswith("-implementer.md")
+        assert verifier.parent == pack / "agents"
+        assert verifier.name.endswith("-independent-verifier.md")
+
+        implement_node = f"implement-{phase}-slices"
+        framework_skills = [
+            path
+            for path in _skill_paths(root, phase, implement_node, frameworks)
+            if pack in path.parents
+        ]
+        expected = 2 if phase == "backend" else 1
+        assert len(framework_skills) == expected
+        assert any(path.parent.name.startswith("implement-") for path in framework_skills)
+        if phase == "backend":
+            assert any(path.parent.name.startswith("create-") for path in framework_skills)
+
+        verify_skills = [
+            path
+            for path in _skill_paths(root, phase, f"verify-{phase}", frameworks)
+            if pack in path.parents
+        ]
+        assert len(verify_skills) == 1
+        assert verify_skills[0].parent.name.startswith("verify-")
+        all_verify_skills = _skill_paths(root, phase, f"verify-{phase}", frameworks)
+        assert any(path.parent.name == "verify-feature" for path in all_verify_skills)
+        assert not any(path.parent.name == "execute-task-contract" for path in all_verify_skills)
+
+        implement_controls = _control_paths(root, phase, implement_node, frameworks)
+        assert pack / "rules" / "architecture.md" in implement_controls
+        assert pack / "rules" / "generation.md" in implement_controls
+        assert pack / "hooks" / "pre-write.md" in implement_controls
+        verify_controls = _control_paths(root, phase, f"verify-{phase}", frameworks)
+        assert pack / "rules" / "verification.md" in verify_controls
+        assert pack / "hooks" / "pre-verify.md" in verify_controls

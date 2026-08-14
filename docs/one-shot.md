@@ -15,7 +15,8 @@ The workflow uses:
 command
   → phase manifest
   → blueprint nodes
-  → scoped stable agents and only selected web/mobile/backend skills
+  → selected framework implementer or independent verifier
+  → only that node's create, implement, or verify skill plus relevant rules and hooks
   → evidence gate
   → durable checkpoint
 ```
