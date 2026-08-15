@@ -4,7 +4,7 @@
   "agents": ["selected-backend-agent", "selected-backend-verifier"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],
   "inputs": ["docs/generated/requirements.json", "apps/frontend/**", "apps/mobile/**"],
-  "outputs": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/database-verification.json", ".ai/evidence/features/**"],
+  "outputs": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/database-verification.json", ".ai/evidence/backend-verification.json", ".ai/evidence/features/**"],
   "scope": {"allowed_paths": ["apps/backend/**", "docs/api/**", ".ai/evidence/**"]},
   "gate": "gates/contracts/backend.json"
 }

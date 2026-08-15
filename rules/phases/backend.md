@@ -8,3 +8,6 @@ before the backend gate can pass. PostgreSQL is mandatory for both backend frame
 Require schema creation exclusively through migrations and validate connection,
 empty-database upgrade, migration head/drift/idempotence, tables, constraints, indexes,
 hot-query plans, and query budgets in `.ai/evidence/database-verification.json`.
+Validate dependency-lock alternatives, activated domain capability groups, and executable source
+policies. Require `.ai/evidence/backend-verification.json` with exact successful import, startup,
+readiness, API, authorization, transaction/concurrency, OpenAPI, and security commands.

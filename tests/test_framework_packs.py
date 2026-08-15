@@ -54,6 +54,19 @@ def test_framework_packs_are_code_free_behavior_only() -> None:
         assert structure["required_paths"]
         assert "required_directories" in structure
         assert set(structure.get("required_directories", [])) <= set(structure["required_paths"])
+        for path_set in structure.get("required_path_sets", []):
+            assert path_set["name"]
+            assert path_set["alternatives"]
+        for group in structure.get("conditional_domain_groups", []):
+            assert group["name"]
+            assert group["trigger_paths"]
+            assert group["required_paths"]
+            assert set(group.get("required_directories", [])) <= set(group["required_paths"])
+        if name in {"django-drf", "fastapi"}:
+            assert structure.get("source_rules")
+            for rule in structure["source_rules"]:
+                assert rule["id"] and rule["globs"] and rule["pattern"] and rule["message"]
+                assert isinstance(rule.get("scan_strings", False), bool)
         assert (pack / "rules" / "project-structure.md").is_file()
         lifecycle = json.loads((pack / "hooks" / "lifecycle.json").read_text())
         assert "validate_generated_structure" in lifecycle["hooks"]["post_write"]
@@ -142,9 +155,12 @@ def test_backend_packs_require_postgresql_domains_and_database_api_guidance() ->
         assert structure["minimum_domain_instances"] == 1
         assert structure["required_domain_paths"]
         assert structure["required_domain_directories"]
-        forbidden = " ".join(structure["forbidden_patterns"]).lower()
-        assert "sqlite" in forbidden
-        assert "migration" in forbidden or "create_all" in forbidden
+        source_rules = " ".join(
+            f"{rule['id']} {rule['pattern']} {rule['message']}"
+            for rule in structure["source_rules"]
+        ).lower()
+        assert "sqlite" in source_rules
+        assert "migration" in source_rules or "create_all" in source_rules
 
         references = list(pack.glob("skills/implement-*/references/database-api-architecture.md"))
         assert len(references) == 1

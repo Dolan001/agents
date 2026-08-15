@@ -1,5 +1,5 @@
 {
   "phase": "backend",
   "required": ["apps/backend/**", ".ai/test-commands.json", ".ai/evidence/structure/backend.json", ".ai/evidence/database-verification.json", ".ai/evidence/backend-verification.json"],
-  "assertions": ["selected_pack_structure_valid", "postgresql_connection_verified", "empty_database_migrates_to_head", "migration_drift_absent", "tables_constraints_indexes_verified", "hot_query_plans_and_budgets_verified", "backend_tests_pass", "openapi_valid"]
+  "assertions": ["selected_pack_structure_valid", "source_policies_valid", "conditional_capabilities_complete", "postgresql_connection_verified", "empty_database_migrates_to_head", "migration_drift_absent", "tables_constraints_indexes_verified", "hot_query_plans_and_budgets_verified", "runtime_import_startup_readiness_pass", "api_success_negative_authorization_pass", "transaction_concurrency_pass", "backend_tests_pass", "openapi_valid", "security_pass"]
 }

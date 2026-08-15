@@ -16,7 +16,12 @@ from .git import commit_verified_feature
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
 from .pipeline import node_cache_key, workflow_root
-from .structure import validate_database_evidence, validate_monorepo, validate_structure
+from .structure import (
+    validate_backend_evidence,
+    validate_database_evidence,
+    validate_monorepo,
+    validate_structure,
+)
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -98,6 +103,11 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             validate_database_evidence(
                 project,
                 workflow_root() / "schemas" / "database-verification.schema.json",
+                state["frameworks"]["backend"],
+            )
+            validate_backend_evidence(
+                project,
+                workflow_root() / "schemas" / "backend-verification.schema.json",
                 state["frameworks"]["backend"],
             )
 

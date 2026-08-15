@@ -288,7 +288,8 @@ FastAPI guidance. It uses reconciled requirements and observed web/mobile data n
   validation, exceptions, and error responses;
 - create or finalize API contracts and backend test commands;
 - run focused backend verification; and
-- validate the generated `apps/backend` structure against its framework contract.
+- validate required paths, one dependency-lock strategy, activated domain capabilities, and
+  executable source policies against the selected framework contract.
 
 The backend gate blocks progression when required behavior, evidence, or structure is
 missing. Its final phase decision belongs to the selected DRF or FastAPI independent
@@ -299,6 +300,11 @@ PostgreSQL database must accept a complete migration from empty state, remain at
 current migration head with no drift, produce a no-op second upgrade, expose expected
 tables/constraints/indexes, and satisfy measured plans or query budgets for affected
 hot paths.
+
+The independent verifier must also produce `.ai/evidence/backend-verification.json` with exact
+successful commands for application import, startup/readiness, positive and negative API behavior,
+authorization, transaction/concurrency cases, OpenAPI, and security. The backend phase cannot pass
+with a placeholder `verified` flag or structure-only fixture.
 
 ### 12. Integrate selected clients and backend
 

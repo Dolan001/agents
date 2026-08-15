@@ -11,7 +11,11 @@ from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.model import PHASES, StateStore
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
-from ai_workflow.structure import validate_database_evidence, validate_structure
+from ai_workflow.structure import (
+    validate_backend_evidence,
+    validate_database_evidence,
+    validate_structure,
+)
 from ai_workflow.tokens import parse_token
 
 
@@ -533,6 +537,7 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         _create_pack_structure(project, prompt)
     if phase == "backend" and node == "verify-backend":
         _write_database_evidence(project, prompt)
+        _write_backend_evidence(project, prompt)
     if phase == "integration" and node == "connect-feature-slices":
         client = project / "packages" / "api-client" / "index.ts"
         client.parent.mkdir(parents=True, exist_ok=True)
@@ -552,6 +557,12 @@ def _create_pack_structure(project: Path, prompt: str) -> None:
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"pilot {contract['framework']} artifact\n")
+    path_sets = contract.get("required_path_sets", [])
+    for path_set in path_sets:
+        for relative in path_set["alternatives"][0]:
+            path = target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"pilot {contract['framework']} locked dependency artifact\n")
     pattern = contract.get("domain_path_pattern")
     if isinstance(pattern, str) and contract.get("minimum_domain_instances", 0) > 0:
         domain = target / pattern.replace("<domain>", "sample")
@@ -603,6 +614,45 @@ def _write_database_evidence(project: Path, prompt: str) -> None:
         "verified": True,
     }
     path = project / ".ai" / "evidence" / "database-verification.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(evidence))
+
+
+def _write_backend_evidence(project: Path, prompt: str) -> None:
+    pack_text = re.search(r"Selected framework pack: (.+)", prompt).group(1)  # type: ignore[union-attr]
+    contract = json.loads((Path(pack_text) / "rules" / "project-structure.json").read_text())
+    check_names = (
+        "import",
+        "startup",
+        "api",
+        "authorization",
+        "transactions",
+        "openapi",
+        "security",
+    )
+    evidence = {
+        "version": 1,
+        "framework": contract["framework"],
+        "runtime": {
+            "import_passed": True,
+            "startup_passed": True,
+            "readiness_passed": True,
+        },
+        "api": {
+            "contract_passed": True,
+            "success_and_negative_passed": True,
+            "authorization_passed": True,
+        },
+        "transactions": {"passed": True, "concurrency_cases": 1},
+        "openapi": {"passed": True},
+        "security": {"passed": True},
+        "checks": [
+            {"name": name, "argv": ["true"], "cwd": "apps/backend", "exit_code": 0}
+            for name in check_names
+        ],
+        "verified": True,
+    }
+    path = project / ".ai" / "evidence" / "backend-verification.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(evidence))
 
@@ -994,6 +1044,153 @@ def test_backend_structure_requires_a_complete_domain(tmp_path: Path) -> None:
         validate_structure(tmp_path, pack, "backend")
 
 
+@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+def test_backend_structure_accepts_minimal_generated_domain(
+    tmp_path: Path, pack_name: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+
+    report = validate_structure(tmp_path, pack, "backend")
+
+    assert report["valid"] is True
+    assert report["missing_path_sets"] == []
+    assert report["source_violations"] == []
+
+
+@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+def test_backend_structure_accepts_complete_api_capability(
+    tmp_path: Path, pack_name: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
+        "<domain>", "sample"
+    )
+    api_group = next(
+        group
+        for group in contract["conditional_domain_groups"]
+        if group["name"] in {"rest-api", "json-api"}
+    )
+    directories = set(api_group["required_directories"])
+    for relative in api_group["required_paths"]:
+        candidate = domain / relative
+        if relative in directories:
+            candidate.mkdir(parents=True, exist_ok=True)
+        else:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            candidate.write_text("generated API capability artifact\n")
+
+    report = validate_structure(tmp_path, pack, "backend")
+
+    assert api_group["name"] in report["active_domain_groups"][
+        contract["domain_path_pattern"].replace("<domain>", "sample")
+    ]
+    assert report["valid"] is True
+
+
+def test_backend_structure_requires_a_resolved_dependency_lock(tmp_path: Path) -> None:
+    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    selected_lock = contract["required_path_sets"][0]["alternatives"][0][0]
+    (tmp_path / contract["target_root"] / selected_lock).unlink()
+
+    with pytest.raises(RuntimeError, match="missing_sets=.*dependency-lock"):
+        validate_structure(tmp_path, pack, "backend")
+
+
+@pytest.mark.parametrize(
+    ("pack_name", "trigger", "expected_missing"),
+    [
+        ("drf_ai", "views.py", "rest-api:serializers/__init__.py"),
+        ("fastapi_ai", "routes.py", "json-api:schemas/__init__.py"),
+    ],
+)
+def test_backend_conditional_domain_groups_fail_closed(
+    tmp_path: Path, pack_name: str, trigger: str, expected_missing: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
+        "<domain>", "sample"
+    )
+    (domain / trigger).write_text("trigger conditional API capability\n")
+
+    with pytest.raises(RuntimeError, match="structure is invalid"):
+        validate_structure(tmp_path, pack, "backend")
+
+    report_path = tmp_path / ".ai" / "evidence" / "structure" / "backend.json"
+    report = json.loads(report_path.read_text())
+    assert any(expected_missing in value for value in report["missing_domain_paths"])
+
+
+@pytest.mark.parametrize(
+    ("pack_name", "relative", "source", "rule"),
+    [
+        (
+            "drf_ai",
+            "sample/serializers/input.py",
+            "from sample.services import create_order\n",
+            "serializers-do-not-import-services",
+        ),
+        (
+            "fastapi_ai",
+            "app/domains/sample/routes.py",
+            "async def create(db):\n    await db.commit()\n",
+            "routes-do-not-persist",
+        ),
+    ],
+)
+def test_backend_forbidden_source_rules_fail_closed(
+    tmp_path: Path, pack_name: str, relative: str, source: str, rule: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    target = tmp_path / contract["target_root"]
+    candidate = target / relative
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(source)
+
+    with pytest.raises(RuntimeError, match="structure is invalid"):
+        validate_structure(tmp_path, pack, "backend")
+
+    report_path = tmp_path / ".ai" / "evidence" / "structure" / "backend.json"
+    report = json.loads(report_path.read_text())
+    assert any(item["rule"] == rule for item in report["source_violations"])
+
+
+def test_backend_source_rules_ignore_python_comments(tmp_path: Path) -> None:
+    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    main = tmp_path / contract["target_root"] / "app/main.py"
+    main.write_text("# from app.domains.orders import service\n")
+
+    assert validate_structure(tmp_path, pack, "backend")["source_violations"] == []
+
+
+def test_backend_source_rules_inspect_runtime_configuration_strings(tmp_path: Path) -> None:
+    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    config = tmp_path / contract["target_root"] / "app/core/config.py"
+    config.write_text('DATABASE_URL = "sqlite+aiosqlite:///unsafe.db"\n')
+
+    with pytest.raises(RuntimeError, match="no-sqlite-runtime"):
+        validate_structure(tmp_path, pack, "backend")
+
+
 def test_database_evidence_requires_postgresql_and_complete_checks(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     prompt = f"Selected framework pack: {root / 'fastapi_ai'}"
@@ -1010,6 +1207,26 @@ def test_database_evidence_requires_postgresql_and_complete_checks(tmp_path: Pat
     evidence_path.write_text(json.dumps(evidence))
     with pytest.raises(RuntimeError, match="database verification evidence is invalid"):
         validate_database_evidence(tmp_path, schema, "fastapi")
+
+
+def test_backend_evidence_requires_runtime_api_transaction_and_security_checks(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    prompt = f"Selected framework pack: {root / 'fastapi_ai'}"
+    _write_backend_evidence(tmp_path, prompt)
+    schema = root / "schemas" / "backend-verification.schema.json"
+    assert validate_backend_evidence(tmp_path, schema, "fastapi")["verified"] is True
+
+    with pytest.raises(RuntimeError, match="does not match the selected backend"):
+        validate_backend_evidence(tmp_path, schema, "django-drf")
+
+    evidence_path = tmp_path / ".ai" / "evidence" / "backend-verification.json"
+    evidence = json.loads(evidence_path.read_text())
+    evidence["api"]["authorization_passed"] = False
+    evidence_path.write_text(json.dumps(evidence))
+    with pytest.raises(RuntimeError, match="backend verification evidence is invalid"):
+        validate_backend_evidence(tmp_path, schema, "fastapi")
 
 
 def test_rejects_a_fake_screenshot(tmp_path: Path) -> None:

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "framework", "runtime", "api", "transactions", "openapi", "security", "checks", "verified"],
+  "properties": {
+    "version": {"const": 1},
+    "framework": {"enum": ["django-drf", "fastapi"]},
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["import_passed", "startup_passed", "readiness_passed"],
+      "properties": {
+        "import_passed": {"const": true},
+        "startup_passed": {"const": true},
+        "readiness_passed": {"const": true}
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_passed", "success_and_negative_passed", "authorization_passed"],
+      "properties": {
+        "contract_passed": {"const": true},
+        "success_and_negative_passed": {"const": true},
+        "authorization_passed": {"const": true}
+      }
+    },
+    "transactions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "concurrency_cases"],
+      "properties": {
+        "passed": {"const": true},
+        "concurrency_cases": {"type": "integer", "minimum": 1}
+      }
+    },
+    "openapi": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
+    "security": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
+    "checks": {
+      "type": "array",
+      "minItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "argv", "cwd", "exit_code"],
+        "properties": {
+          "name": {"enum": ["import", "startup", "api", "authorization", "transactions", "openapi", "security"]},
+          "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
+          "exit_code": {"const": 0}
+        }
+      },
+      "allOf": [
+        {"contains": {"properties": {"name": {"const": "import"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "startup"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "api"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "authorization"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "transactions"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "openapi"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "security"}}, "required": ["name"]}}
+      ]
+    },
+    "verified": {"const": true}
+  }
+}
