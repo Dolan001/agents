@@ -306,6 +306,17 @@ successful commands for application import, startup/readiness, positive and nega
 authorization, transaction/concurrency cases, OpenAPI, and security. The backend phase cannot pass
 with a placeholder `verified` flag or structure-only fixture.
 
+Durable background processing is requirement-triggered rather than generated for every backend.
+When a domain adds a task, either backend uses Celery with Redis and a PostgreSQL transactional
+outbox/job record. The structure gate then requires the framework worker entrypoint, explicit domain
+task discovery, `celery[redis]`, broker environment configuration, Redis and worker compose services,
+a worker health script, and domain task tests. Messages carry scalar IDs; tasks open fresh database
+state and must tolerate duplicate delivery. The backend evidence gate additionally requires live
+broker, worker startup, enqueue/consume, bounded retry, idempotency, outbox, terminal-failure, and—if
+used—schedule checks. Celery Beat and a result backend are omitted unless requirements need them.
+FastAPI in-process `BackgroundTasks` is allowed only for explicitly disposable work and does not
+satisfy this durable-work gate.
+
 ### 12. Integrate selected clients and backend
 
 The integration phase generates or updates typed web and/or Dart API boundaries,

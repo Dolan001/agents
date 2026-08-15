@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "framework", "runtime", "api", "transactions", "openapi", "security", "checks", "verified"],
+  "required": ["version", "framework", "runtime", "api", "transactions", "background_tasks", "openapi", "security", "checks", "verified"],
   "properties": {
     "version": {"const": 1},
     "framework": {"enum": ["django-drf", "fastapi"]},
@@ -35,6 +35,47 @@
         "concurrency_cases": {"type": "integer", "minimum": 1}
       }
     },
+    "background_tasks": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required"],
+          "properties": {"required": {"const": false}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "required", "broker", "broker_connection_passed", "worker_startup_passed",
+            "enqueue_consume_passed", "retry_passed", "idempotency_passed",
+            "duplicate_delivery_passed", "outbox_passed", "dead_letter_passed",
+            "scheduling_required", "scheduling_passed"
+          ],
+          "properties": {
+            "required": {"const": true},
+            "broker": {"const": "redis"},
+            "broker_connection_passed": {"const": true},
+            "worker_startup_passed": {"const": true},
+            "enqueue_consume_passed": {"const": true},
+            "retry_passed": {"const": true},
+            "idempotency_passed": {"const": true},
+            "duplicate_delivery_passed": {"const": true},
+            "outbox_passed": {"const": true},
+            "dead_letter_passed": {"const": true},
+            "scheduling_required": {"type": "boolean"},
+            "scheduling_passed": {"type": ["boolean", "null"]}
+          },
+          "allOf": [
+            {
+              "if": {"properties": {"scheduling_required": {"const": true}}},
+              "then": {"properties": {"scheduling_passed": {"const": true}}},
+              "else": {"properties": {"scheduling_passed": {"const": null}}}
+            }
+          ]
+        }
+      ]
+    },
     "openapi": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
     "security": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
     "checks": {
@@ -45,7 +86,7 @@
         "additionalProperties": false,
         "required": ["name", "argv", "cwd", "exit_code"],
         "properties": {
-          "name": {"enum": ["import", "startup", "api", "authorization", "transactions", "openapi", "security"]},
+          "name": {"enum": ["import", "startup", "api", "authorization", "transactions", "broker", "worker", "tasks", "openapi", "security"]},
           "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
           "exit_code": {"const": 0}
@@ -62,5 +103,30 @@
       ]
     },
     "verified": {"const": true}
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "background_tasks": {
+            "properties": {"required": {"const": true}},
+            "required": ["required"]
+          }
+        },
+        "required": ["background_tasks"]
+      },
+      "then": {
+        "properties": {
+          "checks": {
+            "minItems": 10,
+            "allOf": [
+              {"contains": {"properties": {"name": {"const": "broker"}}, "required": ["name"]}},
+              {"contains": {"properties": {"name": {"const": "worker"}}, "required": ["name"]}},
+              {"contains": {"properties": {"name": {"const": "tasks"}}, "required": ["name"]}}
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

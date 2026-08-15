@@ -114,6 +114,114 @@ def _conditional_domain_paths(
     return active, missing, wrong_type
 
 
+def _conditional_path_groups(
+    target: Path, contract: dict[str, Any]
+) -> tuple[list[str], list[str], list[str], list[dict[str, str]]]:
+    raw_groups = contract.get("conditional_path_groups", [])
+    if not isinstance(raw_groups, list):
+        raise RuntimeError("framework conditional path groups are invalid")
+    active: list[str] = []
+    missing: list[str] = []
+    wrong_type: list[str] = []
+    missing_patterns: list[dict[str, str]] = []
+    for group in raw_groups:
+        if not isinstance(group, dict):
+            raise RuntimeError("framework conditional path group is invalid")
+        name = group.get("name")
+        triggers = group.get("trigger_globs")
+        required = group.get("required_paths")
+        directories = group.get("required_directories", [])
+        patterns = group.get("required_source_patterns", [])
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(triggers, list)
+            or not triggers
+            or not all(isinstance(item, str) and item for item in triggers)
+            or not isinstance(required, list)
+            or not isinstance(directories, list)
+            or not all(isinstance(item, str) for item in directories)
+            or not isinstance(patterns, list)
+        ):
+            raise RuntimeError("framework conditional path group is invalid")
+        triggered = False
+        for glob in triggers:
+            if Path(glob).is_absolute() or ".." in Path(glob).parts:
+                raise RuntimeError(f"framework conditional path glob is unsafe: {name}")
+            for candidate in target.glob(glob):
+                resolved = candidate.resolve()
+                if resolved != target and target not in resolved.parents:
+                    raise RuntimeError(
+                        f"framework conditional path escapes target: {name}"
+                    )
+                triggered = True
+                break
+            if triggered:
+                break
+        if not triggered:
+            continue
+        active.append(name)
+        group_missing, group_wrong_type = _missing_or_wrong_type(
+            target, required, set(directories)
+        )
+        missing.extend(f"{name}:{relative}" for relative in group_missing)
+        wrong_type.extend(f"{name}:{relative}" for relative in group_wrong_type)
+        for rule in patterns:
+            if not isinstance(rule, dict):
+                raise RuntimeError(f"framework required source pattern is invalid: {name}")
+            rule_id = rule.get("id")
+            globs = rule.get("globs")
+            pattern = rule.get("pattern")
+            message = rule.get("message")
+            ignore_case = rule.get("ignore_case", False)
+            if (
+                not isinstance(rule_id, str)
+                or not rule_id
+                or not isinstance(globs, list)
+                or not globs
+                or not all(isinstance(item, str) and item for item in globs)
+                or not isinstance(pattern, str)
+                or not pattern
+                or not isinstance(message, str)
+                or not isinstance(ignore_case, bool)
+            ):
+                raise RuntimeError(f"framework required source pattern is invalid: {name}")
+            flags = re.MULTILINE | (re.IGNORECASE if ignore_case else 0)
+            try:
+                expression = re.compile(pattern, flags)
+            except re.error as error:
+                raise RuntimeError(
+                    f"framework required source pattern regex is invalid: {rule_id}"
+                ) from error
+            candidates: set[Path] = set()
+            for glob in globs:
+                if Path(glob).is_absolute() or ".." in Path(glob).parts:
+                    raise RuntimeError(
+                        f"framework required source pattern glob is unsafe: {rule_id}"
+                    )
+                candidates.update(path for path in target.glob(glob) if path.is_file())
+            matched = False
+            for candidate in candidates:
+                resolved = candidate.resolve()
+                if resolved != target and target not in resolved.parents:
+                    raise RuntimeError(
+                        f"framework required source pattern path escapes target: {rule_id}"
+                    )
+                try:
+                    if expression.search(candidate.read_text(encoding="utf-8")):
+                        matched = True
+                        break
+                except UnicodeDecodeError as error:
+                    raise RuntimeError(
+                        f"framework source file is not UTF-8: {candidate}"
+                    ) from error
+            if not matched:
+                missing_patterns.append(
+                    {"group": name, "rule": rule_id, "message": message}
+                )
+    return active, missing, wrong_type, missing_patterns
+
+
 def _source_violations(target: Path, contract: dict[str, Any]) -> list[dict[str, Any]]:
     raw_rules = contract.get("source_rules", [])
     if not isinstance(raw_rules, list):
@@ -241,6 +349,12 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
     directory_set = set(required_directories)
     missing, wrong_type = _missing_or_wrong_type(target, required, directory_set)
     missing_path_sets = _missing_path_sets(target, contract)
+    (
+        active_path_groups,
+        missing_conditional_paths,
+        wrong_type_conditional_paths,
+        missing_source_patterns,
+    ) = _conditional_path_groups(target, contract)
     domain_instances: list[str] = []
     missing_domain_paths: list[str] = []
     wrong_type_domain_paths: list[str] = []
@@ -285,6 +399,10 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         "missing_paths": missing,
         "wrong_type_paths": wrong_type,
         "missing_path_sets": missing_path_sets,
+        "active_path_groups": active_path_groups,
+        "missing_conditional_paths": missing_conditional_paths,
+        "wrong_type_conditional_paths": wrong_type_conditional_paths,
+        "missing_source_patterns": missing_source_patterns,
         "domain_instances": domain_instances,
         "active_domain_groups": active_domain_groups,
         "missing_domain_paths": missing_domain_paths,
@@ -293,6 +411,9 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         "valid": not missing
         and not wrong_type
         and not missing_path_sets
+        and not missing_conditional_paths
+        and not wrong_type_conditional_paths
+        and not missing_source_patterns
         and not missing_domain_paths
         and not wrong_type_domain_paths
         and not source_violations,
@@ -303,6 +424,9 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         missing
         or wrong_type
         or missing_path_sets
+        or missing_conditional_paths
+        or wrong_type_conditional_paths
+        or missing_source_patterns
         or missing_domain_paths
         or wrong_type_domain_paths
         or source_violations
@@ -310,7 +434,11 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         raise RuntimeError(
             f"generated {phase} structure is invalid: missing={missing}, wrong_type={wrong_type}, "
             f"missing_sets={missing_path_sets}, domain_missing={missing_domain_paths}, "
-            f"domain_wrong_type={wrong_type_domain_paths}, source_violations={source_violations}"
+            f"domain_wrong_type={wrong_type_domain_paths}, "
+            f"conditional_missing={missing_conditional_paths}, "
+            f"conditional_wrong_type={wrong_type_conditional_paths}, "
+            f"missing_source_patterns={missing_source_patterns}, "
+            f"source_violations={source_violations}"
         )
     return report
 
@@ -379,6 +507,17 @@ def validate_backend_evidence(
         raise RuntimeError(f"backend verification evidence is invalid: {summaries}")
     if evidence["framework"] != expected_framework:
         raise RuntimeError("backend verification framework does not match the selected backend")
+    structure = read_json(project / ".ai" / "evidence" / "structure" / "backend.json")
+    if not isinstance(structure, dict):
+        raise RuntimeError("backend structure evidence is missing")
+    active_groups = structure.get("active_path_groups")
+    if not isinstance(active_groups, list):
+        raise RuntimeError("backend structure evidence does not report capability groups")
+    expected_background_tasks = "background-tasks" in active_groups
+    if evidence["background_tasks"]["required"] is not expected_background_tasks:
+        raise RuntimeError(
+            "backend background-task evidence does not match the generated structure"
+        )
     _reject_secret_evidence(evidence, "backend verification")
     return evidence
 

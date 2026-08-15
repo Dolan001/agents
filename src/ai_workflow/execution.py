@@ -256,6 +256,13 @@ def _control_paths(
         pack_rules.append("verification.md" if verifying else "generation.md")
         paths.extend(pack / "rules" / name for name in pack_rules)
         paths.append(pack / "hooks" / "lifecycle.json")
+        if phase == "backend" and verifying:
+            paths.extend(
+                [
+                    root / "schemas" / "database-verification.schema.json",
+                    root / "schemas" / "backend-verification.schema.json",
+                ]
+            )
     if any(not path.is_file() for path in paths):
         raise RuntimeError("workflow control instruction is missing")
     return paths

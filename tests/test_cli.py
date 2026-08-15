@@ -644,6 +644,7 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
             "authorization_passed": True,
         },
         "transactions": {"passed": True, "concurrency_cases": 1},
+        "background_tasks": {"required": False},
         "openapi": {"passed": True},
         "security": {"passed": True},
         "checks": [
@@ -1131,6 +1132,99 @@ def test_backend_conditional_domain_groups_fail_closed(
     assert any(expected_missing in value for value in report["missing_domain_paths"])
 
 
+def _activate_complete_background_tasks(
+    project: Path, pack: Path
+) -> tuple[dict[str, object], Path]:
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    target = project / contract["target_root"]
+    domain = target / contract["domain_path_pattern"].replace("<domain>", "sample")
+    domain_group = next(
+        group
+        for group in contract["conditional_domain_groups"]
+        if group["name"] == "background-tasks"
+    )
+    for relative in domain_group["required_paths"]:
+        candidate = domain / relative
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_text("background task capability\n")
+    path_group = next(
+        group
+        for group in contract["conditional_path_groups"]
+        if group["name"] == "background-tasks"
+    )
+    for relative in path_group["required_paths"]:
+        candidate = target / relative
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_text("background task infrastructure\n")
+    (target / "pyproject.toml").write_text(
+        '[project]\ndependencies = ["celery[redis]>=5"]\n'
+    )
+    (target / ".env.example").write_text(
+        "CELERY_BROKER_URL=redis://redis:6379/0\n"
+    )
+    (target / "compose.yaml").write_text(
+        "services:\n"
+        "  redis:\n"
+        "    image: redis:7\n"
+        "  worker:\n"
+        "    build: .\n"
+        "    command: celery -A app worker\n"
+    )
+    if contract["framework"] == "django-drf":
+        (target / "core/settings/tasks.py").write_text(
+            'CELERY_BROKER_URL = env("CELERY_BROKER_URL")\n'
+        )
+        (target / "core/celery.py").write_text(
+            'from celery import Celery\napp = Celery("core")\napp.autodiscover_tasks()\n'
+        )
+    else:
+        (target / "app/worker/config.py").write_text(
+            'CELERY_BROKER_URL = settings.CELERY_BROKER_URL\n'
+        )
+        (target / "app/worker/celery_app.py").write_text(
+            "from celery import Celery\n"
+            'app = Celery("worker", include=["app.domains.sample.tasks"])\n'
+        )
+    return contract, target
+
+
+@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+def test_backend_background_task_capability_is_complete_and_fail_closed(
+    tmp_path: Path, pack_name: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
+        "<domain>", "sample"
+    )
+    (domain / "tasks.py").write_text("task trigger\n")
+
+    with pytest.raises(RuntimeError, match="conditional_missing"):
+        validate_structure(tmp_path, pack, "backend")
+
+    _activate_complete_background_tasks(tmp_path, pack)
+    report = validate_structure(tmp_path, pack, "backend")
+
+    assert report["active_path_groups"] == ["background-tasks"]
+    assert report["missing_source_patterns"] == []
+    assert "background-tasks" in next(iter(report["active_domain_groups"].values()))
+
+
+def test_backend_background_task_capability_requires_redis_dependency(
+    tmp_path: Path,
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    _, target = _activate_complete_background_tasks(tmp_path, pack)
+    (target / "pyproject.toml").write_text('[project]\ndependencies = ["celery>=5"]\n')
+
+    with pytest.raises(RuntimeError, match="celery-redis-dependency"):
+        validate_structure(tmp_path, pack, "backend")
+
+
 @pytest.mark.parametrize(
     ("pack_name", "relative", "source", "rule"),
     [
@@ -1214,6 +1308,8 @@ def test_backend_evidence_requires_runtime_api_transaction_and_security_checks(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     prompt = f"Selected framework pack: {root / 'fastapi_ai'}"
+    _create_pack_structure(tmp_path, prompt)
+    validate_structure(tmp_path, root / "fastapi_ai", "backend")
     _write_backend_evidence(tmp_path, prompt)
     schema = root / "schemas" / "backend-verification.schema.json"
     assert validate_backend_evidence(tmp_path, schema, "fastapi")["verified"] is True
@@ -1227,6 +1323,46 @@ def test_backend_evidence_requires_runtime_api_transaction_and_security_checks(
     evidence_path.write_text(json.dumps(evidence))
     with pytest.raises(RuntimeError, match="backend verification evidence is invalid"):
         validate_backend_evidence(tmp_path, schema, "fastapi")
+
+
+def test_backend_evidence_requires_worker_checks_when_background_tasks_are_active(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    pack = root / "fastapi_ai"
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    _activate_complete_background_tasks(tmp_path, pack)
+    validate_structure(tmp_path, pack, "backend")
+    _write_backend_evidence(tmp_path, prompt)
+    schema = root / "schemas" / "backend-verification.schema.json"
+
+    with pytest.raises(RuntimeError, match="does not match the generated structure"):
+        validate_backend_evidence(tmp_path, schema, "fastapi")
+
+    evidence_path = tmp_path / ".ai" / "evidence" / "backend-verification.json"
+    evidence = json.loads(evidence_path.read_text())
+    evidence["background_tasks"] = {
+        "required": True,
+        "broker": "redis",
+        "broker_connection_passed": True,
+        "worker_startup_passed": True,
+        "enqueue_consume_passed": True,
+        "retry_passed": True,
+        "idempotency_passed": True,
+        "duplicate_delivery_passed": True,
+        "outbox_passed": True,
+        "dead_letter_passed": True,
+        "scheduling_required": False,
+        "scheduling_passed": None,
+    }
+    evidence["checks"].extend(
+        {"name": name, "argv": ["true"], "cwd": "apps/backend", "exit_code": 0}
+        for name in ("broker", "worker", "tasks")
+    )
+    evidence_path.write_text(json.dumps(evidence))
+
+    assert validate_backend_evidence(tmp_path, schema, "fastapi")["verified"] is True
 
 
 def test_rejects_a_fake_screenshot(tmp_path: Path) -> None:

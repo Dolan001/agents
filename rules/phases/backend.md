@@ -11,3 +11,7 @@ hot-query plans, and query budgets in `.ai/evidence/database-verification.json`.
 Validate dependency-lock alternatives, activated domain capability groups, and executable source
 policies. Require `.ai/evidence/backend-verification.json` with exact successful import, startup,
 readiness, API, authorization, transaction/concurrency, OpenAPI, and security commands.
+When a domain task activates the background-task capability, require Celery with Redis, a
+PostgreSQL transactional outbox/job, framework worker configuration and discovery, task tests, and
+live broker/worker/enqueue/retry/idempotency/duplicate/outbox/failure evidence. Scheduled delivery is
+verified only when requirements activate it. FastAPI in-process tasks do not satisfy durable work.
