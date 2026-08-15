@@ -522,6 +522,34 @@ def validate_backend_evidence(
     return evidence
 
 
+def validate_realtime_evidence(
+    project: Path, schema_path: Path, phase: str, structure: dict[str, Any]
+) -> dict[str, Any] | None:
+    active_groups = structure.get("active_path_groups")
+    if not isinstance(active_groups, list):
+        raise RuntimeError(f"{phase} structure evidence does not report capability groups")
+    if "realtime" not in active_groups:
+        return None
+    evidence = read_json(project / ".ai" / "evidence" / "realtime" / f"{phase}.json")
+    schema = read_json(schema_path)
+    if not isinstance(evidence, dict) or not isinstance(schema, dict):
+        raise RuntimeError(f"{phase} realtime verification evidence or schema is missing")
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(evidence),
+        key=lambda item: list(item.path),
+    )
+    if errors:
+        summaries = [
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
+            for error in errors
+        ]
+        raise RuntimeError(f"{phase} realtime verification evidence is invalid: {summaries}")
+    if evidence["phase"] != phase:
+        raise RuntimeError("realtime verification phase does not match generated structure")
+    _reject_secret_evidence(evidence, "realtime verification")
+    return evidence
+
+
 def validate_monorepo(project: Path, contract_path: Path) -> dict[str, Any]:
     contract = read_json(contract_path)
     if not isinstance(contract, dict):

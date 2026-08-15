@@ -20,6 +20,7 @@ from .structure import (
     validate_backend_evidence,
     validate_database_evidence,
     validate_monorepo,
+    validate_realtime_evidence,
     validate_structure,
 )
 
@@ -98,7 +99,13 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])
         if pack is None:
             raise RuntimeError(f"selected framework pack is unavailable for {phase}")
-        validate_structure(project, pack, phase)
+        structure = validate_structure(project, pack, phase)
+        validate_realtime_evidence(
+            project,
+            workflow_root() / "schemas" / "realtime-verification.schema.json",
+            phase,
+            structure,
+        )
         if phase == "backend":
             validate_database_evidence(
                 project,
@@ -173,7 +180,11 @@ def _skill_paths(
     )
     base_names = {
         "bootstrap": ["inspect-project"],
-        "requirements": ["reconcile-requirements", "plan-vertical-slices"],
+        "requirements": [
+            "reconcile-requirements",
+            "plan-vertical-slices",
+            "design-realtime-contract",
+        ],
         "design": ["prepare-design-baseline"],
         "frontend": [framework_task_skill],
         "mobile": [framework_task_skill],
@@ -263,6 +274,8 @@ def _control_paths(
                     root / "schemas" / "backend-verification.schema.json",
                 ]
             )
+        if phase in {"frontend", "mobile", "backend"} and verifying:
+            paths.append(root / "schemas" / "realtime-verification.schema.json")
     if any(not path.is_file() for path in paths):
         raise RuntimeError("workflow control instruction is missing")
     return paths

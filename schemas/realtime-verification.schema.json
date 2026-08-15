@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "phase", "transport", "checks", "commands", "verified"],
+  "properties": {
+    "version": {"const": 1},
+    "phase": {"enum": ["frontend", "mobile", "backend"]},
+    "transport": {"const": "websocket"},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authentication", "authorization", "protocol_validation", "payload_and_rate_limits"],
+      "properties": {
+        "authentication": {"const": true},
+        "authorization": {"const": true},
+        "protocol_validation": {"const": true},
+        "payload_and_rate_limits": {"const": true},
+        "durable_persistence": {"const": true},
+        "multi_instance": {"const": true},
+        "redis_recovery": {"const": true},
+        "slow_consumer": {"const": true},
+        "graceful_shutdown": {"const": true},
+        "reconnect_and_resume": {"const": true},
+        "ordering_and_deduplication": {"const": true},
+        "offline_degraded_state": {"const": true},
+        "lifecycle_cleanup": {"const": true},
+        "accessibility": {"const": true}
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["argv", "cwd", "exit_code"],
+        "properties": {
+          "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
+          "exit_code": {"const": 0}
+        }
+      }
+    },
+    "verified": {"const": true}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"phase": {"const": "backend"}}, "required": ["phase"]},
+      "then": {"properties": {"checks": {"required": ["durable_persistence", "multi_instance", "redis_recovery", "slow_consumer", "graceful_shutdown"]}}},
+      "else": {"properties": {"checks": {"required": ["reconnect_and_resume", "ordering_and_deduplication", "offline_degraded_state", "lifecycle_cleanup", "accessibility"]}}}
+    }
+  ]
+}

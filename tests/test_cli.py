@@ -14,6 +14,7 @@ from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_
 from ai_workflow.structure import (
     validate_backend_evidence,
     validate_database_evidence,
+    validate_realtime_evidence,
     validate_structure,
 )
 from ai_workflow.tokens import parse_token
@@ -1223,6 +1224,112 @@ def test_backend_background_task_capability_requires_redis_dependency(
 
     with pytest.raises(RuntimeError, match="celery-redis-dependency"):
         validate_structure(tmp_path, pack, "backend")
+
+
+def _activate_complete_backend_realtime(project: Path, pack: Path) -> dict[str, object]:
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    target = project / contract["target_root"]
+    domain = target / contract["domain_path_pattern"].replace("<domain>", "sample")
+    domain_group = next(
+        item for item in contract["conditional_domain_groups"] if item["name"] == "realtime"
+    )
+    for relative in domain_group["required_paths"]:
+        path = domain / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("realtime domain artifact\n")
+    path_group = next(
+        item for item in contract["conditional_path_groups"] if item["name"] == "realtime"
+    )
+    for relative in path_group["required_paths"]:
+        path = target / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("realtime infrastructure artifact\n")
+    (target / ".env.example").write_text("REALTIME_REDIS_URL=redis://redis:6379/1\n")
+    (target / "compose.yaml").write_text(
+        "services:\n  redis:\n    image: redis:7\n"
+    )
+    if contract["framework"] == "django-drf":
+        (target / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["channels", "channels-redis"]\n'
+        )
+        (target / "core/settings/realtime.py").write_text(
+            'BACKEND = "channels_redis.core.RedisChannelLayer"\n'
+        )
+        (target / "core/routing.py").write_text("ProtocolTypeRouter({})\n")
+        (target / "core/asgi.py").write_text("ProtocolTypeRouter({})\n")
+    else:
+        (target / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["websockets", "redis[hiredis]"]\n'
+        )
+        (target / "app/realtime/config.py").write_text(
+            'REALTIME_REDIS_URL = "redis://redis:6379/1"\n'
+        )
+    return contract
+
+
+@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+def test_backend_realtime_capability_and_evidence_fail_closed(
+    tmp_path: Path, pack_name: str
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    pack = root / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    _activate_complete_backend_realtime(tmp_path, pack)
+    structure = validate_structure(tmp_path, pack, "backend")
+    schema = root / "schemas" / "realtime-verification.schema.json"
+
+    with pytest.raises(RuntimeError, match="evidence or schema is missing"):
+        validate_realtime_evidence(tmp_path, schema, "backend", structure)
+
+    evidence = {
+        "version": 1,
+        "phase": "backend",
+        "transport": "websocket",
+        "checks": {
+            "authentication": True,
+            "authorization": True,
+            "protocol_validation": True,
+            "payload_and_rate_limits": True,
+            "durable_persistence": True,
+            "multi_instance": True,
+            "redis_recovery": True,
+            "slow_consumer": True,
+            "graceful_shutdown": True,
+        },
+        "commands": [
+            {"argv": ["pytest", "tests/realtime"], "cwd": "apps/backend", "exit_code": 0}
+        ],
+        "verified": True,
+    }
+    path = tmp_path / ".ai/evidence/realtime/backend.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(evidence))
+
+    assert validate_realtime_evidence(tmp_path, schema, "backend", structure) is not None
+
+
+@pytest.mark.parametrize(
+    ("pack_name", "trigger"),
+    [
+        ("react_ai", "src/realtime/client.ts"),
+        ("nextjs_ai", "lib/realtime/client.ts"),
+        ("flutter_ai", "lib/core/realtime/realtime_client.dart"),
+    ],
+)
+def test_client_realtime_capability_fails_closed_when_incomplete(
+    tmp_path: Path, pack_name: str, trigger: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    prompt = f"Selected framework pack: {pack}"
+    _create_pack_structure(tmp_path, prompt)
+    contract = json.loads((pack / "rules" / "project-structure.json").read_text())
+    path = tmp_path / contract["target_root"] / trigger
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("WebSocket realtime trigger\n")
+
+    with pytest.raises(RuntimeError, match="conditional_missing"):
+        validate_structure(tmp_path, pack, "frontend" if pack_name != "flutter_ai" else "mobile")
 
 
 @pytest.mark.parametrize(

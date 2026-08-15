@@ -121,11 +121,13 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
             for path in _skill_paths(root, phase, implement_node, frameworks)
             if pack in path.parents
         ]
-        expected = 2 if phase == "backend" else 1
+        expected = 4 if phase == "backend" else 2
         assert len(framework_skills) == expected
         assert any(path.parent.name.startswith("implement-") for path in framework_skills)
+        assert any("realtime" in path.parent.name for path in framework_skills)
         if phase == "backend":
             assert any(path.parent.name.startswith("create-") for path in framework_skills)
+            assert any("background-work" in path.parent.name for path in framework_skills)
 
         verify_skills = [
             path

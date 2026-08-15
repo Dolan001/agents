@@ -317,6 +317,16 @@ used—schedule checks. Celery Beat and a result backend are omitted unless requ
 FastAPI in-process `BackgroundTasks` is allowed only for explicitly disposable work and does not
 satisfy this durable-work gate.
 
+Realtime chat, notifications, presence, and live updates are conditional capabilities. The
+requirements phase defines one versioned event/command/cursor contract. PostgreSQL stores messages,
+membership, participant receipts, notifications, command deduplication, stream sequence, and outbox
+events; Redis performs transient multi-instance fan-out and presence. Selected clients implement
+bounded reconnect with jitter, cursor replay, sequence-gap detection, deduplication, offline/degraded
+states, and lifecycle cleanup. Reusable access tokens are prohibited in WebSocket URLs; use secure
+cookies or short-lived single-use tickets acquired over HTTPS. Activated realtime surfaces produce
+`.ai/evidence/realtime/<phase>.json` proving authorization, protocol validation, limits, recovery,
+and relevant backend or client runtime checks.
+
 ### 12. Integrate selected clients and backend
 
 The integration phase generates or updates typed web and/or Dart API boundaries,

@@ -15,3 +15,7 @@ When a domain task activates the background-task capability, require Celery with
 PostgreSQL transactional outbox/job, framework worker configuration and discovery, task tests, and
 live broker/worker/enqueue/retry/idempotency/duplicate/outbox/failure evidence. Scheduled delivery is
 verified only when requirements activate it. FastAPI in-process tasks do not satisfy durable work.
+When realtime is activated, require the selected framework realtime skill and
+`.ai/evidence/realtime/backend.json`. PostgreSQL is authoritative; Redis is transient fan-out.
+Require secure authentication, per-command authorization, versioned events, cursor replay,
+multi-instance delivery, outage recovery, limits, slow-consumer policy, and graceful shutdown.
