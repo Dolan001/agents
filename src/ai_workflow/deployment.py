@@ -2,17 +2,73 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
-from .git import assert_safe_branch, baseline
+from .git import assert_safe_branch, baseline, run_git
 from .io import read_json
 from .model import StateStore
 from .pipeline import workflow_root
 from .structure import validate_deployment_evidence
+
+_AWS_LOCAL_ENVIRONMENT_KEYS = {
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_PROFILE",
+    "AWS_ACCOUNT_ID",
+}
+_AWS_KEY_PAIR = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
+
+
+def _load_local_aws_environment(project: Path) -> dict[str, str]:
+    path = project / ".env"
+    if not path.exists():
+        return {}
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError("deployment .env must be a regular file inside the project root")
+    tracked_code, _ = run_git(project, "ls-files", "--error-unmatch", "--", ".env")
+    if tracked_code == 0:
+        raise RuntimeError("deployment .env is tracked by Git; remove it from the index first")
+    ignored_code, _ = run_git(project, "check-ignore", "-q", "--", ".env")
+    if ignored_code != 0:
+        raise RuntimeError("deployment .env must be covered by .gitignore")
+
+    loaded: dict[str, str] = {}
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            raise RuntimeError(f"invalid .env assignment on line {line_number}")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key not in _AWS_LOCAL_ENVIRONMENT_KEYS:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if "$(" in value or "`" in value or "\x00" in value:
+            raise RuntimeError(f"unsafe .env value for {key}")
+        if value.startswith("<") and value.endswith(">"):
+            continue
+        if value and key not in os.environ:
+            loaded[key] = value
+
+    effective = {key: os.environ.get(key, loaded.get(key, "")) for key in _AWS_KEY_PAIR}
+    present = {key for key, value in effective.items() if value}
+    if present and present != _AWS_KEY_PAIR:
+        missing = sorted(_AWS_KEY_PAIR - present)
+        raise RuntimeError(f"incomplete AWS access key pair; missing {', '.join(missing)}")
+    return loaded
 
 
 def deployment_status(project: Path) -> dict[str, Any]:
@@ -121,7 +177,11 @@ def execute_operation(
             "command_group": group,
             "note": "Dry run only; explicit execution authorization is still required.",
         }
-    run_command_groups(project, [group])
+    local_environment = _load_local_aws_environment(project)
+    if local_environment:
+        run_command_groups(project, [group], environment=local_environment)
+    else:
+        run_command_groups(project, [group])
     evidence_name = environment if operation == "deploy" else f"rollback-{environment}"
     evidence = _validate_operation_evidence(
         project,

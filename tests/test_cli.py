@@ -1,10 +1,13 @@
 import json
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
 from ai_workflow.cli import main
+from ai_workflow.commands import run_command_groups
+from ai_workflow.deployment import _load_local_aws_environment
 from ai_workflow.design import classify_design_inputs
 from ai_workflow.discovery import detect
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
@@ -18,6 +21,76 @@ from ai_workflow.structure import (
     validate_structure,
 )
 from ai_workflow.tokens import parse_token
+
+
+def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run_git(tmp_path, "init")[0] == 0
+    (tmp_path / ".gitignore").write_text(".env\n")
+    access_key = "AKIAEXAMPLELOCAL"
+    credential_value = "-".join(("local", "secret", "example"))
+    (tmp_path / ".env").write_text(
+        f"AWS_ACCESS_KEY_ID={access_key}\n"
+        f"AWS_SECRET_ACCESS_KEY={credential_value}\n"
+        "AWS_REGION=ap-southeast-1\n"
+        "AWS_SESSION_TOKEN=<optional temporary session token>\n"
+        "APPLICATION_SECRET=must-not-be-loaded\n"
+    )
+    for key in (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_REGION",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    loaded = _load_local_aws_environment(tmp_path)
+    assert loaded == {
+        "AWS_ACCESS_KEY_ID": access_key,
+        "AWS_SECRET_ACCESS_KEY": credential_value,
+        "AWS_REGION": "ap-southeast-1",
+    }
+    assert "APPLICATION_SECRET" not in loaded
+
+    manifest = tmp_path / ".ai" / "test-commands.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "commands": {
+                    "deploy-staging": [
+                        {
+                            "argv": [
+                                sys.executable,
+                                "-c",
+                                "import os; print(os.environ['AWS_ACCESS_KEY_ID']); "
+                                "print(os.environ['AWS_SECRET_ACCESS_KEY'])",
+                            ],
+                            "cwd": ".",
+                        }
+                    ]
+                }
+            }
+        )
+    )
+    report = run_command_groups(tmp_path, ["deploy-staging"], environment=loaded)
+    output = str(report["results"][0]["stdout_tail"])
+    assert access_key not in output
+    assert credential_value not in output
+    assert output.count("[REDACTED]") == 2
+
+
+def test_local_aws_env_rejects_incomplete_key_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run_git(tmp_path, "init")[0] == 0
+    (tmp_path / ".gitignore").write_text(".env\n")
+    (tmp_path / ".env").write_text("AWS_ACCESS_KEY_ID=AKIAEXAMPLELOCAL\n")
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="incomplete AWS access key pair"):
+        _load_local_aws_environment(tmp_path)
 
 
 def test_detects_frameworks() -> None:

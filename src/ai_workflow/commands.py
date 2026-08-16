@@ -2,16 +2,37 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from .io import read_json, write_json
 from .model import utc_now
 
+_SECRET_ENVIRONMENT_KEYS = {
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+}
 
-def run_command_groups(project: Path, groups: list[str]) -> dict[str, Any]:
+
+def _redact_output(value: str, environment: Mapping[str, str]) -> str:
+    redacted = value
+    for key in _SECRET_ENVIRONMENT_KEYS:
+        secret = environment.get(key, "")
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
+def run_command_groups(
+    project: Path,
+    groups: list[str],
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     manifest = read_json(project / ".ai" / "test-commands.json")
     if not isinstance(manifest, dict):
         raise RuntimeError(".ai/test-commands.json is required for deterministic execution")
@@ -19,6 +40,9 @@ def run_command_groups(project: Path, groups: list[str]) -> dict[str, Any]:
     if not isinstance(configured, dict):
         raise RuntimeError("test command manifest must contain a commands object")
     results: list[dict[str, Any]] = []
+    command_environment = os.environ.copy()
+    if environment:
+        command_environment.update(environment)
     for group in groups:
         commands = configured.get(group)
         if not isinstance(commands, list) or not commands:
@@ -44,6 +68,7 @@ def run_command_groups(project: Path, groups: list[str]) -> dict[str, Any]:
                 cwd=cwd,
                 text=True,
                 capture_output=True,
+                env=command_environment,
                 timeout=int(timeout),
                 check=False,
             )
@@ -53,8 +78,8 @@ def run_command_groups(project: Path, groups: list[str]) -> dict[str, Any]:
                 "argv": argv,
                 "cwd": relative_cwd,
                 "returncode": completed.returncode,
-                "stdout_tail": completed.stdout[-4000:],
-                "stderr_tail": completed.stderr[-4000:],
+                "stdout_tail": _redact_output(completed.stdout[-4000:], command_environment),
+                "stderr_tail": _redact_output(completed.stderr[-4000:], command_environment),
             }
             results.append(result)
             if completed.returncode != 0:

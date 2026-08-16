@@ -374,6 +374,21 @@ apply infrastructure, deploy, or change DNS. The gate verifies structure, IaC, G
 immutable digest promotion, protected production approval, migration safety, monitoring, rollback,
 backup, and recovery. Without an explicit AWS selection, the phase is skipped without loading it.
 
+Generated AWS projects include this complete local/manual credential contract:
+
+```dotenv
+AWS_ACCESS_KEY_ID=<your aws access key id>
+AWS_SECRET_ACCESS_KEY=<your aws secret access key>
+AWS_REGION=<your aws region>
+AWS_SESSION_TOKEN=<optional temporary session token>
+```
+
+Copy `.env.example` to `.env` and replace the required placeholders. Explicit local deployment
+commands automatically load only these AWS variables after verifying that `.env` is ignored and
+untracked, and redact their values from captured output. `AWS_SESSION_TOKEN` is needed only for
+temporary credentials. GitHub Actions uses OIDC instead of `.env`, and ECS workloads use IAM roles
+plus Secrets Manager.
+
 Live operations are separate and require explicit authorization:
 
 ```text
