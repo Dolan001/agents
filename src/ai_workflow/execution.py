@@ -19,6 +19,7 @@ from .pipeline import node_cache_key, workflow_root
 from .structure import (
     validate_backend_evidence,
     validate_database_evidence,
+    validate_deployment_evidence,
     validate_monorepo,
     validate_realtime_evidence,
     validate_structure,
@@ -93,19 +94,20 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             "prd_only",
         }:
             raise RuntimeError("design phase lacks a valid deterministic input mode")
-    if phase in {"frontend", "mobile", "backend"}:
+    if phase in {"frontend", "mobile", "backend", "deployment"}:
         if phase in {"frontend", "mobile"}:
             validate_monorepo(project, workflow_root() / "config" / "target-monorepo.json")
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])
         if pack is None:
             raise RuntimeError(f"selected framework pack is unavailable for {phase}")
         structure = validate_structure(project, pack, phase)
-        validate_realtime_evidence(
-            project,
-            workflow_root() / "schemas" / "realtime-verification.schema.json",
-            phase,
-            structure,
-        )
+        if phase in {"frontend", "mobile", "backend"}:
+            validate_realtime_evidence(
+                project,
+                workflow_root() / "schemas" / "realtime-verification.schema.json",
+                phase,
+                structure,
+            )
         if phase == "backend":
             validate_database_evidence(
                 project,
@@ -117,6 +119,11 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
                 workflow_root() / "schemas" / "backend-verification.schema.json",
                 state["frameworks"]["backend"],
             )
+        if phase == "deployment":
+            validate_deployment_evidence(
+                project,
+                workflow_root() / "schemas" / "deployment-readiness.schema.json",
+            )
 
 
 def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
@@ -125,6 +132,7 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
         "frontend": {"nextjs": "nextjs_ai", "react": "react_ai"}.get(frameworks["frontend"]),
         "mobile": {"flutter": "flutter_ai"}.get(frameworks["mobile"]),
         "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"}.get(frameworks["backend"]),
+        "deployment": {"aws": "aws_ai"}.get(frameworks["deployment"]),
     }
     for pack in selected.values():
         if pack:
@@ -137,7 +145,15 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     if exact:
         return exact[0]
     if name.startswith("selected-"):
-        side = "backend" if "backend" in name else "mobile" if "mobile" in name else "frontend"
+        side = (
+            "deployment"
+            if "deployment" in name
+            else "backend"
+            if "backend" in name
+            else "mobile"
+            if "mobile" in name
+            else "frontend"
+        )
         role = (
             "independent-verifier"
             if name.endswith("-verifier")
@@ -158,6 +174,7 @@ def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path |
         "frontend": {"nextjs": "nextjs_ai", "react": "react_ai"},
         "mobile": {"flutter": "flutter_ai"},
         "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"},
+        "deployment": {"aws": "aws_ai"},
     }
     if phase not in mapping:
         return None
@@ -191,6 +208,13 @@ def _skill_paths(
         "backend": [framework_task_skill],
         "integration": ["execute-task-contract"],
         "testing": ["verify-feature"],
+        "deployment": [
+            "design-deployment-contract",
+            "design-ci-cd-pipeline",
+            "secure-software-supply-chain",
+            "plan-database-deployment",
+            "verify-deployment-readiness",
+        ],
         "delivery": ["deliver-safe-git"],
     }
     names = ["build-context-bundle", *base_names[phase]]
@@ -200,7 +224,28 @@ def _skill_paths(
     pack = _selected_pack(root, phase, frameworks)
     if pack is not None:
         available = sorted(pack.glob("skills/*/SKILL.md"))
-        if node == "scaffold-target-monorepo":
+        if phase == "deployment" and node.startswith("inspect-"):
+            selected_skills = [
+                path for path in available if path.parent.name == "inspect-aws-target"
+            ]
+        elif phase == "deployment" and node.startswith("design-"):
+            selected_skills = [
+                path for path in available if path.parent.name == "design-aws-architecture"
+            ]
+        elif phase == "deployment" and node.startswith("generate-"):
+            selected_skills = [
+                path
+                for path in available
+                if path.parent.name in {"generate-aws-infrastructure", "configure-aws-identity"}
+            ]
+        elif phase == "deployment" and node.startswith("verify-"):
+            selected_skills = [
+                path
+                for path in available
+                if path.parent.name
+                in {"verify-aws-deployment", "verify-aws-disaster-recovery"}
+            ]
+        elif node == "scaffold-target-monorepo":
             selected_skills = [path for path in available if path.parent.name.startswith("create-")]
         elif node.startswith("implement-"):
             selected_skills = [
@@ -276,6 +321,8 @@ def _control_paths(
             )
         if phase in {"frontend", "mobile", "backend"} and verifying:
             paths.append(root / "schemas" / "realtime-verification.schema.json")
+        if phase == "deployment" and verifying:
+            paths.append(root / "schemas" / "deployment-readiness.schema.json")
     if any(not path.is_file() for path in paths):
         raise RuntimeError("workflow control instruction is missing")
     return paths

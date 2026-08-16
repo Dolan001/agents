@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Deployment"
+  short_description: "Generate and validate AWS deployment assets"
+  default_prompt: "Use $start-deployment to generate and independently verify AWS infrastructure without deploying."

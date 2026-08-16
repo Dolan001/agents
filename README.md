@@ -19,6 +19,7 @@ The supported application combinations are:
 | Web frontend | React or Next.js | `apps/frontend` |
 | Mobile | Flutter for Android and iOS | `apps/mobile` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
+| Deployment | AWS (optional) | `infra`, `.github/workflows`, `ops` |
 
 Both backend choices use PostgreSQL. Generated tables and schema changes are owned by
 reviewed Django migrations or Alembic revisions; neither backend may fall back to SQLite
@@ -88,7 +89,7 @@ missing phase through delivery. It does not push by default.
 ### 1. Install and pin the workflow
 
 The real project stores `ai_workflow` directly at `.agents`. The nested `base_ai`,
-`drf_ai`, `fastapi_ai`, `flutter_ai`, `react_ai`, and `nextjs_ai` repositories are initialized
+`drf_ai`, `fastapi_ai`, `flutter_ai`, `react_ai`, `nextjs_ai`, and `aws_ai` repositories are initialized
 recursively. Commit `.gitmodules` and the `.agents` gitlink so every collaborator gets
 the same reviewed workflow version:
 
@@ -122,6 +123,7 @@ explicit declarations such as:
 Frontend framework: Next.js
 Mobile framework: Flutter
 Backend framework: Django REST Framework
+Deployment provider: AWS
 ```
 
 Optional design inputs must already be inside the target repository and can be passed
@@ -140,7 +142,8 @@ Inputs are preserved under `HTML/source/`, hashed, and treated as untrusted desi
 ### 3. Resolve frameworks before building
 
 The workflow accepts only React or Next.js for web, Flutter for Android/iOS mobile,
-and Django REST Framework or FastAPI for backend. At least one client is required.
+and Django REST Framework or FastAPI for backend. AWS is the only deployment provider currently
+accepted. At least one client is required.
 
 - If the PRD explicitly declares a supported framework, Codex uses it without asking.
 - If a framework required by the requested stopping point is absent, Codex asks only
@@ -148,6 +151,8 @@ and Django REST Framework or FastAPI for backend. At least one client is require
 - Unsupported, conflicting, ambiguous, or multiple declarations fail before
   application code or runtime state is created.
 - A saved framework choice cannot be silently changed during resume.
+- AWS is activated only by `Deployment provider: AWS`, explicit `--deployment aws`, or
+  `$start-deployment`; incidental AWS service references do not activate it.
 
 Design specification and HTML generation do not require framework choices.
 `start-frontend` requires a web selection; `start-mobile` requires Flutter. Backend and
@@ -191,6 +196,7 @@ Use a narrower command when only part of the lifecycle is required:
 | `$start-backend` | Backend gate | Yes |
 | `$start-integration` | Typed integration gate | Yes |
 | `$start-testing` | Independent testing and security gate | Yes |
+| `$start-deployment` | AWS generation/readiness; no cloud mutation | Yes |
 | `$start-delivery` | Release-readiness gate | Yes |
 | `$start-build` | Complete delivery lifecycle | Yes |
 | `$resume-build` | Unchanged checkpoints through delivery | As needed |
@@ -351,7 +357,37 @@ integration, and end-to-end lanes. Independent agents verify:
 Results are stored under `artifacts/tests/`, `artifacts/security/`, and
 `.ai/evidence/features/`. A task is marked verified only when its final evidence passes.
 
-### 14. Complete delivery
+### 14. Generate and verify optional AWS deployment assets
+
+When AWS is explicitly selected, this phase runs only after testing and security pass. It generates
+target-owned OpenTofu-compatible environment roots under `infra/`, pinned GitHub Actions under
+`.github/workflows/`, operations material under `ops/`, and architecture under `docs/deployment/`.
+
+The default uses CloudFront, WAF, ALB, ECS Fargate, ECR, RDS PostgreSQL, ElastiCache Redis, S3,
+Route 53, ACM, Secrets Manager, KMS, CloudWatch, and AWS Backup as required. React uses S3 plus
+CloudFront; Next.js SSR runs on ECS. FastAPI uses Uvicorn. DRF uses Gunicorn only for WSGI-only
+workloads and ASGI for WebSockets. Nginx is conditional when CloudFront, WAF, and ALB cannot meet a
+documented proxy requirement.
+
+`$start-deployment` and the AWS phase inside `$start-build` never contact AWS, assume credentials,
+apply infrastructure, deploy, or change DNS. The gate verifies structure, IaC, GitHub OIDC,
+immutable digest promotion, protected production approval, migration safety, monitoring, rollback,
+backup, and recovery. Without an explicit AWS selection, the phase is skipped without loading it.
+
+Live operations are separate and require explicit authorization:
+
+```text
+$deploy-staging
+$deployment-status
+$deploy-production
+$rollback-deployment
+```
+
+Production must promote the staging-verified digest. Rollback names an environment and never
+automatically reverses destructive database changes. Project-owned argv commands perform mutations
+and must produce validated post-operation evidence.
+
+### 15. Complete delivery
 
 The delivery phase aggregates verified evidence into `artifacts/final/` and evaluates
 release readiness. It does not deploy or merge.
@@ -368,7 +404,7 @@ evidence and commits them on the current safe feature branch. `--push` implies v
 commits and pushes that same branch to `origin`. Unverified or out-of-scope paths fail
 closed.
 
-### 15. Inspect, resume, and recover
+### 16. Inspect, resume, and recover
 
 At any time, inspect state without changing the project:
 
@@ -388,7 +424,7 @@ most two retries. The first attempt does not load recovery guidance. A retry rec
 the concise prior failure and the `recover-failure` skill. Exhausted failures are
 recorded in `.ai/failures.jsonl` and stop the phase.
 
-### 16. Resolve post-build bugs or changes with a token
+### 17. Resolve post-build bugs or changes with a token
 
 Create exactly one scoped token at:
 
@@ -461,7 +497,7 @@ state and remains separate:
 ├── context-bundles/         # bounded task-specific context manifests
 ├── prompts/                 # exact dispatched node prompts
 ├── logs/                    # bounded adapter results
-├── evidence/                # gates, structure, design, and feature verification
+├── evidence/                # gates, structure, design, feature, and deployment verification
 └── token-runs/              # token plans, state, and implementation evidence
 ```
 
@@ -472,7 +508,7 @@ failed artifact and resume after correcting the actual cause.
 
 - Every agentic node has a required artifact contract and a phase evidence gate.
 - The scheduler runs phases sequentially to prevent client/backend contract drift.
-- Only selected web, mobile, and backend behavior packs are loaded.
+- Only selected web, mobile, backend, and optional AWS behavior packs are loaded.
 - `build-context-bundle` creates an auditable manifest capped at 12 files and 60,000
   characters, prioritizing requirement anchors, contracts, affected code, and tests.
 - Context manifests store paths, hashes, priorities, and sizes instead of duplicating
@@ -532,6 +568,12 @@ available at `./.agents/bin/ai`:
   --frontend nextjs --mobile flutter --backend django-drf
 ./.agents/bin/ai start-integration --project . --adapter codex
 ./.agents/bin/ai start-testing --project . --adapter codex
+./.agents/bin/ai start-deployment --project . --adapter codex --deployment aws
+./.agents/bin/ai deployment-status --project .
+./.agents/bin/ai deploy-staging --project . --execute
+./.agents/bin/ai deploy-production --project . --execute --approve-production
+./.agents/bin/ai rollback-deployment --project . --environment production \
+  --execute --approve-rollback
 ./.agents/bin/ai start-delivery --project . --adapter codex
 ./.agents/bin/ai start-build --project . --adapter codex
 
@@ -563,7 +605,7 @@ not a normal recovery step.
 
 ## Linked repositories
 
-The workflow pins exact reviewed commits for six behavior repositories while each
+The workflow pins exact reviewed commits for seven behavior repositories while each
 submodule records `branch = dev` for explicit update operations:
 
 ```text
@@ -577,6 +619,7 @@ submodule records `branch = dev` for explicit update operations:
 ├── rules/                   # shared and phase scope rules
 ├── skills/                  # Codex-discoverable user entrypoints
 ├── base_ai/                 # shared agents and skills
+├── aws_ai/                  # AWS infrastructure and deployment behavior pack
 ├── drf_ai/                  # Django DRF behavior pack
 ├── fastapi_ai/              # FastAPI behavior pack
 ├── flutter_ai/              # Flutter Android/iOS behavior pack
@@ -585,8 +628,8 @@ submodule records `branch = dev` for explicit update operations:
 ```
 
 The linked repositories are `Dolan001/base_ai`, `Dolan001/drf_ai`,
-`Dolan001/fastapi_ai`, `Dolan001/flutter_ai`, `Dolan001/nextjs_ai`, and
-`Dolan001/react_ai`.
+`Dolan001/fastapi_ai`, `Dolan001/flutter_ai`, `Dolan001/nextjs_ai`,
+`Dolan001/react_ai`, and `Dolan001/aws_ai`.
 
 To update the workflow in a target project, review the new `ai_workflow` commit and its
 nested pins, then update the `.agents` gitlink explicitly. Do not copy skills into a
@@ -596,7 +639,8 @@ second `.agents` directory.
 
 ```text
 bootstrap → requirements/contracts → design/approved HTML → optional web
-          → optional Flutter mobile → backend → integration → testing → delivery
+          → optional Flutter mobile → backend → integration → testing
+          → optional AWS asset readiness → delivery
 ```
 
 `config/pipeline.json` is the phase registry. Each phase resolves one manifest, one

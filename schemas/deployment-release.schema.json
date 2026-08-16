@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Immutable deployment release evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider", "verified", "source_commit", "artifact_digest", "sbom",
+    "provenance", "scan_passed", "checked_at"
+  ],
+  "properties": {
+    "provider": {"const": "aws"},
+    "verified": {"const": true},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "artifact_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "sbom": {"const": true},
+    "provenance": {"const": true},
+    "scan_passed": {"const": true},
+    "checked_at": {"type": "string", "format": "date-time"}
+  }
+}

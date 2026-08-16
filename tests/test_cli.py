@@ -39,6 +39,7 @@ def test_resolves_supported_frameworks_declared_in_prd(tmp_path: Path) -> None:
         "frontend": "nextjs",
         "mobile": "unknown",
         "backend": "django-drf",
+        "deployment": "unknown",
     }
 
 
@@ -50,6 +51,7 @@ def test_resolves_flutter_mobile_declared_in_prd(tmp_path: Path) -> None:
         "frontend": "unknown",
         "mobile": "flutter",
         "backend": "fastapi",
+        "deployment": "unknown",
     }
 
 
@@ -76,7 +78,28 @@ def test_plain_frontend_description_is_not_treated_as_framework_declaration(
         "frontend": "unknown",
         "mobile": "unknown",
         "backend": "unknown",
+        "deployment": "unknown",
     }
+
+
+def test_detects_only_explicit_aws_deployment_declaration(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(
+        "# Stack\n\nFrontend framework: React\nBackend framework: FastAPI\n"
+        "Deployment provider: AWS\n\n- OPS-001 Store files in S3.\n"
+    )
+    assert resolve_frameworks(prd)["deployment"] == "aws"
+    prd.write_text(
+        "# Product\n\nFrontend framework: React\nBackend framework: FastAPI\n"
+        "\n- OPS-001 Integrate an AWS-compatible object service.\n"
+    )
+    assert resolve_frameworks(prd)["deployment"] == "unknown"
+    prd.write_text(
+        "# Stack\n\nFrontend framework: React\nBackend framework: FastAPI\n"
+        "Deployment provider: AWS and GCP\n"
+    )
+    with pytest.raises(RuntimeError, match="unsupported deployment provider"):
+        resolve_frameworks(prd)
 
 
 def _write_token_image(path: Path) -> None:
@@ -384,9 +407,9 @@ def test_clean_state_requires_confirmation(tmp_path: Path) -> None:
 def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
-    assert report["phases"] == 9
-    assert report["nodes"] == 31
-    assert report["agentic_nodes"] == 20
+    assert report["phases"] == 10
+    assert report["nodes"] == 35
+    assert report["agentic_nodes"] == 24
     assert report["execution_groups"][3:6] == [["frontend"], ["mobile"], ["backend"]]
 
 
@@ -539,6 +562,30 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     if phase == "backend" and node == "verify-backend":
         _write_database_evidence(project, prompt)
         _write_backend_evidence(project, prompt)
+    if phase == "deployment" and node == "generate-deployment-assets":
+        _create_pack_structure(project, prompt)
+    if phase == "deployment" and node == "verify-deployment-assets":
+        checks = [
+            {"name": name, "passed": True, "evidence": f"pilot {name}"}
+            for name in (
+                "format", "validate", "security", "identity", "supply-chain",
+                "migration", "rollback", "recovery",
+            )
+        ]
+        path.write_text(
+            json.dumps(
+                {
+                    "provider": "aws",
+                    "verified": True,
+                    "generation_cloud_mutation": False,
+                    "checks": checks,
+                    "unresolved_critical": [],
+                    "artifact_policy": "build-once-promote-digest",
+                    "production_approval": "protected-environment-required",
+                    "checked_at": "2026-08-16T00:00:00Z",
+                }
+            )
+        )
     if phase == "integration" and node == "connect-feature-slices":
         client = project / "packages" / "api-client" / "index.ts"
         client.parent.mkdir(parents=True, exist_ok=True)
@@ -558,6 +605,10 @@ def _create_pack_structure(project: Path, prompt: str) -> None:
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"pilot {contract['framework']} artifact\n")
+    for relative, values in contract.get("required_text", {}).items():
+        path = target / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(values) + "\n")
     path_sets = contract.get("required_path_sets", [])
     for path_set in path_sets:
         for relative in path_set["alternatives"][0]:
@@ -884,9 +935,147 @@ def test_start_build_uses_frameworks_declared_in_prd(
         "frontend": "nextjs",
         "mobile": "unknown",
         "backend": "django-drf",
+        "deployment": "unknown",
     }
     assert (tmp_path / "apps" / "frontend" / "app" / "page.tsx").is_file()
     assert (tmp_path / "apps" / "backend" / "manage.py").is_file()
+
+
+def test_start_build_generates_aws_assets_only_when_explicitly_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\n"
+        "Frontend framework: React\n"
+        "Backend framework: FastAPI\n"
+        "Deployment provider: AWS\n\n"
+        "- ACC-001 User can view an account.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert (
+        main(
+            [
+                "start-build",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 0
+    )
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"]["deployment"] == "aws"
+    assert "deployment" in state["completed_phases"]
+    assert (tmp_path / "infra" / "environments" / "production").is_dir()
+    assert (tmp_path / ".github" / "workflows" / "deploy-production.yml").is_file()
+    readiness = json.loads(
+        (tmp_path / ".ai" / "evidence" / "deployment" / "readiness.json").read_text()
+    )
+    assert readiness["verified"] is True
+    assert readiness["generation_cloud_mutation"] is False
+
+
+def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    branch = "ai/test-user/aws-release"
+    _initialize_token_repository(tmp_path, "frontend", branch)
+    store = StateStore(tmp_path)
+    state = store.create(
+        project_id="aws-release",
+        mode="new",
+        frontend="react",
+        backend="fastapi",
+        baseline=None,
+        branch=branch,
+        assumptions=[],
+        deployment="aws",
+    )
+    state["completed_phases"] = list(PHASES[: PHASES.index("deployment") + 1])
+    store.save(state)
+    evidence_root = tmp_path / ".ai" / "evidence" / "deployment"
+    evidence_root.mkdir(parents=True, exist_ok=True)
+    readiness_checks = [
+        {"name": f"check-{index}", "passed": True, "evidence": "verified"}
+        for index in range(8)
+    ]
+    (evidence_root / "readiness.json").write_text(
+        json.dumps(
+            {
+                "provider": "aws",
+                "verified": True,
+                "generation_cloud_mutation": False,
+                "checks": readiness_checks,
+                "unresolved_critical": [],
+                "artifact_policy": "build-once-promote-digest",
+                "production_approval": "protected-environment-required",
+                "checked_at": "2026-08-16T00:00:00Z",
+            }
+        )
+    )
+    digest = f"sha256:{'a' * 64}"
+    source_commit = run_git(tmp_path, "rev-parse", "HEAD")[1]
+    (evidence_root / "release.json").write_text(
+        json.dumps(
+            {
+                "provider": "aws",
+                "verified": True,
+                "source_commit": source_commit,
+                "artifact_digest": digest,
+                "sbom": True,
+                "provenance": True,
+                "scan_passed": True,
+                "checked_at": "2026-08-16T00:00:00Z",
+            }
+        )
+    )
+
+    def fake_deploy(project: Path, groups: list[str]) -> dict[str, object]:
+        group = groups[0]
+        environment = group.removeprefix("deploy-")
+        (project / ".ai" / "evidence" / "deployment" / f"{environment}.json").write_text(
+            json.dumps(
+                {
+                    "provider": "aws",
+                    "environment": environment,
+                    "operation": "deploy",
+                    "verified": True,
+                    "source_commit": source_commit,
+                    "artifact_digest": digest,
+                    "deployment_id": f"deployment-{environment}",
+                    "account_id": "123456789012",
+                    "region": "us-east-1",
+                    "checks": [{"name": "smoke", "passed": True}],
+                    "checked_at": "2026-08-16T00:00:00Z",
+                }
+            )
+        )
+        return {"passed": True}
+
+    monkeypatch.setattr("ai_workflow.deployment.run_command_groups", fake_deploy)
+    assert main(["deployment-status", "--project", str(tmp_path)]) == 0
+    assert main(["deploy-staging", "--project", str(tmp_path)]) == 0
+    assert main(["deploy-staging", "--project", str(tmp_path), "--execute"]) == 0
+    assert main(["deploy-production", "--project", str(tmp_path), "--execute"]) == 1
+    assert (
+        main(
+            [
+                "deploy-production",
+                "--project",
+                str(tmp_path),
+                "--execute",
+                "--approve-production",
+            ]
+        )
+        == 0
+    )
+    production = json.loads((evidence_root / "production.json").read_text())
+    assert production["artifact_digest"] == json.loads(
+        (evidence_root / "staging.json").read_text()
+    )["artifact_digest"]
 
 
 def test_start_build_supports_flutter_only_client(
@@ -918,6 +1107,7 @@ def test_start_build_supports_flutter_only_client(
         "frontend": "unknown",
         "mobile": "flutter",
         "backend": "fastapi",
+        "deployment": "unknown",
     }
     assert state["completed_phases"] == list(PHASES)
     assert not (tmp_path / "apps" / "frontend").exists()

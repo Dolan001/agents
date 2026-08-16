@@ -17,6 +17,7 @@ PHASES = (
     "backend",
     "integration",
     "testing",
+    "deployment",
     "delivery",
 )
 
@@ -34,6 +35,9 @@ class StateStore:
         state = read_json(self.path)
         if not isinstance(state, dict):
             raise RuntimeError(f"workflow is not initialized: {self.project}")
+        frameworks = state.get("frameworks")
+        if isinstance(frameworks, dict):
+            frameworks.setdefault("deployment", "unknown")
         return state
 
     def save(self, state: dict[str, Any]) -> None:
@@ -50,6 +54,7 @@ class StateStore:
         branch: str | None,
         assumptions: list[str],
         mobile: str = "unknown",
+        deployment: str = "unknown",
     ) -> dict[str, Any]:
         if self.path.exists():
             raise RuntimeError("workflow state already exists; use ai status or ai resume")
@@ -59,7 +64,12 @@ class StateStore:
             "mode": mode,
             "status": "initialized",
             "current_phase": "bootstrap",
-            "frameworks": {"frontend": frontend, "mobile": mobile, "backend": backend},
+            "frameworks": {
+                "frontend": frontend,
+                "mobile": mobile,
+                "backend": backend,
+                "deployment": deployment,
+            },
             "git": {"baseline_commit": baseline, "branch": branch},
             "features": {},
             "assumptions": assumptions,

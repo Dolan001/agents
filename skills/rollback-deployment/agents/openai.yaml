@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rollback Deployment"
+  short_description: "Rollback an AWS environment to a verified digest"
+  default_prompt: "Use $rollback-deployment to explicitly restore a named AWS environment to its prior verified release."

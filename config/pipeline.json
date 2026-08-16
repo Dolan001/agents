@@ -10,6 +10,7 @@
     "backend",
     "integration",
     "testing",
+    "deployment",
     "delivery"
   ],
   "execution_groups": [
@@ -21,6 +22,7 @@
     ["backend"],
     ["integration"],
     ["testing"],
+    ["deployment"],
     ["delivery"]
   ],
   "phases": {
@@ -72,8 +74,14 @@
       "blueprint": "blueprints/testing.json",
       "gate": "gates/contracts/testing.json"
     },
-    "delivery": {
+    "deployment": {
       "dependencies": ["testing"],
+      "manifest": "pipeline/manifests/deployment.json",
+      "blueprint": "blueprints/deployment.json",
+      "gate": "gates/contracts/deployment.json"
+    },
+    "delivery": {
+      "dependencies": ["deployment"],
       "manifest": "pipeline/manifests/delivery.json",
       "blueprint": "blueprints/delivery.json",
       "gate": "gates/contracts/delivery.json"

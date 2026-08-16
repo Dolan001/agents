@@ -29,7 +29,12 @@ def run_git(project: Path, *arguments: str) -> tuple[int, str]:
         capture_output=True,
         text=True,
     )
-    return completed.returncode, (completed.stdout or completed.stderr).strip()
+    output = (
+        completed.stdout
+        if completed.returncode == 0
+        else completed.stderr or completed.stdout
+    )
+    return completed.returncode, output.strip()
 
 
 def baseline(project: Path) -> dict[str, object]:

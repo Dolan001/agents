@@ -391,6 +391,34 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
             f"{instance_name}/{relative}" for relative in conditional_wrong_type
         )
     source_violations = _source_violations(target, contract)
+    forbidden_matches: list[str] = []
+    raw_forbidden = contract.get("forbidden_globs", [])
+    if not isinstance(raw_forbidden, list) or not all(
+        isinstance(pattern, str) and pattern for pattern in raw_forbidden
+    ):
+        raise RuntimeError("framework forbidden globs are invalid")
+    for pattern in raw_forbidden:
+        if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+            raise RuntimeError(f"framework forbidden glob is unsafe: {pattern}")
+        forbidden_matches.extend(
+            candidate.relative_to(target).as_posix()
+            for candidate in target.glob(pattern)
+            if candidate.is_file()
+        )
+    missing_required_text: list[dict[str, str]] = []
+    raw_required_text = contract.get("required_text", {})
+    if not isinstance(raw_required_text, dict):
+        raise RuntimeError("framework required text contract is invalid")
+    for relative, values in raw_required_text.items():
+        if not isinstance(relative, str) or not isinstance(values, list) or not all(
+            isinstance(value, str) and value for value in values
+        ):
+            raise RuntimeError("framework required text contract is invalid")
+        path = _contract_path(target, relative)
+        content = path.read_text(encoding="utf-8") if path.is_file() else ""
+        for value in values:
+            if value.lower() not in content.lower():
+                missing_required_text.append({"path": relative, "text": value})
     report = {
         "phase": phase,
         "framework": contract.get("framework"),
@@ -408,6 +436,8 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         "missing_domain_paths": missing_domain_paths,
         "wrong_type_domain_paths": wrong_type_domain_paths,
         "source_violations": source_violations,
+        "forbidden_matches": sorted(set(forbidden_matches)),
+        "missing_required_text": missing_required_text,
         "valid": not missing
         and not wrong_type
         and not missing_path_sets
@@ -416,7 +446,9 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         and not missing_source_patterns
         and not missing_domain_paths
         and not wrong_type_domain_paths
-        and not source_violations,
+        and not source_violations
+        and not forbidden_matches
+        and not missing_required_text,
         "checked_at": utc_now(),
     }
     write_json(project / ".ai" / "evidence" / "structure" / f"{phase}.json", report)
@@ -430,6 +462,8 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         or missing_domain_paths
         or wrong_type_domain_paths
         or source_violations
+        or forbidden_matches
+        or missing_required_text
     ):
         raise RuntimeError(
             f"generated {phase} structure is invalid: missing={missing}, wrong_type={wrong_type}, "
@@ -439,6 +473,8 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
             f"conditional_wrong_type={wrong_type_conditional_paths}, "
             f"missing_source_patterns={missing_source_patterns}, "
             f"source_violations={source_violations}"
+            f", forbidden_matches={sorted(set(forbidden_matches))}, "
+            f"missing_required_text={missing_required_text}"
         )
     return report
 
@@ -466,6 +502,25 @@ def validate_database_evidence(
             "database verification framework does not match the selected backend"
         )
     _reject_secret_evidence(evidence, "database verification")
+    return evidence
+
+
+def validate_deployment_evidence(project: Path, schema_path: Path) -> dict[str, Any]:
+    evidence = read_json(project / ".ai" / "evidence" / "deployment" / "readiness.json")
+    schema = read_json(schema_path)
+    if not isinstance(evidence, dict) or not isinstance(schema, dict):
+        raise RuntimeError("deployment readiness evidence or schema is missing")
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(evidence),
+        key=lambda item: list(item.path),
+    )
+    if errors:
+        summaries = [
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
+            for error in errors
+        ]
+        raise RuntimeError(f"deployment readiness evidence is invalid: {summaries}")
+    _reject_secret_evidence(evidence, "deployment readiness")
     return evidence
 
 

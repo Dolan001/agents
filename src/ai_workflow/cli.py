@@ -11,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .commands import run_command_groups
+from .deployment import deployment_status, execute_operation
 from .design import classify_design_inputs, ingest_design_inputs
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
@@ -93,6 +94,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
         "frontend": args.frontend,
         "mobile": getattr(args, "mobile", "unknown"),
         "backend": args.backend,
+        "deployment": getattr(args, "deployment", "unknown"),
     }
     if mode == "brownfield":
         report = inventory(project)
@@ -112,6 +114,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             "Local work is allowed; remote push requires explicit configuration.",
         ],
         mobile=frameworks["mobile"],
+        deployment=frameworks["deployment"],
     )
     save_inventory(project, inventory(project))
     design_inputs = classify_design_inputs(project)
@@ -294,11 +297,14 @@ def command_one_shot(args: argparse.Namespace) -> int:
     state_exists = (project / ".ai" / "state.json").is_file()
     if not state_exists:
         prd = require_prd(project, args.prd)
-        resolved = resolve_frameworks(prd, args.frontend, args.mobile, args.backend)
+        resolved = resolve_frameworks(
+            prd, args.frontend, args.mobile, args.backend, args.deployment
+        )
         _require_frameworks("delivery", resolved)
         args.frontend = resolved["frontend"]
         args.mobile = resolved["mobile"]
         args.backend = resolved["backend"]
+        args.deployment = resolved["deployment"]
         initialize(args, "new")
     elif args.html or args.screenshot:
         ingest_design_inputs(project, args.html, args.screenshot)
@@ -351,7 +357,7 @@ def command_one_shot(args: argparse.Namespace) -> int:
 def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None:
     store = StateStore(project)
     state = store.load()
-    for side in ("frontend", "mobile", "backend"):
+    for side in ("frontend", "mobile", "backend", "deployment"):
         selected = getattr(args, side, "unknown")
         current = state["frameworks"][side]
         if selected == "unknown":
@@ -380,12 +386,14 @@ def _require_frameworks(target: str, frameworks: dict[str, str]) -> None:
             missing.append("client: react, nextjs, or flutter")
         if frameworks["backend"] == "unknown":
             missing.append("backend: django-drf or fastapi")
+    if target == "deployment" and frameworks["deployment"] == "unknown":
+        missing.append("deployment provider: aws")
     if missing:
         raise RuntimeError(f"framework selection required ({'; '.join(missing)})")
 
 
 def _skip_disabled_client_phase(project: Path, phase: str) -> bool:
-    side = phase if phase in {"frontend", "mobile"} else None
+    side = phase if phase in {"frontend", "mobile", "deployment"} else None
     if side is None:
         return False
     store = StateStore(project)
@@ -423,10 +431,13 @@ def command_start(args: argparse.Namespace) -> int:
     if not (project / ".ai" / "state.json").is_file():
         prd = discover_prd(project, args.prd)
         args.prd = prd.relative_to(project).as_posix()
-        resolved = resolve_frameworks(prd, args.frontend, args.mobile, args.backend)
+        resolved = resolve_frameworks(
+            prd, args.frontend, args.mobile, args.backend, args.deployment
+        )
         args.frontend = resolved["frontend"]
         args.mobile = resolved["mobile"]
         args.backend = resolved["backend"]
+        args.deployment = resolved["deployment"]
         _require_frameworks(target, resolved)
         if not baseline(project)["is_repository"] and not args.github_user:
             raise RuntimeError("--github-user is required to create a safe feature branch")
@@ -460,7 +471,7 @@ def command_start(args: argparse.Namespace) -> int:
             if phase == terminal_phase:
                 break
             continue
-        if phase in {"frontend", "mobile", "backend"}:
+        if phase in {"frontend", "mobile", "backend", "deployment"}:
             state = StateStore(project).load()
             if state["frameworks"][phase] == "unknown":
                 raise RuntimeError(f"--{phase} is required before starting the {phase} phase")
@@ -660,6 +671,27 @@ def command_resolve_token(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_deployment_status(args: argparse.Namespace) -> int:
+    print_json(deployment_status(resolved_project(args.project)))
+    return 0
+
+
+def command_deployment_operation(args: argparse.Namespace) -> int:
+    operation = "rollback" if args.command == "rollback-deployment" else "deploy"
+    environment = (
+        args.environment if operation == "rollback" else args.command.removeprefix("deploy-")
+    )
+    approved = bool(
+        getattr(args, "approve_production", False) or getattr(args, "approve_rollback", False)
+    )
+    print_json(
+        execute_operation(
+            resolved_project(args.project), environment, operation, args.execute, approved
+        )
+    )
+    return 0
+
+
 def add_project(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".", help="Project root (default: current directory)")
 
@@ -677,6 +709,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument(
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
+    command.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
     command.add_argument("--adapter", choices=["codex"], default="codex")
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
@@ -703,6 +736,7 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
         )
+        command.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
         command.set_defaults(handler=handler)
     one_shot = commands.add_parser("one-shot")
     add_project(one_shot)
@@ -715,6 +749,7 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
     one_shot.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
     one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
+    one_shot.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
     one_shot.add_argument("--adapter", choices=["codex"], default="codex")
     one_shot.add_argument("--execute", action="store_true")
     one_shot.add_argument("--commit-verified", action="store_true")
@@ -729,6 +764,7 @@ def parser() -> argparse.ArgumentParser:
         "start-backend": "backend",
         "start-integration": "integration",
         "start-testing": "testing",
+        "start-deployment": "deployment",
         "start-delivery": "delivery",
         "start-build": "delivery",
         "resume-build": "delivery",
@@ -802,6 +838,21 @@ def parser() -> argparse.ArgumentParser:
     token.add_argument("--github-user")
     token.add_argument("--remote", default="origin")
     token.set_defaults(handler=command_resolve_token)
+    deployment_status_command = commands.add_parser("deployment-status")
+    add_project(deployment_status_command)
+    deployment_status_command.set_defaults(handler=command_deployment_status)
+    for name in ("deploy-staging", "deploy-production"):
+        deployment = commands.add_parser(name)
+        add_project(deployment)
+        deployment.add_argument("--execute", action="store_true")
+        deployment.add_argument("--approve-production", action="store_true")
+        deployment.set_defaults(handler=command_deployment_operation)
+    rollback = commands.add_parser("rollback-deployment")
+    add_project(rollback)
+    rollback.add_argument("--environment", choices=["staging", "production"], required=True)
+    rollback.add_argument("--execute", action="store_true")
+    rollback.add_argument("--approve-rollback", action="store_true")
+    rollback.set_defaults(handler=command_deployment_operation)
     return root
 
 

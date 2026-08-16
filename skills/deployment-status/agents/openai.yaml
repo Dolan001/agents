@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deployment Status"
+  short_description: "Inspect AWS deployment state without mutation"
+  default_prompt: "Use $deployment-status to report AWS generation and environment evidence without changing state."

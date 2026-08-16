@@ -22,3 +22,7 @@
 	path = flutter_ai
 	url = https://github.com/Dolan001/flutter_ai.git
 	branch = dev
+[submodule "aws_ai"]
+	path = aws_ai
+	url = https://github.com/Dolan001/aws_ai.git
+	branch = dev

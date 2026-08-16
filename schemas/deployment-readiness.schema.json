@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deployment readiness evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider", "verified", "generation_cloud_mutation", "checks",
+    "unresolved_critical", "artifact_policy", "production_approval", "checked_at"
+  ],
+  "properties": {
+    "provider": {"const": "aws"},
+    "verified": {"const": true},
+    "generation_cloud_mutation": {"const": false},
+    "checks": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "passed", "evidence"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "passed": {"const": true},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unresolved_critical": {"type": "array", "maxItems": 0},
+    "artifact_policy": {"const": "build-once-promote-digest"},
+    "production_approval": {"const": "protected-environment-required"},
+    "checked_at": {"type": "string", "format": "date-time"}
+  }
+}

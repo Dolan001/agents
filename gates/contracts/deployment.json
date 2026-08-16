@@ -1,0 +1,15 @@
+{
+  "phase": "deployment",
+  "required": [
+    ".ai/evidence/deployment/target-inventory.json",
+    ".ai/evidence/deployment/architecture.json",
+    ".ai/evidence/deployment/iac-validation.json",
+    ".ai/evidence/deployment/readiness.json",
+    "infra/**", ".github/workflows/**", "ops/**", "docs/deployment/**"
+  ],
+  "assertions": [
+    "application_testing_passed", "generation_did_not_mutate_aws", "aws_structure_is_complete",
+    "iac_validation_passed", "identity_is_short_lived_and_bounded", "artifact_promotion_uses_digests",
+    "production_requires_approval", "migration_and_rollback_are_safe", "recovery_is_testable"
+  ]
+}

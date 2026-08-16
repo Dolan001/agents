@@ -11,6 +11,11 @@
     {"name": "start-integration", "path": "skills/start-integration/SKILL.md"},
     {"name": "start-testing", "path": "skills/start-testing/SKILL.md"},
     {"name": "start-delivery", "path": "skills/start-delivery/SKILL.md"},
+    {"name": "start-deployment", "path": "skills/start-deployment/SKILL.md"},
+    {"name": "deploy-staging", "path": "skills/deploy-staging/SKILL.md"},
+    {"name": "deploy-production", "path": "skills/deploy-production/SKILL.md"},
+    {"name": "deployment-status", "path": "skills/deployment-status/SKILL.md"},
+    {"name": "rollback-deployment", "path": "skills/rollback-deployment/SKILL.md"},
     {"name": "resume-build", "path": "skills/resume-build/SKILL.md"},
     {"name": "workflow-status", "path": "skills/workflow-status/SKILL.md"},
     {"name": "resolve-token", "path": "skills/resolve-token/SKILL.md"}

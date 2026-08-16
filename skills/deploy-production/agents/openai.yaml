@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Production"
+  short_description: "Promote a verified release to AWS production"
+  default_prompt: "Use $deploy-production to explicitly deploy the staging-verified digest to protected AWS production."

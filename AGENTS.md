@@ -11,5 +11,6 @@ deterministic graphs, catalogs, schemas, state, and evidence. Load only the sele
 web, mobile, and backend packs for configured clients, enforce the 12-file/60k-character
 task budget, and reuse verified nodes by declared input hash. The default lifecycle is
 sequential: approved HTML, optional web, optional Flutter mobile, backend, integration,
-testing, then delivery. Parallel work is allowed only inside a phase when explicitly
+testing, optional AWS asset generation and readiness, then delivery. Live cloud mutation is never
+part of the normal build phase. Parallel work is allowed only inside a phase when explicitly
 planned and path leases do not overlap.

@@ -1,0 +1,9 @@
+{
+  "name": "deployment",
+  "nodes": [
+    {"id": "inspect-deployment-target", "type": "agentic", "agent": "aws-platform-architect", "required_output": ".ai/evidence/deployment/target-inventory.json", "verification": "schema"},
+    {"id": "design-deployment-architecture", "type": "agentic", "agent": "aws-platform-architect", "required_output": ".ai/evidence/deployment/architecture.json", "verification": "schema"},
+    {"id": "generate-deployment-assets", "type": "agentic", "agent": "aws-infrastructure-implementer", "required_output": ".ai/evidence/deployment/iac-validation.json", "verification": "schema"},
+    {"id": "verify-deployment-assets", "type": "agentic", "agent": "aws-independent-verifier", "required_output": ".ai/evidence/deployment/readiness.json", "verification": "verified-true"}
+  ]
+}

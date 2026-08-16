@@ -1,6 +1,6 @@
 {
   "name": "delivery",
-  "prerequisites": ["testing"],
+  "prerequisites": ["deployment"],
   "agents": ["release-readiness-agent", "git-release-agent"],
   "rules": ["rules/common.md", "rules/phases/delivery.md"],
   "inputs": [".ai/evidence/**", "artifacts/tests/**", "artifacts/security/**"],

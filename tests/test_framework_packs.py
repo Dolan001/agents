@@ -104,7 +104,12 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
         ("backend", "fastapi", "fastapi_ai"),
     )
     for phase, framework, pack_name in cases:
-        frameworks = {"frontend": "unknown", "mobile": "unknown", "backend": "unknown"}
+        frameworks = {
+            "frontend": "unknown",
+            "mobile": "unknown",
+            "backend": "unknown",
+            "deployment": "unknown",
+        }
         frameworks[phase] = framework
         pack = root / pack_name
 
@@ -147,6 +152,39 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
         verify_controls = _control_paths(root, phase, f"verify-{phase}", frameworks)
         assert pack / "rules" / "verification.md" in verify_controls
         assert pack / "hooks" / "pre-verify.md" in verify_controls
+
+
+def test_aws_deployment_pack_is_code_free_and_routes_by_role() -> None:
+    root = Path(__file__).resolve().parents[1]
+    pack = root / "aws_ai"
+    assert pack.is_dir()
+    files = [path for path in pack.rglob("*") if path.is_file() and ".git" not in path.parts]
+    assert not [path for path in files if path.suffix in FORBIDDEN_SUFFIXES]
+    agents = json.loads((pack / "agents" / "catalog.json").read_text())
+    skills = json.loads((pack / "skills" / "catalog.json").read_text())
+    assert agents["framework"] == "aws"
+    assert skills["framework"] == "aws"
+    assert len(agents["agents"]) == 3
+    frameworks = {
+        "frontend": "react",
+        "mobile": "unknown",
+        "backend": "fastapi",
+        "deployment": "aws",
+    }
+    assert _agent_path(root, "aws-platform-architect", frameworks).parent == pack / "agents"
+    generated = _skill_paths(root, "deployment", "generate-deployment-assets", frameworks)
+    assert {path.parent.name for path in generated if pack in path.parents} == {
+        "generate-aws-infrastructure",
+        "configure-aws-identity",
+    }
+    verified = _skill_paths(root, "deployment", "verify-deployment-assets", frameworks)
+    assert {path.parent.name for path in verified if pack in path.parents} == {
+        "verify-aws-deployment",
+        "verify-aws-disaster-recovery",
+    }
+    controls = _control_paths(root, "deployment", "verify-deployment-assets", frameworks)
+    assert pack / "rules" / "verification.md" in controls
+    assert pack / "hooks" / "pre-verify.md" in controls
 
 
 def test_backend_packs_require_postgresql_domains_and_database_api_guidance() -> None:

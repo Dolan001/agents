@@ -1,0 +1,14 @@
+{
+  "name": "deployment",
+  "prerequisites": ["testing"],
+  "agents": ["aws-platform-architect", "aws-infrastructure-implementer", "aws-independent-verifier"],
+  "rules": ["rules/common.md", "rules/phases/deployment.md"],
+  "inputs": ["docs/generated/**", "docs/api/**", "apps/**", "packages/**", ".ai/evidence/**", "artifacts/tests/**", "artifacts/security/**"],
+  "outputs": ["infra/**", ".github/workflows/**", "ops/**", "docs/deployment/**", ".ai/evidence/deployment/**"],
+  "scope": {
+    "application_writes": false,
+    "cloud_mutation": false,
+    "allowed_paths": ["infra/**", ".github/workflows/**", "ops/**", "docs/deployment/**", ".ai/evidence/deployment/**"]
+  },
+  "gate": "gates/contracts/deployment.json"
+}

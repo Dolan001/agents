@@ -5,7 +5,7 @@ Status: accepted
 The workflow repositories contain behavior and control logic, never a demonstration
 application. A user supplies a separate target monorepo with a required PRD and
 optional design evidence. `base_ai` is private shared behavior; `drf_ai`, `fastapi_ai`,
-`flutter_ai`, `react_ai`, and `nextjs_ai` describe exact generated structures and
+`flutter_ai`, `react_ai`, `nextjs_ai`, and `aws_ai` describe exact generated structures and
 production decisions; `ai_workflow` links them as pinned submodules and executes the lifecycle.
 
 The default lifecycle is strictly sequential:
@@ -13,7 +13,7 @@ The default lifecycle is strictly sequential:
 ```text
 bootstrap -> requirements/contracts -> approved static HTML -> optional web
           -> optional Flutter mobile -> backend -> typed integration
-          -> independent test/security -> feature Git delivery
+          -> independent test/security -> optional AWS asset readiness -> feature Git delivery
 ```
 
 Static HTML is the reviewable design contract. Supplied HTML is validated and
@@ -30,4 +30,5 @@ focused checks, checkpoints, and verified artifact reuse.
 Application changes occur only on `ai/<github-user>/<feature>` branches. A feature can
 be committed only after independent verification and the test/security gate; staging
 is restricted to evidence-declared paths. Push is explicit. The workflow never merges
-or deploys.
+or deploys during the build lifecycle. Separate environment commands may deploy or roll back only
+after explicit authorization, readiness, protected production approval, and runtime evidence.

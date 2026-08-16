@@ -22,6 +22,7 @@ gitlink to the real project so every developer receives the same pinned workflow
 | `start-backend` | Prerequisites plus selected backend | Yes |
 | `start-integration` | Typed web/mobile and backend integration | Yes |
 | `start-testing` | Full independent test and security gates | Yes |
+| `start-deployment` | AWS assets and readiness; no cloud mutation | Yes |
 | `start-delivery` | Release-ready evidence; optional explicit Git delivery | Yes |
 | `start-build` | Every missing phase through delivery | Yes |
 | `resume-build` | Continue from unchanged verified checkpoints | As needed |
@@ -35,6 +36,10 @@ Next.js, Flutter, Django REST Framework, or FastAPI. Complete delivery requires 
 least one web/mobile client and one backend. Unsupported, conflicting, or multiple
 declarations fail before build work.
 
+An explicit `Deployment provider: AWS` declaration activates AWS asset generation inside
+`start-build`. Otherwise it remains skipped. Live operations are separate: `deploy-staging`,
+`deploy-production`, `deployment-status`, and `rollback-deployment`.
+
 Examples:
 
 ```text
@@ -42,6 +47,7 @@ $start-design --github-user dolan
 $start-generatehtml
 $start-frontend --frontend nextjs
 $start-mobile --mobile flutter
+$start-deployment
 $start-build
 $workflow-status
 $resume-build

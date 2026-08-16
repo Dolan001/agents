@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Staging"
+  short_description: "Deploy an approved release to AWS staging"
+  default_prompt: "Use $deploy-staging to explicitly deploy the verified immutable release to AWS staging."
