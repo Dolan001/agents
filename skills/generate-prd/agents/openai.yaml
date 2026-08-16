@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate PRD"
+  short_description: "Generate and validate a build-ready PRD"
+  default_prompt: "Use $generate-prd to turn my requirements into a validated PRD for the build workflow."

@@ -74,6 +74,15 @@ docs/prd.md
 prd.md
 ```
 
+If only informal requirements are available, create `REQUIREMENTS.md` and invoke:
+
+```text
+$generate-prd REQUIREMENTS.md
+```
+
+The generator sanitizes credential material, asks only for blocking decisions, validates the exact
+build contract, and writes `PRD.md`. Then invoke `$start-build` normally.
+
 Keep exactly one of those files, or pass an explicit `--prd` path. Then reopen Codex
 so it discovers `.agents/skills`, and type this in Codex chat:
 
@@ -115,6 +124,12 @@ git submodule update --init --recursive
 The PRD is required and must be non-empty. It should describe product scope, users,
 features, acceptance criteria, business rules, data, integrations, security needs, and
 non-functional requirements.
+
+If the user does not yet have a PRD, `$generate-prd <requirements-path>` provides an optional
+pre-workflow intake. It stores only sanitized input and answers under `.ai/prd-intake/`, batches at
+most five material questions, and writes the final PRD only after deterministic build-readiness
+validation. Actual passwords, tokens, private keys, connection credentials, or access-key values
+block generation; replace them with variable names or obvious placeholders and rotate exposed values.
 
 Framework declarations are optional. To make automatic selection unambiguous, use
 explicit declarations such as:
@@ -189,6 +204,7 @@ Use a narrower command when only part of the lifecycle is required:
 
 | Codex skill | Runs missing prerequisites through | Creates monorepo? |
 |---|---|---:|
+| `$generate-prd` | Validated `PRD.md`; stops before build initialization | No |
 | `$start-design` | Design specification | No |
 | `$start-generatehtml` | Approved static HTML | No |
 | `$start-frontend` | Frontend gate | Yes |
@@ -500,6 +516,7 @@ state and remains separate:
 
 ```text
 .ai/
+├── prd-intake/              # sanitized requirements, questions, answers, candidate, and status
 ├── state.json               # lifecycle, frameworks, branch, and completed phases
 ├── task-queue.json          # vertical-slice task contracts and status
 ├── node-state.json          # verified node checkpoints and input hashes
@@ -575,6 +592,7 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai status --project . --json
 
 # Execute stage commands
+./.agents/bin/ai generate-prd --project . --requirements REQUIREMENTS.md --output PRD.md --adapter codex
 ./.agents/bin/ai start-design --project . --adapter codex
 ./.agents/bin/ai start-generatehtml --project . --adapter codex
 ./.agents/bin/ai start-frontend --project . --adapter codex --frontend nextjs

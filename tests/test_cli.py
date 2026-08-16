@@ -14,6 +14,7 @@ from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.model import PHASES, StateStore
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
+from ai_workflow.prd import sanitize_text, validate_prd
 from ai_workflow.structure import (
     validate_backend_evidence,
     validate_database_evidence,
@@ -21,6 +22,221 @@ from ai_workflow.structure import (
     validate_structure,
 )
 from ai_workflow.tokens import parse_token
+
+
+def _valid_generated_prd() -> str:
+    sections = {
+        "Document Status": "Status: READY",
+        "Build Directives": "Frontend framework: React\nBackend framework: FastAPI",
+        "Product Summary": "A customer account system for registered customers.",
+        "Goals and Non-Goals": "Goal: provide account access.\nNon-goal: public social profiles.",
+        "Users, Roles, and Permissions": "Customer: may view only their own account.",
+        "User Journeys": "A customer signs in and views their account.",
+        "Functional Requirements": "- FR-001: An authenticated customer can view their account.",
+        "Acceptance Criteria": (
+            "- AC-001 (FR-001): Given an authenticated customer, when the account is requested, "
+            "then only that customer's account is returned; invalid and unauthorized requests use "
+            "the documented error contract."
+        ),
+        "Business Rules and Edge Cases": "- BR-001: Account ownership cannot be transferred.",
+        "Data Entities and Relationships": "Account belongs to exactly one customer.",
+        "APIs and Integrations": (
+            "A versioned account API returns typed success and error responses."
+        ),
+        "Client Experience": "The account view has loading, empty, error, and success states.",
+        "Authentication and Authorization": (
+            "Session authentication and owner authorization are required."
+        ),
+        "Background Jobs and Realtime": "Not required.",
+        "Security, Privacy, and Compliance": "Protect account data and audit denied access.",
+        "Non-Functional Requirements": (
+            "- NFR-001: The account response meets the documented latency budget."
+        ),
+        "Observability and Audit": "Record request outcomes without sensitive payloads.",
+        "Deployment and Environments": (
+            "Local, test, staging, and production configuration stay separate."
+        ),
+        "Credential Inventory": (
+            "| Service | Variable | Environments | Secret destination | Owner |\n"
+            "|---|---|---|---|---|\n"
+            "| Database | DATABASE_URL | Local and runtime | "
+            "ignored env file or secret manager | Backend |"
+        ),
+        "Testing and Release Gates": (
+            "API, authorization, integration, browser, and security checks must pass."
+        ),
+        "Assumptions, Dependencies, and Risks": (
+            "Assumption: customers already have verified accounts."
+        ),
+        "Open Questions": "None.",
+        "Traceability": (
+            "| Requirement | Acceptance | Interface | Data | Tests |\n"
+            "|---|---|---|---|---|\n"
+            "| FR-001 | AC-001 | Account view and API | Account | API, authorization, browser |"
+        ),
+    }
+    body = "\n\n".join(f"## {heading}\n\n{content}" for heading, content in sections.items())
+    return f"# Product Requirements Document\n\n{body}\n"
+
+
+def test_generate_prd_asks_once_then_resumes_to_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text(
+        "Build a customer account system. Ask me for any missing architecture choices.\n"
+    )
+    calls = 0
+
+    def fake_prd_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal calls
+        del project, adapter
+        calls += 1
+        assessment_match = re.search(r"Required assessment output: (.+)", prompt)
+        candidate_match = re.search(r"Required candidate output: (.+)", prompt)
+        answers_match = re.search(r"Sanitized durable answers: (.+)", prompt)
+        assert assessment_match and candidate_match and answers_match
+        assessment = Path(assessment_match.group(1))
+        candidate = Path(candidate_match.group(1))
+        answers = json.loads(Path(answers_match.group(1)).read_text())
+        if not answers:
+            assessment.write_text(
+                json.dumps(
+                    {
+                        "status": "needs_input",
+                        "questions": [
+                            {
+                                "id": "Q001",
+                                "question": "Which supported frontend and backend should be used?",
+                                "reason": "The build workflow requires explicit framework choices.",
+                            }
+                        ],
+                        "assumptions": [],
+                    }
+                )
+            )
+        else:
+            assessment.write_text(
+                json.dumps(
+                    {
+                        "status": "ready",
+                        "questions": [],
+                        "assumptions": ["Customers already have verified accounts."],
+                    }
+                )
+            )
+            candidate.write_text(_valid_generated_prd())
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.prd._run_adapter", fake_prd_agent)
+    command = [
+        "generate-prd",
+        "--project",
+        str(tmp_path),
+        "--requirements",
+        "REQUIREMENTS.md",
+    ]
+    assert main(command) == 2
+    state = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
+    assert state["status"] == "needs_input"
+    assert state["questions"][0]["id"] == "Q001"
+    assert not (tmp_path / "PRD.md").exists()
+
+    assert main([*command, "--answer", "Q001=React and FastAPI"]) == 0
+    assert calls == 2
+    assert validate_prd(tmp_path / "PRD.md") == []
+    ready = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
+    assert ready["status"] == "ready"
+
+
+def test_generate_prd_blocks_and_redacts_supplied_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    access_value = "AKIA" + "A" * 16
+    credential_value = "-".join(("real", "secret", "value"))
+    (tmp_path / "REQUIREMENTS.md").write_text(
+        "Build an account system.\n"
+        f"AWS_ACCESS_KEY_ID={access_value}\n"
+        f"AWS_SECRET_ACCESS_KEY={credential_value}\n"
+    )
+    called = False
+
+    def forbidden_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal called
+        del project, adapter, prompt
+        called = True
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.prd._run_adapter", forbidden_agent)
+    assert (
+        main(
+            [
+                "generate-prd",
+                "--project",
+                str(tmp_path),
+                "--requirements",
+                "REQUIREMENTS.md",
+            ]
+        )
+        == 2
+    )
+    assert called is False
+    intake_text = "\n".join(
+        path.read_text() for path in (tmp_path / ".ai" / "prd-intake").glob("*")
+    )
+    assert access_value not in intake_text
+    assert credential_value not in intake_text
+    assert "credentials_blocked" in intake_text
+
+
+def test_generate_prd_repairs_one_invalid_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text(
+        "Build a React account client with a FastAPI backend for registered customers.\n"
+    )
+    calls = 0
+
+    def repairing_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal calls
+        del project, adapter
+        calls += 1
+        assessment = Path(re.search(r"Required assessment output: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        candidate = Path(re.search(r"Required candidate output: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        assessment.write_text(
+            json.dumps({"status": "ready", "questions": [], "assumptions": []})
+        )
+        candidate.write_text("# Invalid draft\n" if calls == 1 else _valid_generated_prd())
+        if calls == 2:
+            assert "Repair these deterministic validation failures" in prompt
+            assert "missing exact document title" in prompt
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.prd._run_adapter", repairing_agent)
+    assert (
+        main(
+            [
+                "generate-prd",
+                "--project",
+                str(tmp_path),
+                "--requirements",
+                "REQUIREMENTS.md",
+            ]
+        )
+        == 0
+    )
+    assert calls == 2
+    assert validate_prd(tmp_path / "PRD.md") == []
+
+
+def test_prd_intake_allows_obvious_credential_placeholders() -> None:
+    text = (
+        "AWS_ACCESS_KEY_ID=<your aws access key id>\n"
+        "AWS_SECRET_ACCESS_KEY=<your aws secret access key>\n"
+        "AWS_SESSION_TOKEN=<optional temporary session token>\n"
+    )
+    sanitized, findings = sanitize_text(text)
+    assert sanitized == text
+    assert findings == []
 
 
 def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(

@@ -2,6 +2,7 @@
   "version": 1,
   "format": "markdown-first",
   "skills": [
+    {"name": "generate-prd", "path": "skills/generate-prd/SKILL.md"},
     {"name": "start-build", "path": "skills/start-build/SKILL.md"},
     {"name": "start-design", "path": "skills/start-design/SKILL.md"},
     {"name": "start-generatehtml", "path": "skills/start-generatehtml/SKILL.md"},

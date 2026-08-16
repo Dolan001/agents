@@ -20,6 +20,7 @@ from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
 from .io import append_jsonl, read_json, write_json
 from .model import PHASES, StateStore, utc_now
 from .pipeline import ready_phases, validate_control_plane
+from .prd import generate_prd
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 from .tokens import resolve_token
@@ -656,6 +657,18 @@ def command_clean_state(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_generate_prd(args: argparse.Namespace) -> int:
+    code, payload = generate_prd(
+        resolved_project(args.project),
+        args.requirements,
+        args.output,
+        args.answer,
+        args.adapter,
+    )
+    print_json(payload)
+    return code
+
+
 def command_resolve_token(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     print_json(
@@ -830,6 +843,13 @@ def parser() -> argparse.ArgumentParser:
     add_project(clean)
     clean.add_argument("--yes", action="store_true")
     clean.set_defaults(handler=command_clean_state)
+    prd = commands.add_parser("generate-prd")
+    add_project(prd)
+    prd.add_argument("--requirements", required=True)
+    prd.add_argument("--output", default="PRD.md")
+    prd.add_argument("--answer", action="append", default=[])
+    prd.add_argument("--adapter", choices=["codex"], default="codex")
+    prd.set_defaults(handler=command_generate_prd)
     token = commands.add_parser("resolve-token")
     add_project(token)
     token.add_argument("--token", required=True)

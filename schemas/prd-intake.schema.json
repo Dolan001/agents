@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PRD intake assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "questions", "assumptions"],
+  "properties": {
+    "status": {"enum": ["needs_input", "ready"]},
+    "questions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "question", "reason"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^Q[0-9]{3}$"},
+          "question": {"type": "string", "minLength": 5},
+          "reason": {"type": "string", "minLength": 3}
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 3}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ready"}}},
+      "then": {"properties": {"questions": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "needs_input"}}},
+      "then": {"properties": {"questions": {"minItems": 1}}}
+    }
+  ]
+}
