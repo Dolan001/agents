@@ -3,7 +3,7 @@
   "title": "PRD intake assessment",
   "type": "object",
   "additionalProperties": false,
-  "required": ["status", "questions", "assumptions"],
+  "required": ["status", "questions", "assumptions", "decision_sources"],
   "properties": {
     "status": {"enum": ["needs_input", "ready"]},
     "questions": {
@@ -23,6 +23,13 @@
     "assumptions": {
       "type": "array",
       "items": {"type": "string", "minLength": 3}
+    },
+    "decision_sources": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9 -]+$"},
+      "additionalProperties": {
+        "enum": ["requirements", "answer", "workflow-invariant", "assumption"]
+      }
     }
   },
   "allOf": [

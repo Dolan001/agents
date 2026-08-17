@@ -130,6 +130,21 @@ pre-workflow intake. It stores only sanitized input and answers under `.ai/prd-i
 most five material questions, and writes the final PRD only after deterministic build-readiness
 validation. Actual passwords, tokens, private keys, connection credentials, or access-key values
 block generation; replace them with variable names or obvious placeholders and rotate exposed values.
+Clarification answers must use `QNNN=answer`, cover the complete active question batch exactly once,
+and cannot be attached to a stale or changed requirements source.
+
+The generator does not use one generic architecture paragraph. It loads the monorepo profile plus
+only the selected DRF or FastAPI backend profile, React or Next.js web profile, Flutter mobile
+profile, and AWS profile when deployment is requested. The resulting `Architecture and Capability
+Decisions` section is a machine-checked decision matrix covering PostgreSQL, `/api/v1`, API
+contracts, authentication and authorization, migrations and backend boundaries, query budgets,
+client states and accessibility,
+background work, schedules, realtime, uploads/storage, audit and retention. AWS PRDs additionally
+require environment isolation, region/domain ownership, availability, RPO/RTO, traffic, cost,
+residency, backup retention, approval ownership, runtime topology, identity, rollback, alarms, and
+restore requirements. Every architecture decision records whether it came from supplied
+requirements, a clarification answer, a workflow invariant, or an explicit assumption; product- and
+operations-owned choices cannot pass as assumptions.
 
 Framework declarations are optional. To make automatic selection unambiguous, use
 explicit declarations such as:

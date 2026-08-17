@@ -54,17 +54,6 @@ def detect_prd_frameworks(prd: Path) -> dict[str, str]:
     """Detect explicit supported framework names and reject invalid declarations."""
     text = prd.read_text(encoding="utf-8")
     detected: dict[str, str] = {}
-    for side, allowed in ALLOWED_FRAMEWORKS.items():
-        if side == "deployment":
-            continue
-        matches = [name for name in allowed if _PATTERNS[name].search(text)]
-        if len(matches) > 1:
-            raise RuntimeError(
-                f"PRD declares multiple {side} frameworks: {', '.join(matches)}; choose exactly one"
-            )
-        if matches:
-            detected[side] = matches[0]
-
     for line in text.splitlines():
         declaration = _DECLARATION.match(line)
         if not declaration:
@@ -81,7 +70,23 @@ def detect_prd_frameworks(prd: Path) -> dict[str, str]:
             raise RuntimeError(
                 f"PRD declares multiple {side} frameworks in {value!r}; choose exactly one"
             )
+        if side in detected and detected[side] != side_matches[0]:
+            raise RuntimeError(
+                f"PRD declares conflicting {side} frameworks: "
+                f"{detected[side]}, {side_matches[0]}; choose exactly one"
+            )
         detected[side] = side_matches[0]
+
+    for side, allowed in ALLOWED_FRAMEWORKS.items():
+        if side in {"deployment", *detected}:
+            continue
+        matches = [name for name in allowed if _PATTERNS[name].search(text)]
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"PRD declares multiple {side} frameworks: {', '.join(matches)}; choose exactly one"
+            )
+        if matches:
+            detected[side] = matches[0]
     for line in text.splitlines():
         declaration = _DEPLOYMENT_DECLARATION.match(line)
         if not declaration:

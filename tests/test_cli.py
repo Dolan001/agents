@@ -14,7 +14,12 @@ from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.model import PHASES, StateStore
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
-from ai_workflow.prd import sanitize_text, validate_prd
+from ai_workflow.prd import (
+    architecture_decisions,
+    sanitize_text,
+    validate_decision_sources,
+    validate_prd,
+)
 from ai_workflow.structure import (
     validate_backend_evidence,
     validate_database_evidence,
@@ -24,10 +29,169 @@ from ai_workflow.structure import (
 from ai_workflow.tokens import parse_token
 
 
-def _valid_generated_prd() -> str:
+def _valid_generated_prd(
+    frontend: str = "react",
+    backend: str = "fastapi",
+    aws: bool = False,
+    mobile: bool = False,
+) -> str:
+    frontend_name = "React" if frontend == "react" else "Next.js"
+    backend_name = "FastAPI" if backend == "fastapi" else "Django REST Framework"
+    directives = f"Frontend framework: {frontend_name}\nBackend framework: {backend_name}"
+    if mobile:
+        directives += "\nMobile framework: Flutter"
+    if aws:
+        directives += "\nDeployment provider: AWS"
+    decisions = [
+        "Repository layout: Standard application monorepo",
+        (
+            f"Applications: {frontend_name} web, Flutter mobile, and {backend_name} backend"
+            if mobile
+            else f"Applications: {frontend_name} web and {backend_name} backend"
+        ),
+        "Database engine: PostgreSQL",
+        "API base path: /api/v1",
+        "API contract: OpenAPI with generated typed client",
+        "Authentication transport: Secure HTTP-only cookie session with CSRF protection",
+        "Authorization model: Customer role with object ownership enforcement",
+        "Background jobs: Not required",
+        "Scheduled jobs: Not required",
+        "Realtime: Not required",
+        "File uploads: Not required",
+        "Object storage: Not required",
+        "External integrations: None",
+        "Multi-tenancy: Not required",
+        "Audit logging: Required",
+        "Localization: Not required",
+        (
+            "Data retention and deletion: Delete customer data on approved account closure and "
+            "retain audit events for 90 days"
+        ),
+        (
+            "Backend delivery: FastAPI domain services"
+            if backend == "fastapi"
+            else "Backend delivery: Django REST Framework domain services"
+        ),
+        (
+            "Database migrations: Alembic migrations; additive by default"
+            if backend == "fastapi"
+            else "Database migrations: Django migrations; additive by default"
+        ),
+        (
+            "Backend boundaries: Models, services, repositories, queries, schemas, dependencies, "
+            "and routes"
+            if backend == "fastapi"
+            else (
+                "Backend boundaries: Models, services, selectors, serializers, permissions, views, "
+                "and URLs"
+            )
+        ),
+        "Query policy: Constraint/index design plus measured query-count or plan budgets",
+        (
+            "API error contract: Stable validation, authentication, authorization, not-found, "
+            "conflict, throttling, and server errors"
+        ),
+        "Pagination policy: Cursor pagination for account activity",
+        "Background execution: Not applicable",
+        "Schedule execution: Not applicable",
+        "Realtime transport: Not applicable",
+    ]
+    if backend == "fastapi":
+        decisions.append("Database execution model: Async for concurrent API I/O")
+    else:
+        decisions.append("User model strategy: Custom user model before first migration")
+    decisions.extend(
+        [
+            (
+                "Web delivery: React single-page application"
+                if frontend == "react"
+                else "Web delivery: Next.js App Router application"
+            ),
+            (
+                "Rendering strategy: Browser-rendered routes with explicit route boundaries"
+                if frontend == "react"
+                else (
+                    "Rendering strategy: Server Components by default with minimal Client "
+                    "Component boundaries"
+                )
+            ),
+            "Client API boundary: Generated typed client with runtime response validation",
+            (
+                "Client state coverage: Loading, empty, success, validation, unauthorized, "
+                "forbidden, timeout/offline, error, and retry"
+            ),
+            "Accessibility target: WCAG 2.2 AA",
+            "Responsive targets: Mobile, tablet, desktop, zoom, long-content, and overflow",
+            "SEO and metadata: Required",
+            "Offline behavior: Not required",
+        ]
+    )
+    if frontend == "nextjs":
+        decisions.append(
+            "Caching strategy: Dynamic account data uses no-store; public help content "
+            "revalidates hourly"
+        )
+    if mobile:
+        decisions.extend(
+            [
+                "Mobile delivery: Flutter application for Android and iOS",
+                (
+                    "Mobile architecture: Feature-first presentation, application, domain, and "
+                    "data boundaries"
+                ),
+                "Mobile API boundary: Generated typed client with runtime response validation",
+                (
+                    "Mobile state coverage: Loading, empty, success, validation, unauthorized, "
+                    "forbidden, offline, error, and retry"
+                ),
+                "Mobile offline behavior: Not required",
+                "Mobile platform integrations: Secure storage and deep links",
+                (
+                    "Mobile accessibility target: Screen reader, text scaling, contrast, focus, "
+                    "and reduced-motion support"
+                ),
+                (
+                    "Mobile release targets: Android 10 and iOS 16 minimums, release signing "
+                    "owned by Mobile, official stores, and staged rollout"
+                ),
+            ]
+        )
+    if aws:
+        topology = (
+            "CloudFront, WAF, ALB, ECS, ECR, RDS PostgreSQL, Route 53, ACM, KMS, "
+            "CloudWatch, and AWS Backup"
+        )
+        if frontend == "react":
+            topology += ", with private S3 for static output"
+        decisions.extend(
+            [
+                "AWS region: ap-southeast-1",
+                "AWS environment isolation: Separate development, staging, and production accounts",
+                "Production domain: app.example.com owned in Route 53",
+                "Availability target: 99.9% monthly availability",
+                "Recovery point objective: 15 minutes",
+                "Recovery time objective: 60 minutes",
+                (
+                    "Traffic and scaling assumptions: 1000 daily users, 50 requests per second "
+                    "peak, and 20% annual growth"
+                ),
+                "Monthly cost budget: USD 500 approved maximum",
+                "Data residency: Singapore region only",
+                "Backup retention: 35 days with quarterly restore tests",
+                "Deployment approval owner: Release manager",
+                f"AWS runtime topology: {topology}",
+                (
+                    "AWS identity: GitHub OIDC for CI/CD; IAM roles for workloads; Secrets Manager "
+                    "for runtime secrets"
+                ),
+            ]
+        )
     sections = {
         "Document Status": "Status: READY",
-        "Build Directives": "Frontend framework: React\nBackend framework: FastAPI",
+        "Build Directives": directives,
+        "Architecture and Capability Decisions": "\n".join(
+            f"- {decision}" for decision in decisions
+        ),
         "Product Summary": "A customer account system for registered customers.",
         "Goals and Non-Goals": "Goal: provide account access.\nNon-goal: public social profiles.",
         "Users, Roles, and Permissions": "Customer: may view only their own account.",
@@ -50,17 +214,27 @@ def _valid_generated_prd() -> str:
         "Background Jobs and Realtime": "Not required.",
         "Security, Privacy, and Compliance": "Protect account data and audit denied access.",
         "Non-Functional Requirements": (
-            "- NFR-001: The account response meets the documented latency budget."
+            "- NFR-001: The account API responds within 300 ms at p95 under expected peak traffic."
         ),
         "Observability and Audit": "Record request outcomes without sensitive payloads.",
         "Deployment and Environments": (
-            "Local, test, staging, and production configuration stay separate."
+            "Promote one immutable digest through staging. Production approval protects compatible "
+            "singleton migration execution, health checks, alarms, rollback, backup, and restore."
+            if aws
+            else "Local, test, staging, and production configuration stay separate."
         ),
         "Credential Inventory": (
             "| Service | Variable | Environments | Secret destination | Owner |\n"
             "|---|---|---|---|---|\n"
             "| Database | DATABASE_URL | Local and runtime | "
             "ignored env file or secret manager | Backend |"
+            + (
+                "\n| AWS | AWS_ACCESS_KEY_ID | Local deployment | ignored env file | Platform |"
+                "\n| AWS | AWS_SECRET_ACCESS_KEY | Local deployment | ignored env file | Platform |"
+                "\n| AWS | AWS_REGION | All deployment environments | configuration | Platform |"
+                if aws
+                else ""
+            )
         ),
         "Testing and Release Gates": (
             "API, authorization, integration, browser, and security checks must pass."
@@ -72,11 +246,18 @@ def _valid_generated_prd() -> str:
         "Traceability": (
             "| Requirement | Acceptance | Interface | Data | Tests |\n"
             "|---|---|---|---|---|\n"
-            "| FR-001 | AC-001 | Account view and API | Account | API, authorization, browser |"
+            "| FR-001, NFR-001 | AC-001 | Account view and API | Account | "
+            "API, authorization, performance, browser |"
         ),
     }
     body = "\n\n".join(f"## {heading}\n\n{content}" for heading, content in sections.items())
     return f"# Product Requirements Document\n\n{body}\n"
+
+
+def _generated_decision_sources(prd: str) -> dict[str, str]:
+    decisions, errors = architecture_decisions(prd)
+    assert errors == []
+    return {key: "requirements" for key in decisions}
 
 
 def test_generate_prd_asks_once_then_resumes_to_ready(
@@ -111,20 +292,23 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
                             }
                         ],
                         "assumptions": [],
+                        "decision_sources": {},
                     }
                 )
             )
         else:
+            generated = _valid_generated_prd()
             assessment.write_text(
                 json.dumps(
                     {
                         "status": "ready",
                         "questions": [],
                         "assumptions": ["Customers already have verified accounts."],
+                        "decision_sources": _generated_decision_sources(generated),
                     }
                 )
             )
-            candidate.write_text(_valid_generated_prd())
+            candidate.write_text(generated)
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
 
     monkeypatch.setattr("ai_workflow.prd._run_adapter", fake_prd_agent)
@@ -141,6 +325,8 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     assert state["questions"][0]["id"] == "Q001"
     assert not (tmp_path / "PRD.md").exists()
 
+    assert main([*command, "--answer", "Q999=Use another stack"]) == 1
+    assert calls == 1
     assert main([*command, "--answer", "Q001=React and FastAPI"]) == 0
     assert calls == 2
     assert validate_prd(tmp_path / "PRD.md") == []
@@ -202,10 +388,18 @@ def test_generate_prd_repairs_one_invalid_candidate(
         calls += 1
         assessment = Path(re.search(r"Required assessment output: (.+)", prompt).group(1))  # type: ignore[union-attr]
         candidate = Path(re.search(r"Required candidate output: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        generated = _valid_generated_prd()
         assessment.write_text(
-            json.dumps({"status": "ready", "questions": [], "assumptions": []})
+            json.dumps(
+                {
+                    "status": "ready",
+                    "questions": [],
+                    "assumptions": [],
+                    "decision_sources": _generated_decision_sources(generated),
+                }
+            )
         )
-        candidate.write_text("# Invalid draft\n" if calls == 1 else _valid_generated_prd())
+        candidate.write_text("# Invalid draft\n" if calls == 1 else generated)
         if calls == 2:
             assert "Repair these deterministic validation failures" in prompt
             assert "missing exact document title" in prompt
@@ -237,6 +431,114 @@ def test_prd_intake_allows_obvious_credential_placeholders() -> None:
     sanitized, findings = sanitize_text(text)
     assert sanitized == text
     assert findings == []
+
+
+@pytest.mark.parametrize(
+    ("frontend", "backend", "aws"),
+    [
+        ("react", "fastapi", False),
+        ("nextjs", "django-drf", False),
+        ("react", "django-drf", True),
+        ("nextjs", "fastapi", True),
+    ],
+)
+def test_prd_validator_accepts_complete_selected_stack_profiles(
+    tmp_path: Path, frontend: str, backend: str, aws: bool
+) -> None:
+    prd = tmp_path / "PRD.md"
+    content = _valid_generated_prd(frontend, backend, aws)
+    prd.write_text(content)
+    assert validate_prd(prd) == []
+    assert validate_decision_sources(
+        content, {"decision_sources": _generated_decision_sources(content)}
+    ) == []
+
+
+def test_prd_validator_accepts_flutter_profile(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    content = _valid_generated_prd("nextjs", "django-drf", mobile=True)
+    prd.write_text(content)
+    assert validate_prd(prd) == []
+    assert validate_decision_sources(
+        content, {"decision_sources": _generated_decision_sources(content)}
+    ) == []
+
+
+def test_prd_validator_rejects_old_shallow_profile(tmp_path: Path) -> None:
+    content = _valid_generated_prd()
+    start = content.index("## Architecture and Capability Decisions")
+    end = content.index("## Product Summary")
+    prd = tmp_path / "PRD.md"
+    prd.write_text(content[:start] + content[end:])
+    failures = validate_prd(prd)
+    assert "missing heading: ## Architecture and Capability Decisions" in failures
+    assert "missing architecture decision: database engine" in failures
+    assert "missing architecture decision: background jobs" in failures
+
+
+def test_prd_validator_rejects_assumed_user_owned_decision() -> None:
+    content = _valid_generated_prd()
+    sources = _generated_decision_sources(content)
+    sources["authentication transport"] = "assumption"
+    assert validate_decision_sources(content, {"decision_sources": sources}) == [
+        "user-owned architecture decision requires an explicit answer: authentication transport"
+    ]
+
+
+def test_prd_validator_rejects_missing_decision_provenance() -> None:
+    content = _valid_generated_prd()
+    sources = _generated_decision_sources(content)
+    del sources["pagination policy"]
+    assert validate_decision_sources(content, {"decision_sources": sources}) == [
+        "architecture decision has no source: pagination policy"
+    ]
+
+
+def test_prd_validator_rejects_empty_section_and_unmeasurable_nfr(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    content = _valid_generated_prd().replace(
+        "## Product Summary\n\nA customer account system for registered customers.",
+        "## Product Summary\n\n",
+    ).replace(
+        "The account API responds within 300 ms at p95 under expected peak traffic.",
+        "The account API should be fast.",
+    )
+    prd.write_text(content)
+    failures = validate_prd(prd)
+    assert "empty required section: ## Product Summary" in failures
+    assert "non-functional requirements need a measurable numeric target" in failures
+
+
+def test_prd_validator_rejects_incomplete_aws_recovery_profile(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    content = _valid_generated_prd(aws=True).replace(
+        "- Recovery point objective: 15 minutes\n", ""
+    )
+    prd.write_text(content)
+    assert "missing architecture decision: recovery point objective" in validate_prd(prd)
+
+
+def test_prd_validator_requires_durable_background_execution(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    content = _valid_generated_prd().replace(
+        "Background jobs: Not required", "Background jobs: Required"
+    )
+    prd.write_text(content)
+    assert (
+        "invalid architecture decision for background execution: Not applicable"
+        in validate_prd(prd)
+    )
+
+
+def test_explicit_nextjs_directive_allows_react_ecosystem_context(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    content = _valid_generated_prd("nextjs", "fastapi").replace(
+        "A customer account system for registered customers.",
+        "A customer account system using the React ecosystem for registered customers.",
+    )
+    prd.write_text(content)
+    assert detect_prd_frameworks(prd)["frontend"] == "nextjs"
+    assert validate_prd(prd) == []
 
 
 def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
