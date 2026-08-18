@@ -18,11 +18,16 @@ description: Compare approved HTML with selected React, Next.js, and Flutter imp
    approved HTML.
 3. Read `references/fidelity-protocol.md` completely. Load only the selected React, Next.js, or
    Flutter implementation and verification guidance routed by the workflow.
-4. Compare deterministic cases, classify meaningful drift, and write the manifest, comparison, and
+4. Render approved HTML and the application with identical deterministic settings for every case.
+   Run `./.agents/bin/ai compare-images` to generate each diff PNG and metrics JSON. Default to zero
+   tolerance and zero changed pixels; never hand-author either generated artifact.
+5. Compare deterministic cases, classify meaningful drift, and write the manifest, comparison, and
    repair plan under `.ai/evidence/design-fidelity/<target>/` before editing.
-5. In repair mode, change only allowed target, test, and deliberately shared UI paths. Fix shared
+6. In repair mode, change only allowed target, test, and deliberately shared UI paths. Fix shared
    tokens and primitives before route-local symptoms. Re-render only affected cases after each pass.
-6. Require a different selected framework verifier to write final verification evidence. Never
+7. Require a different selected framework verifier to recompute every pixel case and write final
+   verification evidence. Pixel equality is mandatory but does not replace semantic, responsive,
+   state, native-platform, or accessibility verification. Never
    approve missing captures, failed commands, unresolved blocker/major/minor drift, or an unavailable
    required Android/iOS comparison.
 

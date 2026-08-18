@@ -20,13 +20,14 @@
         "additionalProperties": false,
         "required": ["name", "argv", "cwd", "exit_code"],
         "properties": {
-          "name": {"enum": ["render", "visual", "responsive", "accessibility", "focused-tests", "analysis", "build", "golden"]},
+          "name": {"enum": ["render", "pixel", "visual", "responsive", "accessibility", "focused-tests", "analysis", "build", "golden"]},
           "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
           "exit_code": {"const": 0}
         }
       },
       "allOf": [
+        {"contains": {"properties": {"name": {"const": "pixel"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "visual"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "accessibility"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "focused-tests"}}, "required": ["name"]}}

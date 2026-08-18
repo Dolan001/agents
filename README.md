@@ -239,7 +239,11 @@ skip requirements, design, or any selected client when they are incomplete.
 
 `$sync-design` is also available after implementation. By default it repairs selected web/mobile
 targets; `--check-only` reports localized drift without application edits. Approved HTML remains
-immutable unless the user explicitly passes `--allow-baseline-update`.
+immutable unless the user explicitly passes `--allow-baseline-update`. Each case renders the
+approved HTML and application at the same physical dimensions, compares every unmasked RGBA pixel,
+and binds the captures, generated diff, thresholds, and numeric metrics by SHA-256. Strict zero
+tolerance is the default. A pixel pass is mandatory but does not replace semantic, responsive,
+state, accessibility, or native-platform verification.
 
 ### 6. Bootstrap the target
 
@@ -629,6 +633,9 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai start-mobile --project . --adapter codex --mobile flutter
 ./.agents/bin/ai sync-design --project . --target all --adapter codex
 ./.agents/bin/ai sync-design --project . --target frontend --check-only --adapter codex
+# Internal deterministic primitive used by the resolver and independent verifier
+./.agents/bin/ai compare-images --project . --reference reference.png --actual actual.png \
+  --diff diff.png --metrics metrics.json
 ./.agents/bin/ai start-backend --project . --adapter codex \
   --frontend nextjs --mobile flutter --backend django-drf
 ./.agents/bin/ai start-integration --project . --adapter codex

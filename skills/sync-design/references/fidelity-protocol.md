@@ -24,12 +24,21 @@ iOS semantics, small and large phones, tablet behavior, safe areas, keyboard ins
 and configured text scaling. Preserve valid Material/Cupertino interaction differences instead of
 forcing browser pixels onto native controls.
 
+Render the approved HTML reference and application result at exactly the declared logical viewport
+multiplied by its device scale factor. Use `./.agents/bin/ai compare-images` for every case. It
+decodes both inputs to RGBA, compares every unmasked pixel, and deterministically generates the diff
+PNG and metrics JSON. The strict default is channel tolerance `0` and changed-pixel ratio `0`.
+Tolerance may never exceed 8 channel values or 0.001 changed pixels, and needs a recorded technical
+reason. Masks require a reason, must stay inside the image, and together may cover at most 5% of a
+case. Use masks only for truly nondeterministic or required native regions—not design drift.
+
 ## Comparison and classification
 
 Evaluate semantic structure and content before raster appearance. Then compare geometry, hierarchy,
 spacing, typography, color, borders, imagery, responsive behavior, state behavior, accessibility,
-focus, motion, and platform adaptation. Pixel or perceptual metrics are supporting signals, not the
-sole approval rule; mask only documented nondeterministic regions.
+focus, motion, and platform adaptation. A deterministic pixel pass is mandatory for alignment, but
+is not sufficient by itself: semantic, behavioral, responsive, accessibility, and native-platform
+checks must also pass. Never manually alter the generated metrics or diff to obtain approval.
 
 Classify each localized finding as `blocker`, `major`, or `minor`. Record intentional platform
 differences separately with a PRD, accessibility, or native-convention justification. Treat a PRD or
@@ -46,6 +55,7 @@ then platform-specific adaptation. Do not change API contracts or business behav
 
 After repair, run focused format/lint/type or analysis checks, affected component/widget tests,
 accessibility checks, visual/golden checks, and affected journeys. Recapture changed cases. A separate
-selected framework verifier must reconstruct the comparison from approved hashes and raw captures.
+selected framework verifier must reconstruct the comparison from approved hashes and raw captures,
+recompute every pixel metric, and confirm the diff hash.
 Verification fails on missing artifacts, failed commands, stale hashes, scope leakage, automatic
 baseline replacement, or any unresolved meaningful drift.

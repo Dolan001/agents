@@ -27,7 +27,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "route", "state", "platform", "viewport", "baseline_html", "rendered_image", "diff_image"],
+        "required": ["id", "route", "state", "platform", "viewport", "baseline_html", "baseline_image", "rendered_image", "diff_image", "metrics", "channel_tolerance", "max_changed_ratio", "masks"],
         "properties": {
           "id": {"type": "string", "pattern": "^DF-CASE-[A-Z0-9-]+$"},
           "route": {"type": "string", "minLength": 1},
@@ -45,8 +45,28 @@
             }
           },
           "baseline_html": {"type": "string", "pattern": "^HTML/approved/"},
+          "baseline_image": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"},
           "rendered_image": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"},
-          "diff_image": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"}
+          "diff_image": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"},
+          "metrics": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"},
+          "channel_tolerance": {"type": "integer", "minimum": 0, "maximum": 8},
+          "max_changed_ratio": {"type": "number", "minimum": 0, "maximum": 0.001},
+          "masks": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["x", "y", "width", "height", "reason"],
+              "properties": {
+                "x": {"type": "integer", "minimum": 0},
+                "y": {"type": "integer", "minimum": 0},
+                "width": {"type": "integer", "minimum": 1},
+                "height": {"type": "integer", "minimum": 1},
+                "reason": {"type": "string", "minLength": 10}
+              }
+            }
+          }
         }
       }
     },

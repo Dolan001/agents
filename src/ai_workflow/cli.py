@@ -25,6 +25,7 @@ from .prd import generate_prd
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 from .tokens import resolve_token
+from .visual_diff import compare_pixels, parse_mask
 
 Command = Callable[[argparse.Namespace], int]
 
@@ -697,6 +698,35 @@ def command_sync_design(args: argparse.Namespace) -> int:
     return code
 
 
+def command_compare_images(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+
+    def project_path(value: str) -> Path:
+        path = (project / value).resolve()
+        if path != project and project not in path.parents:
+            raise RuntimeError(f"image comparison path escapes project: {value}")
+        return path
+
+    reference = project_path(args.reference)
+    actual = project_path(args.actual)
+    difference = project_path(args.diff)
+    metrics_path = project_path(args.metrics)
+    paths = [reference, actual, difference, metrics_path]
+    if len(set(paths)) != len(paths):
+        raise RuntimeError("reference, actual, diff, and metrics paths must be distinct")
+    metrics = compare_pixels(
+        reference,
+        actual,
+        diff_path=difference,
+        channel_tolerance=args.channel_tolerance,
+        max_changed_ratio=args.max_changed_ratio,
+        masks=[parse_mask(value) for value in args.mask],
+    )
+    write_json(metrics_path, metrics)
+    print_json(metrics)
+    return 0 if metrics["passed"] else 2
+
+
 def command_deployment_status(args: argparse.Namespace) -> int:
     print_json(deployment_status(resolved_project(args.project)))
     return 0
@@ -878,6 +908,16 @@ def parser() -> argparse.ArgumentParser:
     design_sync.add_argument("--check-only", action="store_true")
     design_sync.add_argument("--allow-baseline-update", action="store_true")
     design_sync.set_defaults(handler=command_sync_design)
+    compare = commands.add_parser("compare-images")
+    add_project(compare)
+    compare.add_argument("--reference", required=True)
+    compare.add_argument("--actual", required=True)
+    compare.add_argument("--diff", required=True)
+    compare.add_argument("--metrics", required=True)
+    compare.add_argument("--channel-tolerance", type=int, default=0)
+    compare.add_argument("--max-changed-ratio", type=float, default=0.0)
+    compare.add_argument("--mask", action="append", default=[])
+    compare.set_defaults(handler=command_compare_images)
     deployment_status_command = commands.add_parser("deployment-status")
     add_project(deployment_status_command)
     deployment_status_command.set_defaults(handler=command_deployment_status)

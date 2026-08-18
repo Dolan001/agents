@@ -4,12 +4,17 @@ import sys
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from ai_workflow.cli import main
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
 from ai_workflow.design import classify_design_inputs
-from ai_workflow.design_fidelity import approved_baseline, validate_design_fidelity_evidence
+from ai_workflow.design_fidelity import (
+    approved_baseline,
+    validate_design_fidelity_comparison,
+    validate_design_fidelity_evidence,
+)
 from ai_workflow.discovery import detect
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
@@ -28,6 +33,7 @@ from ai_workflow.structure import (
     validate_structure,
 )
 from ai_workflow.tokens import parse_token
+from ai_workflow.visual_diff import compare_pixels
 
 
 def _valid_generated_prd(
@@ -1204,6 +1210,41 @@ def test_sync_design_rejects_repair_scope_leakage(
     assert main(["sync-design", "--project", str(tmp_path)]) == 1
 
 
+def test_design_fidelity_rejects_tampered_metrics_and_diff(tmp_path: Path) -> None:
+    _initialize_design_sync_target(tmp_path)
+    prompt = "Target/framework: frontend/react"
+    _write_design_fidelity_evidence(tmp_path, prompt, "frontend")
+    manifest_path = (
+        tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text())
+    first = manifest["cases"][0]
+    metrics_path = tmp_path / first["metrics"]
+    original_metrics = metrics_path.read_text()
+    metrics = json.loads(original_metrics)
+    metrics["different_pixels"] = 1
+    metrics_path.write_text(json.dumps(metrics))
+    with pytest.raises(RuntimeError, match="metrics are stale or tampered"):
+        validate_design_fidelity_comparison(tmp_path, "frontend", "react")
+
+    metrics_path.write_text(original_metrics)
+    diff_path = tmp_path / first["diff_image"]
+    Image.new("RGBA", (240, 320), (255, 0, 0, 255)).save(diff_path)
+    with pytest.raises(RuntimeError, match="diff image is stale or tampered"):
+        validate_design_fidelity_comparison(tmp_path, "frontend", "react")
+
+    baseline_path = tmp_path / first["baseline_image"]
+    rendered_path = tmp_path / first["rendered_image"]
+    with Image.open(rendered_path) as source:
+        changed = source.convert("RGBA")
+    changed.putpixel((0, 0), (255, 255, 255, 255))
+    changed.save(rendered_path)
+    failed_metrics = compare_pixels(baseline_path, rendered_path, diff_path=diff_path)
+    metrics_path.write_text(json.dumps(failed_metrics))
+    with pytest.raises(RuntimeError, match="aligned design comparison has failed pixel cases"):
+        validate_design_fidelity_comparison(tmp_path, "frontend", "react")
+
+
 def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     del adapter
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]
@@ -1310,24 +1351,28 @@ def _prompt_framework(prompt: str) -> str:
 def _design_cases(project: Path, target: str) -> list[dict[str, object]]:
     configurations = (
         [
-            ("MOBILE", "web", "mobile", 390, 844),
-            ("TABLET", "web", "tablet", 768, 1024),
-            ("DESKTOP", "web", "desktop", 1440, 900),
+            ("MOBILE", "web", "mobile", 240, 320),
+            ("TABLET", "web", "tablet", 320, 400),
+            ("DESKTOP", "web", "desktop", 480, 320),
         ]
         if target == "frontend"
         else [
-            ("ANDROID", "android", "small-phone", 360, 800),
-            ("IOS", "ios", "large-phone", 430, 932),
+            ("ANDROID", "android", "small-phone", 240, 320),
+            ("IOS", "ios", "large-phone", 260, 360),
         ]
     )
     cases: list[dict[str, object]] = []
     for suffix, platform, name, width, height in configurations:
         directory = project / ".ai" / "evidence" / "design-fidelity" / target / "captures"
         directory.mkdir(parents=True, exist_ok=True)
+        baseline = directory / f"{suffix.lower()}-baseline.png"
         rendered = directory / f"{suffix.lower()}-rendered.png"
         difference = directory / f"{suffix.lower()}-diff.png"
-        rendered.write_bytes(b"\x89PNG\r\n\x1a\n")
-        difference.write_bytes(b"\x89PNG\r\n\x1a\n")
+        metrics_path = directory / f"{suffix.lower()}-metrics.json"
+        Image.new("RGBA", (width, height), (18, 36, 54, 255)).save(baseline)
+        Image.new("RGBA", (width, height), (18, 36, 54, 255)).save(rendered)
+        metrics = compare_pixels(baseline, rendered, diff_path=difference)
+        metrics_path.write_text(json.dumps(metrics))
         cases.append(
             {
                 "id": f"DF-CASE-{suffix}",
@@ -1341,8 +1386,13 @@ def _design_cases(project: Path, target: str) -> list[dict[str, object]]:
                     "device_scale_factor": 1,
                 },
                 "baseline_html": "HTML/approved/index.html",
+                "baseline_image": baseline.relative_to(project).as_posix(),
                 "rendered_image": rendered.relative_to(project).as_posix(),
                 "diff_image": difference.relative_to(project).as_posix(),
+                "metrics": metrics_path.relative_to(project).as_posix(),
+                "channel_tolerance": 0,
+                "max_changed_ratio": 0,
+                "masks": [],
             }
         )
     return cases
@@ -1428,9 +1478,17 @@ def _write_design_fidelity_verification(
     root = project / ".ai" / "evidence" / "design-fidelity" / target
     manifest = json.loads((root / "manifest.json").read_text())
     check_names = (
-        ["render", "visual", "responsive", "accessibility", "focused-tests", "build"]
+        ["render", "pixel", "visual", "responsive", "accessibility", "focused-tests", "build"]
         if target == "frontend"
-        else ["golden", "visual", "responsive", "accessibility", "focused-tests", "analysis"]
+        else [
+            "golden",
+            "pixel",
+            "visual",
+            "responsive",
+            "accessibility",
+            "focused-tests",
+            "analysis",
+        ]
     )
     (root / "verification.json").write_text(
         json.dumps(

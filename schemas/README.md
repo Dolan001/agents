@@ -12,7 +12,9 @@ clarification-or-ready decision emitted by the PRD architect before any build st
 assessment must also provide decision provenance for the generated architecture matrix; each source
 is restricted to `requirements`, `answer`, `workflow-invariant`, or `assumption`.
 
-The three `design-fidelity-*.schema.json` contracts bind selected web/mobile comparisons to exact
-approved HTML hashes, deterministic route/screen cases, raw rendered/diff images, localized findings,
-observed changed paths, successful visual/accessibility/framework checks, and a distinct independent
-verifier. They prohibit a passing result with unresolved meaningful drift.
+The four `design-fidelity-*.schema.json` contracts bind selected web/mobile comparisons to exact
+approved HTML hashes, deterministic route/screen cases, baseline/rendered/diff images, per-pixel
+metrics and bounded masks/tolerances, localized findings, observed changed paths, successful pixel/
+visual/accessibility/framework checks, and a distinct independent verifier. Runtime validation
+recomputes every RGBA metric and diff hash, and prohibits a passing result with pixel failure,
+tampered evidence, or unresolved meaningful drift.
