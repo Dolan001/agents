@@ -19,6 +19,7 @@
     {"name": "rollback-deployment", "path": "skills/rollback-deployment/SKILL.md"},
     {"name": "resume-build", "path": "skills/resume-build/SKILL.md"},
     {"name": "workflow-status", "path": "skills/workflow-status/SKILL.md"},
-    {"name": "resolve-token", "path": "skills/resolve-token/SKILL.md"}
+    {"name": "resolve-token", "path": "skills/resolve-token/SKILL.md"},
+    {"name": "sync-design", "path": "skills/sync-design/SKILL.md"}
   ]
 }

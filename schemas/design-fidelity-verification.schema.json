@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "target", "framework", "baseline_sha256", "resolver_agent", "verifier_agent", "case_ids", "changed_paths", "checks", "unresolved_findings", "baseline_changed", "verified", "checked_at"],
+  "properties": {
+    "version": {"const": 1},
+    "target": {"enum": ["frontend", "mobile"]},
+    "framework": {"enum": ["react", "nextjs", "flutter"]},
+    "baseline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "resolver_agent": {"const": "design-fidelity-resolver"},
+    "verifier_agent": {"type": "string", "minLength": 3, "not": {"const": "design-fidelity-resolver"}},
+    "case_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^DF-CASE-[A-Z0-9-]+$"}},
+    "changed_paths": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "checks": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "argv", "cwd", "exit_code"],
+        "properties": {
+          "name": {"enum": ["render", "visual", "responsive", "accessibility", "focused-tests", "analysis", "build", "golden"]},
+          "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
+          "exit_code": {"const": 0}
+        }
+      },
+      "allOf": [
+        {"contains": {"properties": {"name": {"const": "visual"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "accessibility"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "focused-tests"}}, "required": ["name"]}}
+      ]
+    },
+    "unresolved_findings": {"type": "array", "maxItems": 0},
+    "baseline_changed": {"type": "boolean"},
+    "verified": {"const": true},
+    "checked_at": {"type": "string", "format": "date-time"}
+  }
+}

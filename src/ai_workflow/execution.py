@@ -11,6 +11,7 @@ from typing import Any
 
 from .commands import run_command_groups
 from .design import classify_design_inputs
+from .design_fidelity import validate_design_fidelity_evidence
 from .discovery import inventory, save_inventory
 from .git import commit_verified_feature
 from .io import append_jsonl, read_json, write_json
@@ -107,6 +108,12 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
                 workflow_root() / "schemas" / "realtime-verification.schema.json",
                 phase,
                 structure,
+            )
+        if phase in {"frontend", "mobile"}:
+            validate_design_fidelity_evidence(
+                project,
+                phase,
+                state["frameworks"][phase],
             )
         if phase == "backend":
             validate_database_evidence(
@@ -221,6 +228,10 @@ def _skill_paths(
     if retrying:
         names.append("recover-failure")
     paths = [root / "base_ai" / "skills" / name / "SKILL.md" for name in names]
+    if phase in {"frontend", "mobile"} and (
+        node.startswith("sync-") or node.startswith("verify-")
+    ):
+        paths.append(root / "skills" / "sync-design" / "SKILL.md")
     pack = _selected_pack(root, phase, frameworks)
     if pack is not None:
         available = sorted(pack.glob("skills/*/SKILL.md"))
@@ -247,7 +258,7 @@ def _skill_paths(
             ]
         elif node == "scaffold-target-monorepo":
             selected_skills = [path for path in available if path.parent.name.startswith("create-")]
-        elif node.startswith("implement-"):
+        elif node.startswith(("implement-", "sync-")):
             selected_skills = [
                 path for path in available if path.parent.name.startswith("implement-")
             ]
@@ -348,6 +359,22 @@ def _phase_input_files(project: Path, phase: str) -> list[str]:
                     child.relative_to(project).as_posix()
                     for child in match.rglob("*")
                     if child.is_file()
+                )
+    return sorted(files)
+
+
+def _node_input_files(project: Path, phase: str, node: str) -> list[str]:
+    files = set(_phase_input_files(project, phase))
+    if phase in {"frontend", "mobile"} and node.startswith(("sync-", "verify-")):
+        roots = [project / "apps" / phase]
+        if node.startswith("verify-"):
+            roots.append(project / ".ai" / "evidence" / "design-fidelity" / phase)
+        for root in roots:
+            if root.is_dir():
+                files.update(
+                    path.relative_to(project).as_posix()
+                    for path in root.rglob("*")
+                    if path.is_file() and path.name != "verification.json"
                 )
     return sorted(files)
 
@@ -684,7 +711,7 @@ def execute_phase(
             identity = f"{phase}/{node['id']}/{feature_id}"
             output = node["required_output"].format(feature_id=feature_id)
             output_path = _inside(project, output)
-            inputs = _phase_input_files(project, phase)
+            inputs = _node_input_files(project, phase, node["id"])
             cache_key = node_cache_key(project, identity, inputs)
             checkpoint = node_state.get(identity, {})
             if (

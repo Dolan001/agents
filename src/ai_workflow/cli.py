@@ -13,6 +13,7 @@ from pathlib import Path
 from .commands import run_command_groups
 from .deployment import deployment_status, execute_operation
 from .design import classify_design_inputs, ingest_design_inputs
+from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
 from .execution import evaluate_phase_gate, execute_phase
 from .frameworks import resolve_frameworks
@@ -684,6 +685,18 @@ def command_resolve_token(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_sync_design(args: argparse.Namespace) -> int:
+    code, payload = sync_design(
+        resolved_project(args.project),
+        args.adapter,
+        args.target,
+        check_only=args.check_only,
+        allow_baseline_update=args.allow_baseline_update,
+    )
+    print_json(payload)
+    return code
+
+
 def command_deployment_status(args: argparse.Namespace) -> int:
     print_json(deployment_status(resolved_project(args.project)))
     return 0
@@ -858,6 +871,13 @@ def parser() -> argparse.ArgumentParser:
     token.add_argument("--github-user")
     token.add_argument("--remote", default="origin")
     token.set_defaults(handler=command_resolve_token)
+    design_sync = commands.add_parser("sync-design")
+    add_project(design_sync)
+    design_sync.add_argument("--target", choices=["all", "frontend", "mobile"], default="all")
+    design_sync.add_argument("--adapter", choices=["codex"], default="codex")
+    design_sync.add_argument("--check-only", action="store_true")
+    design_sync.add_argument("--allow-baseline-update", action="store_true")
+    design_sync.set_defaults(handler=command_sync_design)
     deployment_status_command = commands.add_parser("deployment-status")
     add_project(deployment_status_command)
     deployment_status_command.set_defaults(handler=command_deployment_status)

@@ -9,6 +9,7 @@ from ai_workflow.cli import main
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
 from ai_workflow.design import classify_design_inputs
+from ai_workflow.design_fidelity import approved_baseline, validate_design_fidelity_evidence
 from ai_workflow.discovery import detect
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
@@ -999,8 +1000,8 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 10
-    assert report["nodes"] == 35
-    assert report["agentic_nodes"] == 24
+    assert report["nodes"] == 37
+    assert report["agentic_nodes"] == 26
     assert report["execution_groups"][3:6] == [["frontend"], ["mobile"], ["backend"]]
 
 
@@ -1097,6 +1098,112 @@ def test_design_input_routing_is_deterministic(
     assert json.loads((tmp_path / ".ai" / "design-inputs.json").read_text())["mode"] == mode
 
 
+def _initialize_design_sync_target(project: Path, frontend: str = "react") -> None:
+    StateStore(project).create(
+        project_id="design-sync",
+        mode="new",
+        frontend=frontend,
+        backend="fastapi",
+        baseline=None,
+        branch=None,
+        assumptions=[],
+    )
+    approved = project / "HTML" / "approved" / "index.html"
+    approved.parent.mkdir(parents=True)
+    approved.write_text("<!doctype html><title>Approved account</title>")
+    application = project / "apps" / "frontend"
+    application.mkdir(parents=True)
+    (application / "existing.tsx").write_text("export const Existing = true\n")
+
+
+def test_sync_design_repairs_and_independently_verifies_frontend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _initialize_design_sync_target(tmp_path)
+    calls: list[str] = []
+
+    def fake_design_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter
+        if prompt.startswith("Compare and repair"):
+            calls.append("resolver")
+            changed = project / "apps" / "frontend" / "design.css"
+            changed.write_text(".account { display: grid; }\n")
+            _write_design_fidelity_evidence(
+                project,
+                prompt,
+                "frontend",
+                changed_paths=["apps/frontend/design.css"],
+            )
+        else:
+            calls.append("verifier")
+            _write_design_fidelity_verification(
+                project,
+                prompt,
+                "frontend",
+                changed_paths=["apps/frontend/design.css"],
+            )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", fake_design_agent)
+    assert main(["sync-design", "--project", str(tmp_path)]) == 0
+    assert calls == ["resolver", "verifier"]
+    assert validate_design_fidelity_evidence(tmp_path, "frontend", "react")["verified"] is True
+
+
+def test_sync_design_check_only_reports_drift_without_editing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _initialize_design_sync_target(tmp_path, "nextjs")
+    application_before = (tmp_path / "apps" / "frontend" / "existing.tsx").read_text()
+
+    def fake_comparison(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter
+        assert prompt.startswith("Compare and do not repair")
+        _write_design_fidelity_evidence(
+            project,
+            prompt,
+            "frontend",
+            aligned=False,
+            mode="check-only",
+        )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", fake_comparison)
+    assert (
+        main(["sync-design", "--project", str(tmp_path), "--check-only"])
+        == 2
+    )
+    assert (tmp_path / "apps" / "frontend" / "existing.tsx").read_text() == application_before
+    comparison = json.loads(
+        (
+            tmp_path
+            / ".ai"
+            / "evidence"
+            / "design-fidelity"
+            / "frontend"
+            / "comparison.json"
+        ).read_text()
+    )
+    assert comparison["aligned"] is False
+    assert comparison["findings"][0]["severity"] == "major"
+
+
+def test_sync_design_rejects_repair_scope_leakage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _initialize_design_sync_target(tmp_path)
+
+    def unsafe_design_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter, prompt
+        unsafe = project / "apps" / "backend" / "unsafe.py"
+        unsafe.parent.mkdir(parents=True)
+        unsafe.write_text("unsafe\n")
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", unsafe_design_agent)
+    assert main(["sync-design", "--project", str(tmp_path)]) == 1
+
+
 def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     del adapter
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]
@@ -1148,6 +1255,10 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         }
         manifest = project / ".ai" / "test-commands.json"
         manifest.write_text(json.dumps({"version": 1, "commands": commands}))
+    if phase in {"frontend", "mobile"} and node.startswith("sync-"):
+        _write_design_fidelity_evidence(project, prompt, phase)
+    if phase in {"frontend", "mobile"} and node == f"verify-{phase}":
+        _write_design_fidelity_verification(project, prompt, phase)
     if phase == "backend" and node == "implement-backend-slices":
         _create_pack_structure(project, prompt)
     if phase == "backend" and node == "verify-backend":
@@ -1182,6 +1293,167 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         client.parent.mkdir(parents=True, exist_ok=True)
         client.write_text("export type ApiClient = unknown\n")
     return {"returncode": 0, "stdout_tail": "pilot agent complete", "stderr_tail": ""}
+
+
+def _prompt_framework(prompt: str) -> str:
+    selected = re.search(r"Selected framework pack: (.+)", prompt)
+    if selected:
+        contract = json.loads(
+            (Path(selected.group(1)) / "rules" / "project-structure.json").read_text()
+        )
+        return str(contract["framework"])
+    direct = re.search(r"Target/framework: [a-z]+/([a-z]+)", prompt)
+    assert direct
+    return direct.group(1)
+
+
+def _design_cases(project: Path, target: str) -> list[dict[str, object]]:
+    configurations = (
+        [
+            ("MOBILE", "web", "mobile", 390, 844),
+            ("TABLET", "web", "tablet", 768, 1024),
+            ("DESKTOP", "web", "desktop", 1440, 900),
+        ]
+        if target == "frontend"
+        else [
+            ("ANDROID", "android", "small-phone", 360, 800),
+            ("IOS", "ios", "large-phone", 430, 932),
+        ]
+    )
+    cases: list[dict[str, object]] = []
+    for suffix, platform, name, width, height in configurations:
+        directory = project / ".ai" / "evidence" / "design-fidelity" / target / "captures"
+        directory.mkdir(parents=True, exist_ok=True)
+        rendered = directory / f"{suffix.lower()}-rendered.png"
+        difference = directory / f"{suffix.lower()}-diff.png"
+        rendered.write_bytes(b"\x89PNG\r\n\x1a\n")
+        difference.write_bytes(b"\x89PNG\r\n\x1a\n")
+        cases.append(
+            {
+                "id": f"DF-CASE-{suffix}",
+                "route": "/account",
+                "state": "success",
+                "platform": platform,
+                "viewport": {
+                    "name": name,
+                    "width": width,
+                    "height": height,
+                    "device_scale_factor": 1,
+                },
+                "baseline_html": "HTML/approved/index.html",
+                "rendered_image": rendered.relative_to(project).as_posix(),
+                "diff_image": difference.relative_to(project).as_posix(),
+            }
+        )
+    return cases
+
+
+def _write_design_fidelity_evidence(
+    project: Path,
+    prompt: str,
+    target: str,
+    *,
+    changed_paths: list[str] | None = None,
+    aligned: bool = True,
+    mode: str = "repair",
+) -> None:
+    framework = _prompt_framework(prompt)
+    baseline_hash, baseline_files = approved_baseline(project)
+    root = project / ".ai" / "evidence" / "design-fidelity" / target
+    root.mkdir(parents=True, exist_ok=True)
+    cases = _design_cases(project, target)
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "target": target,
+                "framework": framework,
+                "baseline_sha256": baseline_hash,
+                "baseline_files": baseline_files,
+                "cases": cases,
+                "generated_at": "2026-08-18T00:00:00Z",
+            }
+        )
+    )
+    findings = (
+        []
+        if aligned
+        else [
+            {
+                "id": "DF-001",
+                "case_id": cases[0]["id"],
+                "severity": "major",
+                "category": "layout",
+                "expected": "Approved account layout",
+                "actual": "Rendered account layout differs",
+                "requirement_ids": ["ACC-001"],
+                "affected_paths": [f"apps/{target}/design"],
+                "evidence": [cases[0]["diff_image"]],
+            }
+        ]
+    )
+    (root / "comparison.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "target": target,
+                "framework": framework,
+                "baseline_sha256": baseline_hash,
+                "mode": mode,
+                "aligned": aligned,
+                "findings": findings,
+                "accepted_differences": [],
+                "changed_paths": changed_paths or [],
+                "summary": (
+                    "Application design matches approved HTML"
+                    if aligned
+                    else "Meaningful application design drift was found"
+                ),
+                "verified": aligned,
+                "checked_at": "2026-08-18T00:00:00Z",
+            }
+        )
+    )
+    (root / "repair-plan.md").write_text("# Design repair plan\n\nNo repair required.\n")
+
+
+def _write_design_fidelity_verification(
+    project: Path,
+    prompt: str,
+    target: str,
+    *,
+    changed_paths: list[str] | None = None,
+) -> None:
+    framework = _prompt_framework(prompt)
+    root = project / ".ai" / "evidence" / "design-fidelity" / target
+    manifest = json.loads((root / "manifest.json").read_text())
+    check_names = (
+        ["render", "visual", "responsive", "accessibility", "focused-tests", "build"]
+        if target == "frontend"
+        else ["golden", "visual", "responsive", "accessibility", "focused-tests", "analysis"]
+    )
+    (root / "verification.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "target": target,
+                "framework": framework,
+                "baseline_sha256": manifest["baseline_sha256"],
+                "resolver_agent": "design-fidelity-resolver",
+                "verifier_agent": f"{framework}-independent-verifier",
+                "case_ids": [case["id"] for case in manifest["cases"]],
+                "changed_paths": changed_paths or [],
+                "checks": [
+                    {"name": name, "argv": ["true"], "cwd": f"apps/{target}", "exit_code": 0}
+                    for name in check_names
+                ],
+                "unresolved_findings": [],
+                "baseline_changed": False,
+                "verified": True,
+                "checked_at": "2026-08-18T00:00:00Z",
+            }
+        )
+    )
 
 
 def _create_pack_structure(project: Path, prompt: str) -> None:

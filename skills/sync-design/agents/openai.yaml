@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Design"
+  short_description: "Compare and repair implementation design drift"
+  default_prompt: "Use $sync-design to compare my approved HTML with the selected web and Flutter applications, repair meaningful drift, and independently verify the result."

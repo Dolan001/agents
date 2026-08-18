@@ -1,10 +1,10 @@
 {
   "name": "mobile",
   "prerequisites": ["design"],
-  "agents": ["solution-architect", "selected-mobile-agent", "selected-mobile-verifier"],
+  "agents": ["solution-architect", "selected-mobile-agent", "design-fidelity-resolver", "selected-mobile-verifier"],
   "rules": ["rules/common.md", "rules/phases/mobile.md"],
   "inputs": ["HTML/approved/**", "docs/generated/requirements.json", "docs/api/**"],
-  "outputs": ["root monorepo control files and directories", "apps/mobile/**", ".ai/test-commands.json", ".ai/evidence/features/**"],
+  "outputs": ["root monorepo control files and directories", "apps/mobile/**", ".ai/test-commands.json", ".ai/evidence/design-fidelity/mobile/**", ".ai/evidence/features/**"],
   "scope": {"allowed_paths": ["README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile", "apps/mobile/**", "packages/**", "tests/**", "docs/**", ".ai/**"]},
   "gate": "gates/contracts/mobile.json"
 }

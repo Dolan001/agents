@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "target", "framework", "baseline_sha256", "baseline_files", "cases", "generated_at"],
+  "properties": {
+    "version": {"const": 1},
+    "target": {"enum": ["frontend", "mobile"]},
+    "framework": {"enum": ["react", "nextjs", "flutter"]},
+    "baseline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "baseline_files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^HTML/approved/"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "route", "state", "platform", "viewport", "baseline_html", "rendered_image", "diff_image"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^DF-CASE-[A-Z0-9-]+$"},
+          "route": {"type": "string", "minLength": 1},
+          "state": {"type": "string", "minLength": 1},
+          "platform": {"enum": ["web", "android", "ios"]},
+          "viewport": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "width", "height", "device_scale_factor"],
+            "properties": {
+              "name": {"enum": ["mobile", "tablet", "desktop", "small-phone", "large-phone"]},
+              "width": {"type": "integer", "minimum": 240},
+              "height": {"type": "integer", "minimum": 320},
+              "device_scale_factor": {"type": "number", "exclusiveMinimum": 0}
+            }
+          },
+          "baseline_html": {"type": "string", "pattern": "^HTML/approved/"},
+          "rendered_image": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"},
+          "diff_image": {"type": "string", "pattern": "^\\.ai/evidence/design-fidelity/(frontend|mobile)/"}
+        }
+      }
+    },
+    "generated_at": {"type": "string", "format": "date-time"}
+  }
+}

@@ -224,6 +224,7 @@ Use a narrower command when only part of the lifecycle is required:
 | `$start-generatehtml` | Approved static HTML | No |
 | `$start-frontend` | Frontend gate | Yes |
 | `$start-mobile` | Flutter Android/iOS gate | Yes |
+| `$sync-design` | Approved HTML comparison, repair, and independent verification | No new monorepo |
 | `$start-backend` | Backend gate | Yes |
 | `$start-integration` | Typed integration gate | Yes |
 | `$start-testing` | Independent testing and security gate | Yes |
@@ -235,6 +236,10 @@ Use a narrower command when only part of the lifecycle is required:
 
 Every start command runs missing prerequisites. For example, `$start-backend` does not
 skip requirements, design, or any selected client when they are incomplete.
+
+`$sync-design` is also available after implementation. By default it repairs selected web/mobile
+targets; `--check-only` reports localized drift without application edits. Approved HTML remains
+immutable unless the user explicitly passes `--allow-baseline-update`.
 
 ### 6. Bootstrap the target
 
@@ -302,6 +307,11 @@ pack rules and hooks. React/Next.js implementation and verification are therefor
 performed by the selected pack's implementer and independent verifier, not generic
 framework-neutral substitutes.
 
+Before frontend approval, the design-fidelity resolver captures deterministic mobile, tablet, and
+desktop cases against hashed approved HTML, writes a repair plan, corrects meaningful drift, and
+recaptures affected routes/states. The existing selected frontend verifier then independently checks
+the raw captures, accessibility, responsiveness, focused tests, and production build.
+
 ### 10. Build the optional Flutter mobile application
 
 When selected, the mobile phase loads only `flutter_ai`, establishes any missing
@@ -315,6 +325,11 @@ directories, accessibility and responsive evidence, Flutter analysis/tests, and
 truthful platform release readiness. Unavailable iOS tooling must be reported as
 unverified rather than silently passed. If mobile is not selected, no Flutter context
 is loaded and the phase is checkpointed as skipped.
+
+Before mobile approval, the same resolver compares stable Flutter goldens for Android and iOS with
+approved HTML semantics while preserving valid Material/Cupertino differences. The Flutter verifier
+independently checks all manifest cases, responsive/text-scale behavior, accessibility, analysis,
+focused tests, and golden evidence.
 
 ### 11. Build the backend
 
@@ -612,6 +627,8 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai start-generatehtml --project . --adapter codex
 ./.agents/bin/ai start-frontend --project . --adapter codex --frontend nextjs
 ./.agents/bin/ai start-mobile --project . --adapter codex --mobile flutter
+./.agents/bin/ai sync-design --project . --target all --adapter codex
+./.agents/bin/ai sync-design --project . --target frontend --check-only --adapter codex
 ./.agents/bin/ai start-backend --project . --adapter codex \
   --frontend nextjs --mobile flutter --backend django-drf
 ./.agents/bin/ai start-integration --project . --adapter codex

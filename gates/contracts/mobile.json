@@ -1,5 +1,5 @@
 {
   "phase": "mobile",
-  "required": ["apps/mobile/**", ".ai/test-commands.json", ".ai/evidence/monorepo-bootstrap.json", ".ai/evidence/structure/monorepo.json", ".ai/evidence/structure/mobile.json", ".ai/evidence/mobile-verification.json", "README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile"],
-  "assertions": ["target_monorepo_structure_valid", "selected_pack_structure_valid", "flutter_analysis_and_tests_pass", "android_and_ios_readiness_evidenced", "responsive_and_accessible_states_evidenced"]
+  "required": ["apps/mobile/**", ".ai/test-commands.json", ".ai/evidence/monorepo-bootstrap.json", ".ai/evidence/structure/monorepo.json", ".ai/evidence/structure/mobile.json", ".ai/evidence/design-fidelity/mobile/manifest.json", ".ai/evidence/design-fidelity/mobile/comparison.json", ".ai/evidence/design-fidelity/mobile/repair-plan.md", ".ai/evidence/design-fidelity/mobile/verification.json", ".ai/evidence/mobile-verification.json", "README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile"],
+  "assertions": ["target_monorepo_structure_valid", "selected_pack_structure_valid", "flutter_analysis_and_tests_pass", "android_and_ios_readiness_evidenced", "responsive_and_accessible_states_evidenced", "approved_html_design_fidelity_independently_verified"]
 }

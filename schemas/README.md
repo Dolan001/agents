@@ -11,3 +11,8 @@ operation evidence without storing credentials. `prd-intake.schema.json` validat
 clarification-or-ready decision emitted by the PRD architect before any build state exists. A ready
 assessment must also provide decision provenance for the generated architecture matrix; each source
 is restricted to `requirements`, `answer`, `workflow-invariant`, or `assumption`.
+
+The three `design-fidelity-*.schema.json` contracts bind selected web/mobile comparisons to exact
+approved HTML hashes, deterministic route/screen cases, raw rendered/diff images, localized findings,
+observed changed paths, successful visual/accessibility/framework checks, and a distinct independent
+verifier. They prohibit a passing result with unresolved meaningful drift.
