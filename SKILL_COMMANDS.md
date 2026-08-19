@@ -4,15 +4,16 @@ This is the complete user-facing command reference for the skills shipped by `ai
 The workflow must be mounted in the target project as `.agents` with all nested submodules
 initialized.
 
-For first installation, the user can give Codex only this plain request—no Git knowledge is needed:
+For first installation, the user can give Codex only this plain-text instruction—no Git knowledge
+or preinstalled workflow skill is needed:
 
 ```text
-Set up this AI workflow in my current project:
-https://github.com/Dolan001/ai_workflow.git
+setup-workflow "https://github.com/Dolan001/ai_workflow.git"
 ```
 
-Codex adds the repository as `.agents`, initializes every nested submodule, verifies installation,
-and asks the user to reopen Codex. `$start-build` becomes available after that refresh.
+This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the
+repository as `.agents`, initializes every nested submodule, verifies installation, and asks the
+user to reopen Codex. `$start-build` becomes available after that refresh.
 
 ## Invocation model
 

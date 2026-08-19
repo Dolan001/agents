@@ -59,14 +59,17 @@ Design-only commands stop before this monorepo is created. `start-frontend` or
 ## Setup for a user who knows only Codex
 
 The user does not need to remember or run Git submodule commands. After adding the PRD to the
-current project, open Codex in that project and send this single request:
+current project, open Codex in that project and send this single plain-text request:
 
 ```text
-Set up this AI workflow in my current project:
-https://github.com/Dolan001/ai_workflow.git
+setup-workflow "https://github.com/Dolan001/ai_workflow.git"
 ```
 
-That request authorizes Codex to verify the project boundary and perform the installation. Codex
+`setup-workflow` is a readable instruction to Codex, not a terminal command, `$skill`, or installed
+plugin. The quoted value is the workflow Git URL.
+
+That plain request authorizes Codex to inspect the linked repository onboarding contract, verify the
+project boundary, and perform the installation. Codex
 must:
 
 1. Confirm the current directory is the intended project and initialize local Git only if needed.
@@ -92,7 +95,7 @@ $start-build
 The workflow auto-discovers exactly one PRD, uses framework declarations already in it, and asks
 only for genuinely missing choices such as a framework or GitHub user. A setup skill cannot provide
 this first installation because skills inside `.agents` do not exist until after the repository is
-installed; the plain Codex request above is the portable bootstrap.
+installed; the plain `setup-workflow "<git-url>"` request above is the portable bootstrap.
 
 ## Quick start
 

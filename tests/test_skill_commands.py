@@ -36,8 +36,8 @@ def test_skill_command_reference_covers_catalog_and_cli_flags() -> None:
 def test_readme_has_zero_knowledge_codex_bootstrap() -> None:
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text()
-    assert "Set up this AI workflow in my current project:" in readme
-    assert "https://github.com/Dolan001/ai_workflow.git" in readme
+    assert 'setup-workflow "https://github.com/Dolan001/ai_workflow.git"' in readme
+    assert "not a terminal command, `$skill`, or installed" in readme
     assert "git submodule add -b dev" in readme
     assert "git submodule update --init --recursive" in readme
     assert "Refuse to overwrite an existing `.agents`" in readme
