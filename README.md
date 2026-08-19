@@ -95,6 +95,9 @@ missing phase through delivery. It does not push by default.
 
 ## Complete process: A to Z
 
+For every user-facing `$skill`, accepted flag, default, and equivalent CLI invocation, see
+[`SKILL_COMMANDS.md`](SKILL_COMMANDS.md).
+
 ### 1. Install and pin the workflow
 
 The real project stores `ai_workflow` directly at `.agents`. The nested `base_ai`,

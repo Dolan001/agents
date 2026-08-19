@@ -1,0 +1,367 @@
+# Codex skill command reference
+
+This is the complete user-facing command reference for the skills shipped by `ai_workflow`.
+The workflow must be mounted in the target project as `.agents` with all nested submodules
+initialized.
+
+## Invocation model
+
+Type a skill in the Codex conversation, not in the terminal:
+
+```text
+$start-build --prd PRD.md --github-user dolan --frontend nextjs --backend django-drf
+```
+
+Codex validates the request, reads the skill, and invokes the equivalent workflow CLI under
+`./.agents/bin/ai`. The examples below show both forms. Paths must be inside the target project.
+Boolean flags such as `--push` do not take `true` or `false`; include the flag to enable it.
+Repeatable flags must be written once per value.
+
+The workflow supports Codex only. Therefore, `--adapter` accepts only `codex` and normally does not
+need to be written. Direct CLI commands support `-h` or `--help`.
+
+## All available skills
+
+| Skill | Purpose | Normal stopping point or effect |
+|---|---|---|
+| `$generate-prd` | Convert requirements into a validated PRD | Ready `PRD.md` |
+| `$start-design` | Create the design specification | Design specification |
+| `$start-generatehtml` | Generate and approve static HTML | Approved HTML |
+| `$start-frontend` | Build React or Next.js | Frontend gate |
+| `$start-mobile` | Build Flutter for Android and iOS | Mobile gate |
+| `$start-backend` | Build Django DRF or FastAPI | Backend gate |
+| `$start-integration` | Connect selected clients and backend | Integration gate |
+| `$start-testing` | Run complete independent verification | Testing/security gate |
+| `$start-deployment` | Generate and verify AWS deployment assets | Deployment-readiness gate; no cloud mutation |
+| `$start-delivery` | Finish verified feature delivery | Delivery gate |
+| `$start-build` | Run the entire PRD-to-delivery lifecycle | Delivery gate |
+| `$resume-build` | Resume from durable verified checkpoints | Requested remaining lifecycle |
+| `$workflow-status` | Inspect checkpoints and blockers | Read-only report |
+| `$sync-design` | Compare, repair, and verify client design fidelity | Verified web/mobile design evidence |
+| `$resolve-token` | Diagnose and resolve one scoped work token | Commit, push, and unmerged PR after approval |
+| `$deployment-status` | Read deployment evidence | Read-only report |
+| `$deploy-staging` | Deploy the verified immutable release to AWS staging | Verified staging evidence |
+| `$deploy-production` | Promote the staging digest to AWS production | Verified production evidence |
+| `$rollback-deployment` | Restore a named AWS environment | Verified rollback evidence |
+
+## Shared flags for start and resume skills
+
+The following flags are accepted by `$start-design`, `$start-generatehtml`, `$start-frontend`,
+`$start-mobile`, `$start-backend`, `$start-integration`, `$start-testing`, `$start-deployment`,
+`$start-delivery`, `$start-build`, and `$resume-build`.
+In command patterns below, `[shared start flags]` means any applicable flag from this table that is
+not already shown; do not repeat the same flag.
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project root. |
+| `--prd` | in-project Markdown path | auto-discovered | PRD path. Without it, exactly one of `docs/PRD.md`, `PRD.md`, `docs/prd.md`, or `prd.md` must exist. |
+| `--project-id` | identifier | derived from project directory | Durable workflow project identifier. |
+| `--github-user` | GitHub user/owner string | none | Required for a fresh target when a safe workflow branch must be created. |
+| `--branch-feature` | feature name | project directory name | Feature portion used when creating `ai/<github-user>/<feature>`. |
+| `--html` | in-project HTML path | none | Optional HTML input. Repeat once per file. |
+| `--screenshot` | in-project PNG/JPEG/WebP path | none | Optional screenshot input. Repeat once per file. |
+| `--frontend` | `react`, `nextjs`, or `unknown` | `unknown` | Web selection. Do not explicitly pass `unknown` when the requested stage requires web. |
+| `--mobile` | `flutter` or `unknown` | `unknown` | Mobile selection. Do not explicitly pass `unknown` when the requested stage requires mobile. |
+| `--backend` | `django-drf`, `fastapi`, or `unknown` | `unknown` | Backend selection. Do not explicitly pass `unknown` when the requested stage requires backend. |
+| `--deployment` | `aws` or `unknown` | `unknown` | Deployment selection. `aws` generates assets only during normal build commands. |
+| `--adapter` | `codex` | `codex` | Execution adapter. |
+| `--commit-verified` | no value | off | Commit independently verified feature changes. Use only with explicit authorization. |
+| `--push` | no value | off | Push verified commits from the current workflow branch. Use only with explicit authorization. |
+| `--remaining` | no value | already enabled | Compatibility flag; commands already resume only remaining work. |
+
+Frameworks explicitly declared in the PRD take precedence and do not need to be repeated. At least
+one client—React, Next.js, or Flutter—is required for backend and later complete-build stages.
+`--html` and `--screenshot` can be combined and repeated:
+
+```text
+$start-build --html HTML/input/home.html \
+  --screenshot HTML/input/home-mobile.png \
+  --screenshot HTML/input/home-desktop.png
+```
+
+## Build lifecycle skills
+
+### `$start-design`
+
+```text
+$start-design [shared start flags]
+./.agents/bin/ai start-design --project . --adapter codex [shared start flags]
+```
+
+Runs missing bootstrap and requirements work, creates `HTML/design-specification.md`, and stops
+before approved HTML or application source.
+
+### `$start-generatehtml`
+
+```text
+$start-generatehtml [shared start flags]
+./.agents/bin/ai start-generatehtml --project . --adapter codex [shared start flags]
+```
+
+Runs missing design prerequisites, generates or validates approved static HTML, and stops before
+frontend or mobile implementation.
+
+### `$start-frontend`
+
+```text
+$start-frontend --frontend <react|nextjs> [shared start flags]
+./.agents/bin/ai start-frontend --project . --adapter codex \
+  --frontend <react|nextjs> [shared start flags]
+```
+
+Builds the selected web frontend from approved HTML, runs pixel/semantic design synchronization and
+independent frontend verification, then stops before backend work.
+
+### `$start-mobile`
+
+```text
+$start-mobile --mobile flutter [shared start flags]
+./.agents/bin/ai start-mobile --project . --adapter codex \
+  --mobile flutter [shared start flags]
+```
+
+Builds Flutter for Android and iOS, runs design synchronization and independent mobile verification,
+then stops after the mobile gate.
+
+### `$start-backend`
+
+```text
+$start-backend --backend <django-drf|fastapi> [client selection] [shared start flags]
+./.agents/bin/ai start-backend --project . --adapter codex \
+  --backend <django-drf|fastapi> [client selection] [shared start flags]
+```
+
+Requires at least one selected client, runs missing client prerequisites, builds the PostgreSQL
+backend, and stops before integration.
+
+### `$start-integration`
+
+```text
+$start-integration [resolved framework flags] [shared start flags]
+./.agents/bin/ai start-integration --project . --adapter codex \
+  [resolved framework flags] [shared start flags]
+```
+
+Runs missing prerequisites, connects the typed client boundaries to the backend, executes contract
+checks, and stops after integration.
+
+### `$start-testing`
+
+```text
+$start-testing [resolved framework flags] [shared start flags]
+./.agents/bin/ai start-testing --project . --adapter codex \
+  [resolved framework flags] [shared start flags]
+```
+
+Runs missing prerequisites and the complete independent API, browser, mobile, integration, design,
+accessibility, security, and release-readiness test gates. It does not push.
+
+### `$start-deployment`
+
+```text
+$start-deployment --deployment aws [resolved framework flags] [shared start flags]
+./.agents/bin/ai start-deployment --project . --adapter codex --deployment aws \
+  [resolved framework flags] [shared start flags]
+```
+
+Runs missing testing/security prerequisites and generates AWS infrastructure, CI/CD, observability,
+and runbooks. It never plans, applies, deploys, changes DNS, or uses live credentials.
+
+### `$start-delivery`
+
+```text
+$start-delivery [resolved framework flags] [--commit-verified] [--push]
+./.agents/bin/ai start-delivery --project . --adapter codex \
+  [resolved framework flags] [--commit-verified] [--push]
+```
+
+Runs missing prerequisites through release readiness. `--commit-verified` and `--push` require
+explicit user authorization.
+
+### `$start-build`
+
+```text
+$start-build [resolved framework flags] [shared start flags]
+./.agents/bin/ai start-build --project . --adapter codex \
+  [resolved framework flags] [shared start flags]
+```
+
+Runs the complete lifecycle through delivery. It may generate AWS assets when `--deployment aws` is
+selected, but it never performs a live deployment. It does not push unless `--push` is explicit.
+
+Example with every meaningful selection:
+
+```text
+$start-build --project . --prd docs/PRD.md --project-id trustix \
+  --github-user dolan --branch-feature customer-accounts \
+  --html HTML/input/home.html --screenshot HTML/input/home-mobile.png \
+  --frontend nextjs --mobile flutter --backend django-drf --deployment aws \
+  --adapter codex --commit-verified --push
+```
+
+### `$resume-build`
+
+```text
+$resume-build [shared start flags]
+./.agents/bin/ai resume-build --project . --adapter codex [shared start flags]
+```
+
+Resumes only invalid or incomplete nodes from durable checkpoints. Preserve saved framework and Git
+choices. `--push` remains opt-in.
+
+## PRD generation
+
+### `$generate-prd`
+
+```text
+$generate-prd --requirements <path> [--output <path>] [--answer <QNNN=answer>]...
+./.agents/bin/ai generate-prd --project . --requirements <path> \
+  --output PRD.md --adapter codex [--answer <QNNN=answer>]...
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project root. |
+| `--requirements` | in-project path | required | Requirements source. |
+| `--output` | in-project path | `PRD.md` | Validated PRD destination. |
+| `--answer` | `QUESTION_ID=answer` | none | Answer one active clarification. Repeat for every answer in the current batch. |
+| `--adapter` | `codex` | `codex` | Execution adapter. |
+
+The command stops with `NEEDS_INPUT` when material decisions are missing and resumes using repeated
+`--answer` flags. Actual credentials are blocked; use variable names and placeholders only.
+
+## Status and design fidelity
+
+### `$workflow-status`
+
+```text
+$workflow-status [--project <directory>]
+./.agents/bin/ai status --project . --json
+```
+
+The only user-selectable flag is `--project` (default `.`). JSON mode is always used internally.
+This command is read-only.
+
+### `$sync-design`
+
+```text
+$sync-design [--project <directory>] [--target <all|frontend|mobile>] \
+  [--check-only] [--allow-baseline-update] [--adapter codex]
+./.agents/bin/ai sync-design --project . --target all --adapter codex
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Initialized target project. |
+| `--target` | `all`, `frontend`, or `mobile` | `all` | Implemented client target to compare. |
+| `--adapter` | `codex` | `codex` | Execution adapter. |
+| `--check-only` | no value | off | Report drift without editing application paths. |
+| `--allow-baseline-update` | no value | off | Permit approved HTML changes. Requires explicit authorization and cannot be combined with `--check-only`. |
+
+Normal mode repairs meaningful drift and independently verifies all deterministic pixel, semantic,
+responsive, state, accessibility, and platform checks.
+
+## Scoped token resolution
+
+### `$resolve-token`
+
+Diagnosis:
+
+```text
+$resolve-token --token <frontend|mobile|backend>/<TOKEN_ID>/TOKEN.md
+./.agents/bin/ai resolve-token --project . --token <path> --adapter codex
+```
+
+Approved implementation:
+
+```text
+$resolve-token --token <path> --approve [--github-user <user>] [--remote <name>]
+./.agents/bin/ai resolve-token --project . --token <path> --adapter codex \
+  --approve [--github-user <user>] [--remote <name>]
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project. |
+| `--token` | supported `TOKEN.md` path | required | Exactly one frontend, mobile, or backend token. |
+| `--adapter` | `codex` | `codex` | Execution adapter. |
+| `--approve` | no value | off | Approve the diagnosed plan and begin implementation. Never inferred. |
+| `--github-user` | GitHub user/owner string | saved/current context | Used when constructing the token branch. |
+| `--remote` | Git remote name | `origin` | Remote used for push and PR preparation. |
+
+The first invocation diagnoses and returns a plan without edits. After approval, the resolver creates
+a token branch, implements and verifies the plan, commits, pushes, and opens an unmerged PR targeting
+the branch that was current during diagnosis.
+
+## AWS deployment operations
+
+Normal build skills only generate deployment assets. The following skills are the separate live
+operation boundary.
+
+### `$deployment-status`
+
+```text
+$deployment-status [--project <directory>]
+./.agents/bin/ai deployment-status --project .
+```
+
+`--project` defaults to `.`. The command reads local readiness and deployment evidence without
+contacting AWS or mutating state.
+
+### `$deploy-staging`
+
+```text
+$deploy-staging [--project <directory>] [--execute]
+./.agents/bin/ai deploy-staging --project . [--execute]
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project. |
+| `--execute` | no value | off | Perform the project-owned staging deployment. Without it, the command is a dry run. |
+
+Run the dry invocation first. Add `--execute` only after explicit authorization. The underlying CLI
+also accepts `--approve-production` for parser consistency, but it has no staging purpose and must
+not be used.
+
+### `$deploy-production`
+
+```text
+$deploy-production [--project <directory>] [--execute] [--approve-production]
+./.agents/bin/ai deploy-production --project . --execute --approve-production
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project. |
+| `--execute` | no value | off | Perform the production promotion rather than a dry run. |
+| `--approve-production` | no value | off | Explicit protected-production approval required for execution. |
+
+Production promotes the exact staging-verified immutable digest; it does not rebuild.
+
+### `$rollback-deployment`
+
+```text
+$rollback-deployment --environment <staging|production> [--project <directory>] \
+  [--execute] [--approve-rollback]
+./.agents/bin/ai rollback-deployment --project . --environment <staging|production> \
+  --execute --approve-rollback
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project. |
+| `--environment` | `staging` or `production` | required | Environment to restore. |
+| `--execute` | no value | off | Execute the project-owned rollback rather than a dry run. |
+| `--approve-rollback` | no value | off | Explicit rollback authorization required for execution. |
+
+The workflow verifies the prior immutable release and database compatibility. It never performs an
+automatic destructive database reversal.
+
+## Internal CLI utilities are not skills
+
+Commands such as `init`, `adopt`, `one-shot`, `inspect`, `reconcile`, `plan`, `build`, `verify`,
+`test`, `review`, `status`, `resume`, `push`, `doctor`, `pipeline`, `clean-state`, and
+`compare-images` are orchestration primitives used by skills or maintainers. They are intentionally
+not separate `$skills`. Use the user-facing skill commands above for normal operation.
