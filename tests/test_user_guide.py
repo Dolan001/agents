@@ -6,11 +6,12 @@ from pathlib import Path
 from ai_workflow.cli import parser
 
 
-def test_skill_command_reference_covers_catalog_and_cli_flags() -> None:
+def test_user_guide_covers_catalog_and_cli_flags_in_workflow_order() -> None:
     root = Path(__file__).resolve().parents[1]
-    document = (root / "SKILL_COMMANDS.md").read_text()
+    document = (root / "USER_GUIDE.md").read_text()
     catalog = json.loads((root / "skills" / "catalog.json").read_text())
-    skill_names = {item["name"] for item in catalog["skills"]}
+    catalog_names = [item["name"] for item in catalog["skills"]]
+    skill_names = set(catalog_names)
     for name in skill_names:
         assert f"### `${name}`" in document
 
@@ -31,6 +32,29 @@ def test_skill_command_reference_covers_catalog_and_cli_flags() -> None:
             if flag not in {"-h", "--help"}
         }
         assert flags <= set(re.findall(r"--[a-z][a-z-]*", document))
+
+    ordered = [
+        "$generate-prd",
+        "$start-design",
+        "$start-generatehtml",
+        "$start-frontend",
+        "$start-mobile",
+        "$start-backend",
+        "$start-integration",
+        "$start-testing",
+        "$start-deployment",
+        "$start-delivery",
+    ]
+    order_section = document.split("For deliberate stage-by-stage execution", 1)[1].split(
+        "Afterward,", 1
+    )[0]
+    positions = [order_section.index(name) for name in ordered]
+    assert positions == sorted(positions)
+    table_section = document.split("## All available skills", 1)[1].split(
+        "## PRD generation", 1
+    )[0]
+    table_names = re.findall(r"\| `\$([a-z-]+)` \|", table_section)
+    assert table_names == catalog_names
 
 
 def test_readme_has_zero_knowledge_codex_bootstrap() -> None:

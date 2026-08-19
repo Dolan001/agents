@@ -1,6 +1,7 @@
-# Codex skill command reference
+# AI Workflow User Guide
 
-This is the complete user-facing command reference for the skills shipped by `ai_workflow`.
+This guide presents the workflow in the order a user normally follows it and includes the complete
+command and flag reference for every skill shipped by `ai_workflow`.
 The workflow must be mounted in the target project as `.agents` with all nested submodules
 initialized.
 
@@ -31,6 +32,35 @@ Repeatable flags must be written once per value.
 The workflow supports Codex only. Therefore, `--adapter` accepts only `codex` and normally does not
 need to be written. Direct CLI commands support `-h` or `--help`.
 
+## Recommended command order
+
+Most users need only the one-shot path:
+
+```text
+setup-workflow "<workflow-git-url>"
+    -> reopen Codex
+    -> $start-build
+```
+
+For deliberate stage-by-stage execution, use:
+
+```text
+$generate-prd                 # only when PRD.md does not already exist
+    -> $start-design
+    -> $start-generatehtml
+    -> $start-frontend and/or $start-mobile
+       (design synchronization runs automatically)
+    -> $start-backend
+    -> $start-integration
+    -> $start-testing
+    -> $start-deployment      # only when AWS preparation is required
+    -> $start-delivery
+```
+
+Afterward, use `$workflow-status` or `$resume-build` for recovery, `$sync-design` for an explicit
+design recheck, `$resolve-token` for a scoped change, and the deployment operation skills only for
+explicitly authorized live AWS work.
+
 ## All available skills
 
 | Skill | Purpose | Normal stopping point or effect |
@@ -40,20 +70,42 @@ need to be written. Direct CLI commands support `-h` or `--help`.
 | `$start-generatehtml` | Generate and approve static HTML | Approved HTML |
 | `$start-frontend` | Build React or Next.js | Frontend gate |
 | `$start-mobile` | Build Flutter for Android and iOS | Mobile gate |
+| `$sync-design` | Explicitly recheck or repair client design fidelity | Verified web/mobile design evidence |
 | `$start-backend` | Build Django DRF or FastAPI | Backend gate |
 | `$start-integration` | Connect selected clients and backend | Integration gate |
 | `$start-testing` | Run complete independent verification | Testing/security gate |
 | `$start-deployment` | Generate and verify AWS deployment assets | Deployment-readiness gate; no cloud mutation |
 | `$start-delivery` | Finish verified feature delivery | Delivery gate |
-| `$start-build` | Run the entire PRD-to-delivery lifecycle | Delivery gate |
-| `$resume-build` | Resume from durable verified checkpoints | Requested remaining lifecycle |
+| `$start-build` | One-shot shortcut for the entire lifecycle | Delivery gate |
 | `$workflow-status` | Inspect checkpoints and blockers | Read-only report |
-| `$sync-design` | Compare, repair, and verify client design fidelity | Verified web/mobile design evidence |
+| `$resume-build` | Resume from durable verified checkpoints | Requested remaining lifecycle |
 | `$resolve-token` | Diagnose and resolve one scoped work token | Commit, push, and unmerged PR after approval |
 | `$deployment-status` | Read deployment evidence | Read-only report |
 | `$deploy-staging` | Deploy the verified immutable release to AWS staging | Verified staging evidence |
 | `$deploy-production` | Promote the staging digest to AWS production | Verified production evidence |
 | `$rollback-deployment` | Restore a named AWS environment | Verified rollback evidence |
+
+## PRD generation
+
+### `$generate-prd`
+
+```text
+$generate-prd --requirements <path> [--output <path>] [--answer <QNNN=answer>]...
+./.agents/bin/ai generate-prd --project . --requirements <path> \
+  --output PRD.md --adapter codex [--answer <QNNN=answer>]...
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project root. |
+| `--requirements` | in-project path | required | Requirements source. |
+| `--output` | in-project path | `PRD.md` | Validated PRD destination. |
+| `--answer` | `QUESTION_ID=answer` | none | Answer one active clarification. Repeat for every answer in the current batch. |
+| `--adapter` | `codex` | `codex` | Execution adapter. |
+
+The command stops with `NEEDS_INPUT` when material decisions are missing and resumes using repeated
+`--answer` flags. Actual credentials are blocked; use variable names and placeholders only. Skip
+this command when a validated `PRD.md` already exists.
 
 ## Shared flags for start and resume skills
 
@@ -211,38 +263,7 @@ $start-build --project . --prd docs/PRD.md --project-id trustix \
   --adapter codex --commit-verified --push
 ```
 
-### `$resume-build`
-
-```text
-$resume-build [shared start flags]
-./.agents/bin/ai resume-build --project . --adapter codex [shared start flags]
-```
-
-Resumes only invalid or incomplete nodes from durable checkpoints. Preserve saved framework and Git
-choices. `--push` remains opt-in.
-
-## PRD generation
-
-### `$generate-prd`
-
-```text
-$generate-prd --requirements <path> [--output <path>] [--answer <QNNN=answer>]...
-./.agents/bin/ai generate-prd --project . --requirements <path> \
-  --output PRD.md --adapter codex [--answer <QNNN=answer>]...
-```
-
-| Flag | Value | Default | Meaning |
-|---|---|---|---|
-| `--project` | project directory | `.` | Target project root. |
-| `--requirements` | in-project path | required | Requirements source. |
-| `--output` | in-project path | `PRD.md` | Validated PRD destination. |
-| `--answer` | `QUESTION_ID=answer` | none | Answer one active clarification. Repeat for every answer in the current batch. |
-| `--adapter` | `codex` | `codex` | Execution adapter. |
-
-The command stops with `NEEDS_INPUT` when material decisions are missing and resumes using repeated
-`--answer` flags. Actual credentials are blocked; use variable names and placeholders only.
-
-## Status and design fidelity
+## Status, recovery, and design fidelity
 
 ### `$workflow-status`
 
@@ -253,6 +274,16 @@ $workflow-status [--project <directory>]
 
 The only user-selectable flag is `--project` (default `.`). JSON mode is always used internally.
 This command is read-only.
+
+### `$resume-build`
+
+```text
+$resume-build [shared start flags]
+./.agents/bin/ai resume-build --project . --adapter codex [shared start flags]
+```
+
+Resumes only invalid or incomplete nodes from durable checkpoints. Preserve saved framework and Git
+choices. `--push` remains opt-in.
 
 ### `$sync-design`
 
