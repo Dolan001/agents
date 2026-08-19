@@ -56,9 +56,48 @@ target-project/
 Design-only commands stop before this monorepo is created. `start-frontend` or
 `start-mobile` is the first command allowed to scaffold the application structure.
 
+## Setup for a user who knows only Codex
+
+The user does not need to remember or run Git submodule commands. After adding the PRD to the
+current project, open Codex in that project and send this single request:
+
+```text
+Set up this AI workflow in my current project:
+https://github.com/Dolan001/ai_workflow.git
+```
+
+That request authorizes Codex to verify the project boundary and perform the installation. Codex
+must:
+
+1. Confirm the current directory is the intended project and initialize local Git only if needed.
+2. Refuse to overwrite an existing `.agents` path unless it is already this registered submodule.
+3. Execute:
+
+   ```bash
+   git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
+   git submodule update --init --recursive
+   ```
+
+4. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, and all seven nested
+   behavior repositories.
+5. Make no application changes, commits, pushes, or remote branches during setup.
+6. Tell the user to reopen Codex so skill discovery refreshes.
+
+After reopening Codex, the only command needed is:
+
+```text
+$start-build
+```
+
+The workflow auto-discovers exactly one PRD, uses framework declarations already in it, and asks
+only for genuinely missing choices such as a framework or GitHub user. A setup skill cannot provide
+this first installation because skills inside `.agents` do not exist until after the repository is
+installed; the plain Codex request above is the portable bootstrap.
+
 ## Quick start
 
-Run these commands inside the target project, not inside `ai_workflow` itself:
+The following is the manual fallback for an experienced user. Run it inside the target project, not
+inside `ai_workflow` itself:
 
 ```bash
 git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
