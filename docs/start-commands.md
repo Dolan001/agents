@@ -24,7 +24,7 @@ gitlink to the real project so every developer receives the same pinned workflow
 | `start-testing` | Full independent test and security gates | Yes |
 | `start-deployment` | AWS assets and readiness; no cloud mutation | Yes |
 | `start-delivery` | Release-ready evidence; optional explicit Git delivery | Yes |
-| `start-build` | Every missing phase through delivery | Yes |
+| `start-build` | Every non-deployment phase through application delivery | Yes |
 | `resume-build` | Continue from unchanged verified checkpoints | As needed |
 | `workflow-status` | Read-only progress and recovery report | No change |
 
@@ -36,9 +36,10 @@ Next.js, Flutter, Django REST Framework, or FastAPI. Complete delivery requires 
 least one web/mobile client and one backend. Unsupported, conflicting, or multiple
 declarations fail before build work.
 
-An explicit `Deployment provider: AWS` declaration activates AWS asset generation inside
-`start-build`. Otherwise it remains skipped. Live operations are separate: `deploy-staging`,
-`deploy-production`, `deployment-status`, and `rollback-deployment`.
+`start-build`, `resume-build`, and legacy `one-shot` always skip deployment. An explicit
+`Deployment provider: AWS` declaration is retained for a later `$start-deployment --deployment aws`
+run; it never activates AWS work inside one-shot application development. Live operations remain
+separate: `deploy-staging`, `deploy-production`, `deployment-status`, and `rollback-deployment`.
 
 Examples:
 

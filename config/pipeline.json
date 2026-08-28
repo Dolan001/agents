@@ -104,6 +104,8 @@
     "context": {
       "maximum_files_per_task": 12,
       "maximum_characters_per_task": 60000,
+      "maximum_files_per_feature": 10,
+      "maximum_characters_per_feature": 45000,
       "load_selected_frameworks_only": true,
       "prefer_cached_summaries": true
     },

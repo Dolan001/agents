@@ -10,9 +10,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .execution import _build_context_bundle, _run_adapter
+from .execution import _build_context_bundle, _concise_adapter_failure, _run_adapter
 from .git import baseline, run_git
 from .io import read_json, write_json
+from .issues import resolve_build_issues, try_track_build_issue
 from .model import StateStore, utc_now
 from .pipeline import workflow_root
 
@@ -468,7 +469,8 @@ def _diagnose_plan(
     snapshot: dict[str, str],
 ) -> dict[str, Any]:
     prior_failure = ""
-    for _attempt in range(1, 4):
+    tracked_issues: list[str] = []
+    for attempt in range(1, 4):
         plan_path.unlink(missing_ok=True)
         retry = f"\nPrior diagnosis failure to correct:\n{prior_failure}\n" if prior_failure else ""
         context_bundle = _token_context_bundle(
@@ -504,11 +506,33 @@ a non-empty string. Do not implement the plan.
             try:
                 if _worktree_snapshot(project) != snapshot:
                     raise RuntimeError("diagnosis modified project files")
-                return _validate_plan(plan_path, str(token["area"]))
+                plan = _validate_plan(plan_path, str(token["area"]))
+                resolve_build_issues(
+                    project,
+                    tracked_issues,
+                    "A later bounded diagnosis attempt produced a valid unchanged plan.",
+                )
+                return plan
             except RuntimeError as error:
                 prior_failure = str(error)
+                retryable = True
         else:
-            prior_failure = str(result.get("stderr_tail") or result.get("stdout_tail"))
+            prior_failure, retryable = _concise_adapter_failure(result)
+        tracked = try_track_build_issue(
+            project,
+            source="token-diagnosis",
+            message=prior_failure,
+            command="resolve-token",
+            feature=str(token["id"]),
+            attempt=attempt,
+            retryable=retryable,
+            context={"token": token["path"], "plan": plan_path.relative_to(project).as_posix()},
+        )
+        if tracked:
+            tracked_issues.append(tracked)
+        if result["returncode"] != 0:
+            if not retryable:
+                raise RuntimeError(f"token diagnosis blocked by environment: {prior_failure}")
     raise RuntimeError(f"token diagnosis failed after 3 attempts: {prior_failure}")
 
 
@@ -693,7 +717,9 @@ def resolve_token(
 
     _merge_state(state_path, {"status": "implementing", "implementation_started_at": utc_now()})
     prior_failure = ""
+    tracked_issues: list[str] = []
     for attempt in range(1, 4):
+        retryable = True
         evidence_path.unlink(missing_ok=True)
         retry = f"\nPrior failure to correct:\n{prior_failure}\n" if prior_failure else ""
         context_bundle = _token_context_bundle(
@@ -750,23 +776,48 @@ and scope_expansions (list). Do not claim success without this evidence.
                         "verified_at": utc_now(),
                     },
                 )
+                resolve_build_issues(
+                    project,
+                    tracked_issues,
+                    "A later bounded token implementation attempt passed verification.",
+                )
                 return _deliver_pull_request(
                     project, state_path, token, evidence, token_files, remote
                 )
             except RuntimeError as error:
                 prior_failure = str(error)
         else:
-            prior_failure = str(result.get("stderr_tail") or result.get("stdout_tail"))
+            prior_failure, retryable = _concise_adapter_failure(result)
+        tracked = try_track_build_issue(
+            project,
+            source="token-implementation",
+            message=prior_failure,
+            command="resolve-token",
+            feature=str(token["id"]),
+            attempt=attempt,
+            retryable=retryable,
+            context={
+                "token": token["path"],
+                "evidence": evidence_path.relative_to(project).as_posix(),
+            },
+        )
+        if tracked:
+            tracked_issues.append(tracked)
         unverified_changes = _changed_paths(starting_snapshot, _worktree_snapshot(project))
         _merge_state(
             state_path,
             {
-                "status": "retrying" if attempt < 3 else "blocked",
+                "status": "retrying" if retryable and attempt < 3 else "blocked",
                 "attempts": attempt,
                 "last_failure": prior_failure,
                 "unverified_changed_paths": unverified_changes,
             },
         )
+        if result["returncode"] != 0 and not retryable:
+            raise RuntimeError(
+                f"token {token['id']} is blocked by environment: {prior_failure}; "
+                "restore the dependency and rerun the approved token"
+            )
     raise RuntimeError(
         f"token {token['id']} is blocked after 3 attempts: {prior_failure}; "
         f"rerun $resolve-token {token['path']} --approve"

@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from .execution import _run_adapter
 from .frameworks import detect_prd_frameworks
 from .io import read_json, write_json
+from .issues import resolve_build_issues, try_track_build_issue
 from .model import utc_now
 from .pipeline import workflow_root
 
@@ -674,9 +675,35 @@ def generate_prd(
     source_sha256 = hashlib.sha256(source_text.encode()).hexdigest()
     prior_state = read_json(state_path, {})
     prior = read_json(answers_path, [])
-    if (
+    same_source = (
         isinstance(prior_state, dict)
         and prior_state.get("source_sha256") == source_sha256
+    )
+    if (
+        not answers
+        and same_source
+        and prior_state.get("status") == "ready"
+        and not validate_prd(output)
+    ):
+        return 0, {
+            "status": "READY",
+            "output": output.relative_to(project).as_posix(),
+            "assumptions": prior_state.get("assumptions", []),
+            "decision_sources": prior_state.get("decision_sources", {}),
+            "cached": True,
+            "next": f"$start-build --prd {output.relative_to(project)}",
+        }
+    if not answers and same_source and prior_state.get("status") == "needs_input":
+        return 2, {
+            "status": "NEEDS_INPUT",
+            "questions": prior_state.get("questions", []),
+            "assumptions": prior_state.get("assumptions", []),
+            "decision_sources": prior_state.get("decision_sources", {}),
+            "cached": True,
+            "resume": f"$generate-prd {requirements.relative_to(project)}",
+        }
+    if (
+        same_source
         and isinstance(prior, list)
     ):
         sanitized_answers.extend(item for item in prior if isinstance(item, str))
@@ -718,6 +745,7 @@ def generate_prd(
         {**common_state, "status": "assessing", "questions": prior_questions},
     )
     validation_failures: list[str] | None = None
+    tracked_issues: list[str] = []
     for attempt in range(2):
         assessment_path.unlink(missing_ok=True)
         candidate_path.unlink(missing_ok=True)
@@ -763,6 +791,11 @@ def generate_prd(
                 )
             )
         if not validation_failures:
+            resolve_build_issues(
+                project,
+                tracked_issues,
+                "The bounded PRD repair pass produced a deterministically valid PRD.",
+            )
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(candidate_path.read_text(encoding="utf-8"), encoding="utf-8")
             state = {
@@ -781,4 +814,17 @@ def generate_prd(
                 "decision_sources": assessment["decision_sources"],
                 "next": f"$start-build --prd {output.relative_to(project)}",
             }
+        tracked = try_track_build_issue(
+            project,
+            source="prd-validation",
+            message="; ".join(validation_failures),
+            command="generate-prd",
+            phase="requirements",
+            node="generate-build-ready-prd",
+            attempt=attempt + 1,
+            retryable=attempt == 0,
+            context={"candidate": candidate_path.relative_to(project).as_posix()},
+        )
+        if tracked:
+            tracked_issues.append(tracked)
     raise RuntimeError(f"generated PRD failed validation: {validation_failures}")

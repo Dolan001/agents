@@ -18,6 +18,7 @@ from ai_workflow.design_fidelity import (
 from ai_workflow.discovery import detect
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
+from ai_workflow.issues import issue_summary, track_build_issue
 from ai_workflow.model import PHASES, StateStore
 from ai_workflow.pipeline import node_cache_key, ready_phases, validate_control_plane
 from ai_workflow.prd import (
@@ -26,6 +27,7 @@ from ai_workflow.prd import (
     validate_decision_sources,
     validate_prd,
 )
+from ai_workflow.requirements import parse_prd
 from ai_workflow.structure import (
     validate_backend_evidence,
     validate_database_evidence,
@@ -332,6 +334,9 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     assert state["questions"][0]["id"] == "Q001"
     assert not (tmp_path / "PRD.md").exists()
 
+    assert main(command) == 2
+    assert calls == 1
+
     assert main([*command, "--answer", "Q999=Use another stack"]) == 1
     assert calls == 1
     assert main([*command, "--answer", "Q001=React and FastAPI"]) == 0
@@ -339,6 +344,8 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     assert validate_prd(tmp_path / "PRD.md") == []
     ready = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
     assert ready["status"] == "ready"
+    assert main(command) == 0
+    assert calls == 2
 
 
 def test_generate_prd_blocks_and_redacts_supplied_credentials(
@@ -618,6 +625,105 @@ def test_local_aws_env_rejects_incomplete_key_pair(
         _load_local_aws_environment(tmp_path)
 
 
+def test_test_all_executes_every_configured_verification_group(tmp_path: Path) -> None:
+    manifest = tmp_path / ".ai" / "test-commands.json"
+    manifest.parent.mkdir(parents=True)
+    specification = [{"argv": [sys.executable, "-c", "pass"], "cwd": "."}]
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "commands": {
+                    group: specification
+                    for group in ("backend", "frontend", "contract", "integration", "e2e")
+                },
+            }
+        )
+    )
+
+    assert main(["test", "--project", str(tmp_path), "--all", "--execute"]) == 0
+    report = json.loads((tmp_path / "artifacts" / "tests" / "command-results.json").read_text())
+    assert [result["group"] for result in report["results"]] == [
+        "backend",
+        "frontend",
+        "contract",
+        "integration",
+        "e2e",
+    ]
+
+
+def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) -> None:
+    scripts = tmp_path / "apps" / "backend" / "scripts"
+    scripts.mkdir(parents=True)
+    script = scripts / "check.sh"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    manifest = tmp_path / ".ai" / "test-commands.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "commands": {
+                    "backend": [{"argv": ["./scripts/check.sh"], "cwd": "apps/backend"}]
+                },
+            }
+        )
+    )
+
+    report = run_command_groups(tmp_path, ["backend"])
+    assert report["passed"] is True
+
+
+def test_failure_hook_persists_and_groups_terminal_command_errors(tmp_path: Path) -> None:
+    command = ["test", "--project", str(tmp_path), "--scope", "backend", "--execute"]
+    assert main(command) == 2
+    assert main(command) == 2
+
+    events = (tmp_path / ".ai" / "issues" / "events.jsonl").read_text().splitlines()
+    issues = json.loads((tmp_path / ".ai" / "issues" / "issues.json").read_text())
+    summary = issue_summary(tmp_path)
+    report = (tmp_path / ".ai" / "issues" / "REPORT.md").read_text()
+    assert len(events) == 2
+    assert len(issues["issues"]) == 1
+    assert issues["issues"][0]["occurrences"] == 2
+    assert summary["total_occurrences"] == 2
+    assert summary["unresolved"] == 1
+    assert "ISSUE-000001" in report
+
+    manifest = tmp_path / ".ai" / "test-commands.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "commands": {
+                    "backend": [{"argv": [sys.executable, "-c", "pass"], "cwd": "."}]
+                },
+            }
+        )
+    )
+    assert main(command) == 0
+    recovered = issue_summary(tmp_path)
+    assert recovered["total_occurrences"] == 2
+    assert recovered["unresolved"] == 0
+    assert recovered["resolved"] == 1
+
+
+def test_failure_hook_redacts_secret_values(tmp_path: Path) -> None:
+    track_build_issue(
+        tmp_path,
+        source="test",
+        message="database failed password=do-not-store Bearer abc.def.ghi",
+        command="start-build",
+    )
+    stored = "\n".join(
+        path.read_text() for path in (tmp_path / ".ai" / "issues").iterdir()
+    )
+    assert "do-not-store" not in stored
+    assert "abc.def.ghi" not in stored
+    assert "[REDACTED]" in stored
+
+
 def test_detects_frameworks() -> None:
     assert detect(["apps/frontend/next.config.ts", "apps/backend/manage.py"]) == {
         "frontend": "nextjs",
@@ -872,6 +978,46 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
     )
 
 
+def test_token_diagnosis_does_not_retry_environment_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    StateStore(tmp_path).create(
+        project_id="token-test",
+        mode="new",
+        frontend="react",
+        backend="fastapi",
+        baseline=None,
+        branch=None,
+        assumptions=[],
+    )
+    _initialize_token_repository(tmp_path, "frontend", "dolan-quota")
+    token_dir = tmp_path / "frontend" / "TKN004"
+    token_dir.mkdir(parents=True)
+    (token_dir / "TOKEN.md").write_text("# UI fix\n\n## Description\nResolve it.\n")
+    attempts = 0
+
+    def unavailable_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal attempts
+        del project, adapter, prompt
+        attempts += 1
+        return {
+            "returncode": 1,
+            "stdout_tail": "",
+            "stderr_tail": "Usage limit reached. Purchase more credits.",
+        }
+
+    monkeypatch.setattr("ai_workflow.tokens._run_adapter", unavailable_agent)
+    arguments = [
+        "resolve-token",
+        "--project",
+        str(tmp_path),
+        "--token",
+        "frontend/TKN004/TOKEN.md",
+    ]
+    assert main(arguments) == 1
+    assert attempts == 1
+
+
 def test_resolve_token_blocks_changes_outside_area_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -996,6 +1142,24 @@ def test_init_inspect_reconcile_plan(tmp_path: Path, capsys: object) -> None:
     assert not (tmp_path / "apps").exists()
 
 
+def test_prd_parser_prefers_stable_explicit_ids_over_descriptive_bullets(
+    tmp_path: Path,
+) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(
+        "# Product\n\n"
+        "## Goals and non-goals\n\n"
+        "- Keep the workflow easy to operate.\n"
+        "## Functional requirements\n\n"
+        "- FR-001 A user can create a task.\n"
+        "- FR-002 A user can complete a task.\n"
+        "## Risks\n\n"
+        "- Database connectivity could fail.\n"
+    )
+
+    assert [item["requirement_id"] for item in parse_prd(prd)] == ["FR-001", "FR-002"]
+
+
 def test_clean_state_requires_confirmation(tmp_path: Path) -> None:
     (tmp_path / ".ai").mkdir()
     assert main(["clean-state", "--project", str(tmp_path)]) == 1
@@ -1006,8 +1170,8 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 10
-    assert report["nodes"] == 37
-    assert report["agentic_nodes"] == 26
+    assert report["nodes"] == 40
+    assert report["agentic_nodes"] == 28
     assert report["execution_groups"][3:6] == [["frontend"], ["mobile"], ["backend"]]
 
 
@@ -1727,6 +1891,10 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
     assert not (tmp_path / "HTML" / "approved" / "index.html").exists()
     assert not (tmp_path / "apps").exists()
     assert not (tmp_path / "README.md").exists()
+    assert issue_summary(tmp_path)["total_occurrences"] == 0
+    assert "No unresolved build issues" in (
+        tmp_path / ".ai" / "issues" / "REPORT.md"
+    ).read_text()
 
     assert main(["start-generatehtml", "--project", str(tmp_path), "--adapter", "codex"]) == 0
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
@@ -1786,6 +1954,44 @@ def test_agent_node_retries_with_failure_context(
     record = json.loads(failures[0])
     assert record["status"] == "resolved"
     assert record["attempts"] == 1
+    tracked = issue_summary(tmp_path)
+    assert tracked["total_occurrences"] == 1
+    assert tracked["unresolved"] == 0
+    assert tracked["resolved"] == 1
+
+
+def test_agent_node_does_not_retry_quota_or_environment_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    attempts = 0
+
+    def unavailable_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal attempts
+        del project, adapter, prompt
+        attempts += 1
+        return {
+            "returncode": 1,
+            "stdout_tail": "",
+            "stderr_tail": "Usage limit reached. Purchase more credits.",
+        }
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", unavailable_agent)
+    arguments = [
+        "start-design",
+        "--project",
+        str(tmp_path),
+        "--github-user",
+        "test-user",
+        "--adapter",
+        "codex",
+    ]
+    assert main(arguments) == 1
+    assert attempts == 1
+    failure = json.loads((tmp_path / ".ai" / "failures.jsonl").read_text().splitlines()[0])
+    assert failure["status"] == "blocked"
+    assert failure["attempts"] == 0
+    assert failure["failure_class"] == "adapter quota is unavailable"
 
 
 def test_resume_build_rejects_a_different_git_branch(tmp_path: Path) -> None:
@@ -1862,7 +2068,7 @@ def test_start_build_uses_frameworks_declared_in_prd(
     assert (tmp_path / "apps" / "backend" / "manage.py").is_file()
 
 
-def test_start_build_generates_aws_assets_only_when_explicitly_declared(
+def test_start_build_defers_aws_even_when_explicitly_declared(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "PRD.md").write_text(
@@ -1888,15 +2094,76 @@ def test_start_build_generates_aws_assets_only_when_explicitly_declared(
         == 0
     )
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
-    assert state["frameworks"]["deployment"] == "aws"
+    assert state["frameworks"]["deployment"] == "unknown"
     assert "deployment" in state["completed_phases"]
-    assert (tmp_path / "infra" / "environments" / "production").is_dir()
-    assert (tmp_path / ".github" / "workflows" / "deploy-production.yml").is_file()
-    readiness = json.loads(
-        (tmp_path / ".ai" / "evidence" / "deployment" / "readiness.json").read_text()
+    assert not (tmp_path / "infra" / "environments" / "production").exists()
+    assert not (tmp_path / ".github" / "workflows" / "deploy-production.yml").exists()
+    decisions = [
+        json.loads(line)
+        for line in (tmp_path / ".ai" / "decisions.jsonl").read_text().splitlines()
+    ]
+    assert any(
+        item.get("decision") == "optional_phase_skipped" and item.get("phase") == "deployment"
+        for item in decisions
     )
-    assert readiness["verified"] is True
-    assert readiness["generation_cloud_mutation"] is False
+
+
+def test_start_build_rejects_explicit_deployment_flag(tmp_path: Path) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nFrontend framework: React\nBackend framework: FastAPI\n"
+    )
+    assert (
+        main(
+            [
+                "start-build",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--deployment",
+                "aws",
+            ]
+        )
+        == 1
+    )
+    assert not (tmp_path / ".ai" / "state.json").exists()
+
+
+def test_one_shot_defers_deployment_saved_by_an_older_build(tmp_path: Path) -> None:
+    (tmp_path / "PRD.md").write_text(_valid_generated_prd(aws=True))
+    StateStore(tmp_path).create(
+        project_id="legacy-build",
+        mode="new",
+        frontend="react",
+        backend="fastapi",
+        baseline=None,
+        branch=None,
+        assumptions=["PRD source: PRD.md"],
+        deployment="aws",
+    )
+
+    assert (
+        main(
+            [
+                "one-shot",
+                "--project",
+                str(tmp_path),
+                "--prd",
+                "PRD.md",
+                "--backend",
+                "fastapi",
+            ]
+        )
+        == 0
+    )
+
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"]["deployment"] == "unknown"
+    decisions = [
+        json.loads(line)
+        for line in (tmp_path / ".ai" / "decisions.jsonl").read_text().splitlines()
+    ]
+    assert any(item.get("decision") == "deployment_deferred" for item in decisions)
 
 
 def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
@@ -2108,7 +2375,8 @@ def test_start_build_requires_only_missing_framework_before_initialization(
     )
     assert main(["start-build", "--project", str(tmp_path), "--github-user", "test-user"]) == 1
     assert "backend: django-drf or fastapi" in capsys.readouterr().err
-    assert not (tmp_path / ".ai").exists()
+    assert not (tmp_path / ".ai" / "state.json").exists()
+    assert issue_summary(tmp_path)["unresolved"] == 1
 
 
 def test_existing_design_run_requires_a_client_before_backend(

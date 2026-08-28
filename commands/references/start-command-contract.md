@@ -27,9 +27,10 @@ These entrypoints execute work; they are not explanatory prompt templates.
    evidence, and exact recovery command. Never claim a stage completed unless its gate
    passed.
 9. Report the requested stopping point and the next optional command after success.
-10. AWS is selected only by an explicit PRD declaration such as `Deployment provider: AWS`,
-    an explicit `--deployment aws`, or `$start-deployment`. Generation never authorizes plan/apply
-    against an account. Staging, production, and rollback use their own explicit commands.
+10. `start-build`, `resume-build`, and legacy `one-shot` always defer deployment, even when the PRD
+    declares AWS. AWS preparation begins only with `$start-deployment --deployment aws`. Generation
+    never authorizes plan/apply against an account. Staging, production, and rollback use their own
+    explicit commands.
 
 Canonical invocation:
 

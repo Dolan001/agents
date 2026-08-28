@@ -1,4 +1,4 @@
 interface:
   display_name: "Workflow status"
-  short_description: "Inspect workflow progress and report the next safe action"
-  default_prompt: "Inspect this project workflow status and report completed phases, current blockers, and the exact next action."
+  short_description: "Inspect workflow progress, issues, and next safe action"
+  default_prompt: "Use $workflow-status to report completed phases, tracked build issues, blockers, and the exact next safe action."

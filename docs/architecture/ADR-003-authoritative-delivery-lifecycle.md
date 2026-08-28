@@ -13,7 +13,9 @@ The default lifecycle is strictly sequential:
 ```text
 bootstrap -> requirements/contracts -> approved static HTML -> optional web
           -> optional Flutter mobile -> backend -> typed integration
-          -> independent test/security -> optional AWS asset readiness -> feature Git delivery
+          -> independent test/security -> feature Git delivery
+
+explicit later command: start-deployment -> AWS asset readiness
 ```
 
 Static HTML is the reviewable design contract. Supplied HTML is validated and
@@ -30,5 +32,6 @@ focused checks, checkpoints, and verified artifact reuse.
 Application changes occur only on `ai/<github-user>/<feature>` branches. A feature can
 be committed only after independent verification and the test/security gate; staging
 is restricted to evidence-declared paths. Push is explicit. The workflow never merges
-or deploys during the build lifecycle. Separate environment commands may deploy or roll back only
-after explicit authorization, readiness, protected production approval, and runtime evidence.
+or deploys during the build lifecycle. AWS preparation is not an implicit build phase.
+Separate deployment commands may generate assets, deploy, or roll back only after
+explicit authorization, readiness, protected production approval, and runtime evidence.

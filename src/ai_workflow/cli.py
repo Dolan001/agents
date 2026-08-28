@@ -15,10 +15,17 @@ from .deployment import deployment_status, execute_operation
 from .design import classify_design_inputs, ingest_design_inputs
 from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
-from .execution import evaluate_phase_gate, execute_phase
+from .execution import evaluate_phase_gate, execute_phase, phase_checkpoint_current
 from .frameworks import resolve_frameworks
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
 from .io import append_jsonl, read_json, write_json
+from .issues import (
+    initialize_issue_tracker,
+    issue_summary,
+    resolve_matching_build_issues,
+    track_build_issue,
+    try_track_build_issue,
+)
 from .model import PHASES, StateStore, utc_now
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
@@ -76,6 +83,7 @@ def discover_prd(project: Path, value: str | None) -> Path:
 
 def initialize(args: argparse.Namespace, mode: str) -> int:
     project = resolved_project(args.project)
+    initialize_issue_tracker(project)
     prd = require_prd(project, args.prd)
     ingested_design = ingest_design_inputs(
         project,
@@ -297,12 +305,18 @@ def command_build(args: argparse.Namespace) -> int:
 
 def command_one_shot(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    initialize_issue_tracker(project)
+    if args.deployment != "unknown":
+        raise RuntimeError(
+            "one-shot does not run deployment; use start-deployment --deployment aws separately"
+        )
     state_exists = (project / ".ai" / "state.json").is_file()
     if not state_exists:
         prd = require_prd(project, args.prd)
         resolved = resolve_frameworks(
             prd, args.frontend, args.mobile, args.backend, args.deployment
         )
+        resolved["deployment"] = "unknown"
         _require_frameworks("delivery", resolved)
         args.frontend = resolved["frontend"]
         args.mobile = resolved["mobile"]
@@ -312,6 +326,7 @@ def command_one_shot(args: argparse.Namespace) -> int:
     elif args.html or args.screenshot:
         ingest_design_inputs(project, args.html, args.screenshot)
         classify_design_inputs(project)
+    _defer_deployment_selection(project)
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
@@ -322,7 +337,7 @@ def command_one_shot(args: argparse.Namespace) -> int:
         print_json(
             {
                 "status": "READY",
-                "phases": list(PHASES[1:]),
+                "phases": [phase for phase in PHASES[1:] if phase != "deployment"],
                 "tasks": [task["task_id"] for task in selected],
                 "note": "Dry run only; repeat with --execute to invoke the selected adapter.",
             }
@@ -332,8 +347,25 @@ def command_one_shot(args: argparse.Namespace) -> int:
     completed = set(StateStore(project).load().get("completed_phases", []))
     for phase in PHASES[1:]:
         if phase in completed:
-            continue
-        if _skip_disabled_client_phase(project, phase):
+            frameworks = StateStore(project).load()["frameworks"]
+            optional_skipped = phase in {"frontend", "mobile", "deployment"} and frameworks[
+                phase
+            ] == "unknown"
+            if optional_skipped or phase_checkpoint_current(project, phase, queue["tasks"]):
+                continue
+            phase_index = PHASES.index(phase)
+            completed = {item for item in completed if PHASES.index(item) < phase_index}
+            store = StateStore(project)
+            stale_state = store.load()
+            stale_state["completed_phases"] = sorted(completed, key=PHASES.index)
+            stale_state["status"] = "running"
+            store.save(stale_state)
+            selected = queue["tasks"]
+            append_jsonl(
+                project / ".ai" / "decisions.jsonl",
+                {"at": utc_now(), "decision": "phase_invalidated", "phase": phase},
+            )
+        if _skip_disabled_client_phase(project, phase, force=phase == "deployment"):
             completed.add(phase)
             continue
         results.append(
@@ -348,11 +380,8 @@ def command_one_shot(args: argparse.Namespace) -> int:
         )
         if phase == "requirements":
             refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
-            selected = [
-                task
-                for task in refreshed["tasks"]
-                if task["status"] not in {"VERIFIED", "COMMITTED"}
-            ]
+            queue = refreshed
+            selected = refreshed["tasks"]
     print_json({"status": "complete", "phases": results})
     return 0
 
@@ -395,13 +424,13 @@ def _require_frameworks(target: str, frameworks: dict[str, str]) -> None:
         raise RuntimeError(f"framework selection required ({'; '.join(missing)})")
 
 
-def _skip_disabled_client_phase(project: Path, phase: str) -> bool:
+def _skip_disabled_client_phase(project: Path, phase: str, force: bool = False) -> bool:
     side = phase if phase in {"frontend", "mobile", "deployment"} else None
     if side is None:
         return False
     store = StateStore(project)
     state = store.load()
-    if state["frameworks"][side] != "unknown":
+    if not force and state["frameworks"][side] != "unknown":
         return False
     completed = state.setdefault("completed_phases", [])
     if phase not in completed:
@@ -413,6 +442,24 @@ def _skip_disabled_client_phase(project: Path, phase: str) -> bool:
         {"at": utc_now(), "decision": "optional_phase_skipped", "phase": phase},
     )
     return True
+
+
+def _defer_deployment_selection(project: Path) -> None:
+    """Keep build orchestration provider-neutral until start-deployment is invoked."""
+    store = StateStore(project)
+    state = store.load()
+    if state["frameworks"]["deployment"] == "unknown":
+        return
+    state["frameworks"]["deployment"] = "unknown"
+    store.save(state)
+    append_jsonl(
+        project / ".ai" / "decisions.jsonl",
+        {
+            "at": utc_now(),
+            "decision": "deployment_deferred",
+            "reason": "build orchestration excludes deployment; use start-deployment separately",
+        },
+    )
 
 
 def _verify_resume_boundary(project: Path) -> None:
@@ -429,14 +476,23 @@ def _verify_resume_boundary(project: Path) -> None:
 
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    initialize_issue_tracker(project)
     validate_control_plane()
     target = args.until
+    defer_deployment = args.command in {"start-build", "resume-build"}
+    if defer_deployment and args.deployment != "unknown":
+        raise RuntimeError(
+            f"{args.command} does not run deployment; "
+            "use start-deployment --deployment aws separately"
+        )
     if not (project / ".ai" / "state.json").is_file():
         prd = discover_prd(project, args.prd)
         args.prd = prd.relative_to(project).as_posix()
         resolved = resolve_frameworks(
             prd, args.frontend, args.mobile, args.backend, args.deployment
         )
+        if defer_deployment:
+            resolved["deployment"] = "unknown"
         args.frontend = resolved["frontend"]
         args.mobile = resolved["mobile"]
         args.backend = resolved["backend"]
@@ -453,6 +509,9 @@ def command_start(args: argparse.Namespace) -> int:
         _apply_framework_selections(project, args)
         _require_frameworks(target, StateStore(project).load()["frameworks"])
 
+    if defer_deployment:
+        _defer_deployment_selection(project)
+
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
@@ -466,10 +525,29 @@ def command_start(args: argparse.Namespace) -> int:
         if target == "mobile" and phase == "frontend" and phase not in completed:
             continue
         if phase in completed:
-            if phase == terminal_phase:
-                break
-            continue
-        if _skip_disabled_client_phase(project, phase):
+            frameworks = StateStore(project).load()["frameworks"]
+            optional_skipped = phase in {"frontend", "mobile", "deployment"} and frameworks[
+                phase
+            ] == "unknown"
+            if optional_skipped or phase_checkpoint_current(project, phase, queue["tasks"]):
+                if phase == terminal_phase:
+                    break
+                continue
+            phase_index = PHASES.index(phase)
+            completed = {item for item in completed if PHASES.index(item) < phase_index}
+            state_store = StateStore(project)
+            stale_state = state_store.load()
+            stale_state["completed_phases"] = sorted(completed, key=PHASES.index)
+            stale_state["status"] = "running"
+            state_store.save(stale_state)
+            selected = queue["tasks"]
+            append_jsonl(
+                project / ".ai" / "decisions.jsonl",
+                {"at": utc_now(), "decision": "phase_invalidated", "phase": phase},
+            )
+        if _skip_disabled_client_phase(
+            project, phase, force=defer_deployment and phase == "deployment"
+        ):
             completed.add(phase)
             if phase == terminal_phase:
                 break
@@ -494,11 +572,8 @@ def command_start(args: argparse.Namespace) -> int:
         )
         if phase == "requirements":
             refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
-            selected = [
-                task
-                for task in refreshed["tasks"]
-                if task["status"] not in {"VERIFIED", "COMMITTED"}
-            ]
+            queue = refreshed
+            selected = refreshed["tasks"]
         if phase == terminal_phase:
             break
     status = "complete" if target == "delivery" else "stopped-at-requested-stage"
@@ -535,8 +610,20 @@ def command_test(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     manifest = read_json(project / ".ai" / "test-commands.json", {"commands": {}})
     scope = "all" if args.all else args.scope
-    commands = manifest.get("commands", {}).get(scope, [])
-    if not commands:
+    configured = manifest.get("commands", {}) if isinstance(manifest, dict) else {}
+    if scope == "all":
+        groups = [
+            group
+            for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
+            if isinstance(configured, dict) and configured.get(group)
+        ]
+        commands = {
+            group: configured[group] for group in groups if isinstance(configured, dict)
+        }
+    else:
+        groups = [scope]
+        commands = configured.get(scope, []) if isinstance(configured, dict) else []
+    if not groups or not commands:
         print_json(
             {
                 "scope": scope,
@@ -546,15 +633,6 @@ def command_test(args: argparse.Namespace) -> int:
         )
         return 2
     if args.execute:
-        if scope == "all":
-            configured = manifest.get("commands", {})
-            groups = [
-                group
-                for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
-                if isinstance(configured, dict) and configured.get(group)
-            ]
-        else:
-            groups = [scope]
         print_json(run_command_groups(project, groups))
         return 0
     print_json({"scope": scope, "status": "dry-run", "commands": commands})
@@ -579,12 +657,20 @@ def command_status(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     state = StateStore(project).load()
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
-    payload = {"state": state, "task_count": len(queue["tasks"]), "tasks": queue["tasks"]}
+    issues = issue_summary(project)
+    payload = {
+        "state": state,
+        "task_count": len(queue["tasks"]),
+        "tasks": queue["tasks"],
+        "issues": issues,
+    }
     if args.json:
         print_json(payload)
     else:
         print(f"{state['project_id']}: {state['status']} / {state['current_phase']}")
         print(f"tasks: {len(queue['tasks'])}")
+        print(f"issues: {issues['unresolved']} unresolved / {issues['resolved']} resolved")
+        print(f"issue report: {issues['report']}")
     return 0
 
 
@@ -937,11 +1023,65 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(arguments: list[str] | None = None) -> int:
+    args: argparse.Namespace | None = None
     try:
         args = parser().parse_args(arguments)
         handler: Command = args.handler
-        return handler(args)
-    except (RuntimeError, ValueError, OSError) as error:
+        result = handler(args)
+        if result == 0 and isinstance(getattr(args, "project", None), str):
+            project = Path(args.project).resolve()
+            command = str(args.command)
+            complete_build_commands = {
+                "one-shot",
+                "start-build",
+                "resume-build",
+            }
+            resolved_commands = (
+                complete_build_commands if command in complete_build_commands else {command}
+            )
+            resolve_matching_build_issues(
+                project,
+                commands=resolved_commands,
+                sources={"workflow-command"},
+                resolution=f"The controlled {command} command later completed successfully.",
+            )
+        if result != 0 and isinstance(getattr(args, "project", None), str):
+            project = Path(args.project).resolve()
+            intake = read_json(project / ".ai" / "prd-intake" / "state.json", {})
+            expected_clarification = (
+                args.command == "generate-prd"
+                and isinstance(intake, dict)
+                and intake.get("status") == "needs_input"
+            )
+            if project.is_dir() and not expected_clarification:
+                try_track_build_issue(
+                    project,
+                    source="workflow-command",
+                    message=f"command exited without success (exit code {result})",
+                    command=str(args.command),
+                    retryable=True,
+                    context={"exit_code": result},
+                )
+        return result
+    except Exception as error:  # noqa: BLE001 - final CLI boundary must preserve every build error
+        if args is not None and isinstance(getattr(args, "project", None), str):
+            try:
+                project = Path(args.project).resolve()
+                if project.is_dir():
+                    track_build_issue(
+                        project,
+                        source="workflow-command",
+                        message=str(error),
+                        command=str(getattr(args, "command", "unknown")),
+                        retryable=None,
+                        context={
+                            "error_type": type(error).__name__,
+                            "test_report": "artifacts/tests/command-results.json",
+                            "agent_failures": ".ai/failures.jsonl",
+                        },
+                    )
+            except Exception as tracking_error:  # noqa: BLE001
+                _ = tracking_error  # issue tracking must never hide the original error
         print(
             json.dumps({"error": {"code": "WORKFLOW_ERROR", "message": str(error)}}),
             file=sys.stderr,

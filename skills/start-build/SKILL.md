@@ -1,6 +1,6 @@
 ---
 name: start-build
-description: Start or continue the complete PRD-to-production workflow through design, approved HTML, selected web and/or Flutter mobile clients, backend, integration, testing, optional AWS asset readiness, and delivery. Use when the user asks to build the whole system from scratch or invokes start-build.
+description: Start or continue the complete application workflow through design, approved HTML, selected web and/or Flutter mobile clients, backend, integration, independent testing, and delivery evidence. Use when the user asks to build the whole application from scratch or invokes start-build. AWS preparation is always a separate start-deployment run.
 ---
 
 # Start complete build
@@ -23,6 +23,7 @@ The selected frontend and mobile phases automatically run `sync-design` after im
 before their independent verifier. Require design-fidelity evidence for every selected client; do not
 skip it merely because component/widget tests pass.
 
-If the PRD explicitly declares `Deployment provider: AWS`, pass `--deployment aws`; incidental AWS
-service mentions do not select deployment. The deployment phase may generate and validate target
-assets, but `start-build` must never run cloud plan/apply, staging, production, rollback, or DNS changes.
+Never pass `--deployment` to `start-build`, even when the PRD declares AWS. Record deployment as
+deferred and finish the application through delivery evidence. When the user later requests AWS,
+invoke `$start-deployment --deployment aws`; that separate run owns AWS architecture, IaC, CI/CD,
+observability, and deployment-readiness evidence.

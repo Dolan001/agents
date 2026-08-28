@@ -16,6 +16,35 @@ BULLET = re.compile(r"^\s*[-*]\s+(.+?)\s*$")
 def parse_prd(path: Path) -> list[dict[str, Any]]:
     content = path.read_text(encoding="utf-8")
     requirements: list[dict[str, Any]] = []
+    explicit_bullets: list[tuple[str, str]] = []
+    for raw_line in content.splitlines():
+        bullet = BULLET.match(raw_line)
+        if not bullet:
+            continue
+        description = bullet.group(1).strip()
+        explicit = EXPLICIT_ID.search(description)
+        if explicit:
+            explicit_bullets.append((explicit.group(1), description))
+    if explicit_bullets:
+        seen: set[str] = set()
+        for requirement_id, description in explicit_bullets:
+            if requirement_id in seen:
+                continue
+            seen.add(requirement_id)
+            requirements.append(
+                {
+                    "requirement_id": requirement_id,
+                    "title": re.sub(EXPLICIT_ID, "", description).strip(" ():-,"),
+                    "description": description,
+                    "status": "NOT_STARTED",
+                    "acceptance_criteria": [],
+                    "evidence": [],
+                    "remaining_tasks": [],
+                }
+            )
+        return requirements
+
+    # Compatibility fallback for a small informal PRD without stable IDs.
     category = "REQ"
     counters: dict[str, int] = {}
     for raw_line in content.splitlines():

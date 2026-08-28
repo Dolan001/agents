@@ -132,8 +132,8 @@ so it discovers `.agents/skills`, and type this in Codex chat:
 $start-build --github-user <github-user>
 ```
 
-`$start-build` is a Codex skill invocation, not a terminal command. It runs every
-missing phase through delivery. It does not push by default.
+`$start-build` is a Codex skill invocation, not a terminal command. It runs every missing
+application phase through delivery and defers deployment. It does not push by default.
 
 ## Complete process: A to Z
 
@@ -226,8 +226,9 @@ accepted. At least one client is required.
 - Unsupported, conflicting, ambiguous, or multiple declarations fail before
   application code or runtime state is created.
 - A saved framework choice cannot be silently changed during resume.
-- AWS is activated only by `Deployment provider: AWS`, explicit `--deployment aws`, or
-  `$start-deployment`; incidental AWS service references do not activate it.
+- AWS is activated only by `$start-deployment --deployment aws`. `start-build`, `resume-build`, and
+  legacy `one-shot` always defer it, even when the PRD declares AWS; incidental AWS references also
+  remain inactive.
 
 Design specification and HTML generation do not require framework choices.
 `start-frontend` requires a web selection; `start-mobile` requires Flutter. Backend and
@@ -275,8 +276,8 @@ Use a narrower command when only part of the lifecycle is required:
 | `$start-testing` | Independent testing and security gate | Yes |
 | `$start-deployment` | AWS generation/readiness; no cloud mutation | Yes |
 | `$start-delivery` | Release-readiness gate | Yes |
-| `$start-build` | Complete delivery lifecycle | Yes |
-| `$resume-build` | Unchanged checkpoints through delivery | As needed |
+| `$start-build` | Complete non-deployment application lifecycle | Yes |
+| `$resume-build` | Unchanged non-deployment checkpoints through delivery | As needed |
 | `$workflow-status` | Read-only status report | No change |
 
 Every start command runs missing prerequisites. For example, `$start-backend` does not
@@ -464,8 +465,8 @@ CloudFront; Next.js SSR runs on ECS. FastAPI uses Uvicorn. DRF uses Gunicorn onl
 workloads and ASGI for WebSockets. Nginx is conditional when CloudFront, WAF, and ALB cannot meet a
 documented proxy requirement.
 
-`$start-deployment` and the AWS phase inside `$start-build` never contact AWS, assume credentials,
-apply infrastructure, deploy, or change DNS. The gate verifies structure, IaC, GitHub OIDC,
+`$start-deployment` is always separate from `$start-build` and never contacts AWS, assumes credentials,
+applies infrastructure, deploys, or changes DNS. Its gate verifies structure, IaC, GitHub OIDC,
 immutable digest promotion, protected production approval, migration safety, monitoring, rollback,
 backup, and recovery. Without an explicit AWS selection, the phase is skipped without loading it.
 
@@ -533,6 +534,13 @@ reused; changed inputs invalidate only affected work. Each failed agentic node g
 most two retries. The first attempt does not load recovery guidance. A retry receives
 the concise prior failure and the `recover-failure` skill. Exhausted failures are
 recorded in `.ai/failures.jsonl` and stop the phase.
+
+The executable `on_failure` hook also tracks every recovered or terminal error under
+`.ai/issues/`. `events.jsonl` preserves every occurrence, `issues.json` groups repeated
+errors, `summary.json` exposes counts, and `REPORT.md` provides a later-resolution
+backlog. Secret values and full logs/prompts are never stored. `$workflow-status`
+reports unresolved and resolved totals, and delivery includes the issue report in its
+final evidence review.
 
 ### 17. Resolve post-build bugs or changes with a token
 
@@ -604,6 +612,7 @@ state and remains separate:
 ├── path-leases.json         # controlled write ownership
 ├── decisions.jsonl          # durable workflow decisions
 ├── failures.jsonl           # failure and retry evidence
+├── issues/                  # error events, grouped issues, summary, and readable report
 ├── discovery/               # repository inventory
 ├── context-bundles/         # bounded task-specific context manifests
 ├── prompts/                 # exact dispatched node prompts
@@ -621,7 +630,9 @@ failed artifact and resume after correcting the actual cause.
 - The scheduler runs phases sequentially to prevent client/backend contract drift.
 - Only selected web, mobile, backend, and optional AWS behavior packs are loaded.
 - `build-context-bundle` creates an auditable manifest capped at 12 files and 60,000
-  characters, prioritizing requirement anchors, contracts, affected code, and tests.
+  characters for phase work and 10 files/45,000 characters for feature work,
+  prioritizing requirement anchors, contracts, affected code, and tests while excluding
+  dependencies, caches, build output, and duplicated PRD payloads.
 - Context manifests store paths, hashes, priorities, and sizes instead of duplicating
   project source in orchestration prompts.
 - Agents use search and exact-range reads and must record necessary context expansion.
@@ -717,8 +728,9 @@ requires at least one web/mobile client and one backend:
   --branch-feature initial-build --adapter codex --execute
 ```
 
-`clean-state --yes` permanently removes `.ai` and is intentionally destructive. It is
-not a normal recovery step.
+`clean-state --yes` permanently removes `.ai`, including the build-issue history, and
+is intentionally destructive. Archive `.ai/issues/` first when that history must be
+retained. It is not a normal recovery step.
 
 ## Linked repositories
 
@@ -757,7 +769,9 @@ second `.agents` directory.
 ```text
 bootstrap → requirements/contracts → design/approved HTML → optional web
           → optional Flutter mobile → backend → integration → testing
-          → optional AWS asset readiness → delivery
+          → application delivery
+
+explicit later command: start-deployment → AWS asset readiness
 ```
 
 `config/pipeline.json` is the phase registry. Each phase resolves one manifest, one

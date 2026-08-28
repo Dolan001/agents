@@ -4,7 +4,8 @@
     {"id": "scaffold-target-monorepo", "type": "agentic", "agent": "solution-architect", "required_output": ".ai/evidence/monorepo-bootstrap.json", "verification": "evidence-schema"},
     {"id": "load-mobile-pack", "type": "deterministic", "action": "resolve_selected_framework_pack"},
     {"id": "implement-mobile-slices", "type": "agentic", "agent": "selected-mobile-agent", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/mobile.json", "verification": "evidence-schema"},
-    {"id": "sync-mobile-design", "type": "agentic", "agent": "design-fidelity-resolver", "required_output": ".ai/evidence/design-fidelity/mobile/comparison.json", "verification": "verified-true"},
+    {"id": "sync-mobile-design", "type": "agentic", "agent": "design-fidelity-resolver", "required_output": ".ai/evidence/design-fidelity/mobile/comparison.json", "verification": "evidence-schema"},
+    {"id": "verify-mobile-design", "type": "agentic", "agent": "selected-mobile-verifier", "required_output": ".ai/evidence/design-fidelity/mobile/verification.json", "verification": "verified-true"},
     {"id": "verify-mobile", "type": "agentic", "agent": "selected-mobile-verifier", "required_output": ".ai/evidence/mobile-verification.json", "verification": "verified-true"}
   ]
 }

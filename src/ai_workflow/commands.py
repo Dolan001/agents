@@ -51,13 +51,21 @@ def run_command_groups(
             argv = specification.get("argv") if isinstance(specification, dict) else specification
             if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv):
                 raise RuntimeError(f"invalid argv for {group}[{index}]")
-            executable = shutil.which(argv[0])
-            if not executable:
-                raise RuntimeError(f"command executable unavailable: {argv[0]}")
             relative_cwd = specification.get("cwd", ".") if isinstance(specification, dict) else "."
             cwd = (project / relative_cwd).resolve()
             if cwd != project and project not in cwd.parents:
                 raise RuntimeError(f"command cwd escapes project: {relative_cwd}")
+            local_executable = (cwd / argv[0]).resolve()
+            if Path(argv[0]).is_absolute():
+                executable = shutil.which(argv[0])
+            elif "/" in argv[0]:
+                if local_executable != project and project not in local_executable.parents:
+                    raise RuntimeError(f"command executable escapes project: {argv[0]}")
+                executable = str(local_executable) if local_executable.is_file() else None
+            else:
+                executable = shutil.which(argv[0])
+            if not executable:
+                raise RuntimeError(f"command executable unavailable: {argv[0]}")
             timeout = (
                 specification.get("timeout_seconds", 1200)
                 if isinstance(specification, dict)

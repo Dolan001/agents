@@ -127,7 +127,7 @@ not already shown; do not repeat the same flag.
 | `--frontend` | `react`, `nextjs`, or `unknown` | `unknown` | Web selection. Do not explicitly pass `unknown` when the requested stage requires web. |
 | `--mobile` | `flutter` or `unknown` | `unknown` | Mobile selection. Do not explicitly pass `unknown` when the requested stage requires mobile. |
 | `--backend` | `django-drf`, `fastapi`, or `unknown` | `unknown` | Backend selection. Do not explicitly pass `unknown` when the requested stage requires backend. |
-| `--deployment` | `aws` or `unknown` | `unknown` | Deployment selection. `aws` generates assets only during normal build commands. |
+| `--deployment` | `aws` or `unknown` | `unknown` | Deployment selection. Pass `aws` only to `$start-deployment`; complete-build commands reject it. |
 | `--adapter` | `codex` | `codex` | Execution adapter. |
 | `--commit-verified` | no value | off | Commit independently verified feature changes. Use only with explicit authorization. |
 | `--push` | no value | off | Push verified commits from the current workflow branch. Use only with explicit authorization. |
@@ -250,8 +250,9 @@ $start-build [resolved framework flags] [shared start flags]
   [resolved framework flags] [shared start flags]
 ```
 
-Runs the complete lifecycle through delivery. It may generate AWS assets when `--deployment aws` is
-selected, but it never performs a live deployment. It does not push unless `--push` is explicit.
+Runs the complete application lifecycle through delivery while always deferring deployment. Do not
+pass `--deployment`; run `$start-deployment --deployment aws` separately later. It does not push
+unless `--push` is explicit.
 
 Example with every meaningful selection:
 
@@ -259,7 +260,7 @@ Example with every meaningful selection:
 $start-build --project . --prd docs/PRD.md --project-id trustix \
   --github-user dolan --branch-feature customer-accounts \
   --html HTML/input/home.html --screenshot HTML/input/home-mobile.png \
-  --frontend nextjs --mobile flutter --backend django-drf --deployment aws \
+  --frontend nextjs --mobile flutter --backend django-drf \
   --adapter codex --commit-verified --push
 ```
 
@@ -273,7 +274,8 @@ $workflow-status [--project <directory>]
 ```
 
 The only user-selectable flag is `--project` (default `.`). JSON mode is always used internally.
-This command is read-only.
+This command is read-only. Its output includes build-issue totals and links to
+`.ai/issues/REPORT.md` and the append-only `.ai/issues/events.jsonl` history.
 
 ### `$resume-build`
 
@@ -338,8 +340,8 @@ the branch that was current during diagnosis.
 
 ## AWS deployment operations
 
-Normal build skills only generate deployment assets. The following skills are the separate live
-operation boundary.
+`$start-deployment --deployment aws` is the only build-stage command that generates deployment
+assets. The following skills form the separate live-operation boundary.
 
 ### `$deployment-status`
 
