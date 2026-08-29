@@ -56,6 +56,8 @@ def test_framework_packs_are_code_free_behavior_only() -> None:
         assert naming["style"] in {"snake_case", "kebab-case"}
         assert naming["ambiguous_names"]
         assert naming["familiar_fallback_names"]
+        assert "authentications" in naming["familiar_fallback_names"]
+        assert "authentication" not in naming["familiar_fallback_names"]
         assert "<module>" in structure["module_path_pattern"]
         assert naming["max_lines"]
         assert "required_directories" in structure
