@@ -328,6 +328,208 @@ def _domain_instances(target: Path, contract: dict[str, Any]) -> list[Path]:
     return instances
 
 
+def _named_module_instances(target: Path, contract: dict[str, Any]) -> list[Path]:
+    pattern = contract.get("module_path_pattern")
+    if not isinstance(pattern, str) or "<module>" not in pattern:
+        return []
+    prefix, suffix = pattern.split("<module>", 1)
+    parent = target / prefix.rstrip("/") if prefix else target
+    if not parent.is_dir():
+        return []
+    return [
+        child
+        for child in sorted(parent.iterdir())
+        if child.is_dir()
+        and (not suffix or child.as_posix().endswith(suffix))
+        and not child.name.startswith((".", "__"))
+    ]
+
+
+def _prd_mentions_name(project: Path, name: str) -> bool:
+    prd = project / "PRD.md"
+    if not prd.is_file():
+        return True
+    words = re.findall(r"[a-z0-9]+", prd.read_text(encoding="utf-8").lower())
+    candidates = {name.lower().replace("_", "-").replace("-", " ")}
+    tokens = candidates.copy()
+    for candidate in candidates:
+        parts = candidate.split()
+        if parts and parts[-1].endswith("s") and len(parts[-1]) > 3:
+            tokens.add(" ".join([*parts[:-1], parts[-1][:-1]]))
+    normalized = " ".join(words)
+    return any(re.search(rf"\b{re.escape(token)}\b", normalized) for token in tokens)
+
+
+def _module_organization_violations(
+    project: Path, target: Path, contract: dict[str, Any], instances: list[Path]
+) -> list[dict[str, str]]:
+    policy = contract.get("module_naming")
+    if policy is None:
+        return []
+    if not isinstance(policy, dict):
+        raise RuntimeError("framework module naming contract is invalid")
+    style = policy.get("style")
+    ambiguous = policy.get("ambiguous_names", [])
+    fallbacks = policy.get("familiar_fallback_names", [])
+    packages = policy.get("responsibility_packages", [])
+    limits = policy.get("max_lines", [])
+    if (
+        style not in {"snake_case", "kebab-case"}
+        or not isinstance(ambiguous, list)
+        or not all(isinstance(item, str) and item for item in ambiguous)
+        or not isinstance(fallbacks, list)
+        or not all(isinstance(item, str) and item for item in fallbacks)
+        or not isinstance(packages, list)
+        or not isinstance(limits, list)
+    ):
+        raise RuntimeError("framework module naming contract is invalid")
+    name_pattern = re.compile(
+        r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+        if style == "snake_case"
+        else r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    )
+    violations: list[dict[str, str]] = []
+    for instance in instances:
+        relative_instance = instance.relative_to(target).as_posix()
+        required_feature_paths = contract.get("required_feature_paths", [])
+        if not isinstance(required_feature_paths, list) or not all(
+            isinstance(item, str) and item for item in required_feature_paths
+        ):
+            raise RuntimeError("framework required feature paths are invalid")
+        for relative in required_feature_paths:
+            expected = instance / relative
+            correct_type = expected.is_file() if Path(relative).suffix else expected.is_dir()
+            if not correct_type:
+                violations.append(
+                    {
+                        "path": f"{relative_instance}/{relative}",
+                        "rule": "incomplete-feature-boundary",
+                        "message": (
+                            "Every generated feature must include its required ownership "
+                            "boundaries."
+                        ),
+                    }
+                )
+        if not name_pattern.fullmatch(instance.name):
+            violations.append(
+                {"path": relative_instance, "rule": "module-name-style", "message": f"Use {style}."}
+            )
+        if instance.name in ambiguous and not _prd_mentions_name(project, instance.name):
+            violations.append(
+                {
+                    "path": relative_instance,
+                    "rule": "ambiguous-module-name",
+                    "message": (
+                        "Use a PRD term or a familiar capability name; generic architecture "
+                        "labels are not product modules."
+                    ),
+                }
+            )
+        elif (
+            (project / "PRD.md").is_file()
+            and instance.name not in fallbacks
+            and not _prd_mentions_name(project, instance.name)
+        ):
+            violations.append(
+                {
+                    "path": relative_instance,
+                    "rule": "untraceable-module-name",
+                    "message": (
+                        "Module names must be PRD-derived or an allowed familiar capability "
+                        "fallback."
+                    ),
+                }
+            )
+        for raw in packages:
+            if not isinstance(raw, dict):
+                raise RuntimeError("framework responsibility package contract is invalid")
+            trigger_paths = raw.get("trigger_paths", [])
+            package_path = raw.get("path")
+            minimum = raw.get("minimum_modules", 1)
+            forbidden = raw.get("forbidden_module_names", [])
+            extensions = raw.get("extensions", [])
+            if (
+                not isinstance(package_path, str)
+                or not package_path
+                or not isinstance(trigger_paths, list)
+                or not all(isinstance(item, str) for item in trigger_paths)
+                or not isinstance(minimum, int)
+                or minimum < 1
+                or not isinstance(forbidden, list)
+                or not all(isinstance(item, str) for item in forbidden)
+                or not isinstance(extensions, list)
+                or not all(isinstance(item, str) for item in extensions)
+            ):
+                raise RuntimeError("framework responsibility package contract is invalid")
+            if trigger_paths and not any((instance / item).exists() for item in trigger_paths):
+                continue
+            package = instance / package_path
+            if not package.is_dir():
+                violations.append(
+                    {
+                        "path": f"{relative_instance}/{package_path}",
+                        "rule": "responsibility-package",
+                        "message": "Split this responsibility into a package.",
+                    }
+                )
+                continue
+            modules = [
+                path for path in package.iterdir()
+                if path.is_file()
+                and path.name not in {"__init__.py"}
+                and (not extensions or path.suffix in extensions)
+            ]
+            if len(modules) < minimum:
+                violations.append(
+                    {
+                        "path": f"{relative_instance}/{package_path}",
+                        "rule": "responsibility-package-empty",
+                        "message": "Add responsibility-named modules to this package.",
+                    }
+                )
+            for module in modules:
+                if module.name in forbidden:
+                    violations.append(
+                        {
+                            "path": module.relative_to(target).as_posix(),
+                            "rule": "generic-filename",
+                            "message": (
+                                "Name files after a resource, use case, screen, or "
+                                "responsibility—not transport direction or a generic layer."
+                            ),
+                        }
+                    )
+        for raw in limits:
+            if not isinstance(raw, dict):
+                raise RuntimeError("framework module line limit is invalid")
+            globs = raw.get("globs")
+            maximum = raw.get("maximum")
+            if (
+                not isinstance(globs, list)
+                or not all(isinstance(item, str) for item in globs)
+                or not isinstance(maximum, int)
+            ):
+                raise RuntimeError("framework module line limit is invalid")
+            for glob in globs:
+                for path in instance.glob(glob):
+                    lines = (
+                        len(path.read_text(encoding="utf-8").splitlines())
+                        if path.is_file()
+                        else 0
+                    )
+                    if lines > maximum:
+                        violations.append(
+                            {
+                                "path": path.relative_to(target).as_posix(),
+                                "rule": "oversized-module",
+                                "message": (
+                                    f"Split by responsibility before exceeding {maximum} lines."
+                                ),
+                            }
+                        )
+    return violations
+
+
 def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
     contract = read_json(pack / "rules" / "project-structure.json")
     if not isinstance(contract, dict):
@@ -360,6 +562,7 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
     wrong_type_domain_paths: list[str] = []
     active_domain_groups: dict[str, list[str]] = {}
     instances = _domain_instances(target, contract)
+    named_instances = instances or _named_module_instances(target, contract)
     domain_required = contract.get("required_domain_paths", [])
     domain_directories = contract.get("required_domain_directories", [])
     if not isinstance(domain_required, list) or not isinstance(domain_directories, list):
@@ -391,6 +594,9 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
             f"{instance_name}/{relative}" for relative in conditional_wrong_type
         )
     source_violations = _source_violations(target, contract)
+    module_organization_violations = _module_organization_violations(
+        project, target, contract, named_instances
+    )
     forbidden_matches: list[str] = []
     raw_forbidden = contract.get("forbidden_globs", [])
     if not isinstance(raw_forbidden, list) or not all(
@@ -436,6 +642,7 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         "missing_domain_paths": missing_domain_paths,
         "wrong_type_domain_paths": wrong_type_domain_paths,
         "source_violations": source_violations,
+        "module_organization_violations": module_organization_violations,
         "forbidden_matches": sorted(set(forbidden_matches)),
         "missing_required_text": missing_required_text,
         "valid": not missing
@@ -447,6 +654,7 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         and not missing_domain_paths
         and not wrong_type_domain_paths
         and not source_violations
+        and not module_organization_violations
         and not forbidden_matches
         and not missing_required_text,
         "checked_at": utc_now(),
@@ -462,6 +670,7 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
         or missing_domain_paths
         or wrong_type_domain_paths
         or source_violations
+        or module_organization_violations
         or forbidden_matches
         or missing_required_text
     ):
@@ -472,7 +681,8 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
             f"conditional_missing={missing_conditional_paths}, "
             f"conditional_wrong_type={wrong_type_conditional_paths}, "
             f"missing_source_patterns={missing_source_patterns}, "
-            f"source_violations={source_violations}"
+            f"source_violations={source_violations}, "
+            f"module_organization_violations={module_organization_violations}"
             f", forbidden_matches={sorted(set(forbidden_matches))}, "
             f"missing_required_text={missing_required_text}"
         )

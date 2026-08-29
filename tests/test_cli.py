@@ -1702,7 +1702,8 @@ def _create_pack_structure(project: Path, prompt: str) -> None:
             path.write_text(f"pilot {contract['framework']} locked dependency artifact\n")
     pattern = contract.get("domain_path_pattern")
     if isinstance(pattern, str) and contract.get("minimum_domain_instances", 0) > 0:
-        domain = target / pattern.replace("<domain>", "sample")
+        generated_name = "accounts" if (project / "PRD.md").is_file() else "sample"
+        domain = target / pattern.replace("<domain>", generated_name)
         domain_directories = set(contract.get("required_domain_directories", []))
         for relative in contract.get("required_domain_paths", []):
             path = domain / relative
@@ -2464,6 +2465,11 @@ def test_backend_structure_accepts_complete_api_capability(
         else:
             candidate.parent.mkdir(parents=True, exist_ok=True)
             candidate.write_text("generated API capability artifact\n")
+    naming = contract["module_naming"]
+    for package in naming["responsibility_packages"]:
+        candidate = domain / package["path"] / "accounts.py"
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_text("generated responsibility module\n")
 
     report = validate_structure(tmp_path, pack, "backend")
 
@@ -2471,6 +2477,81 @@ def test_backend_structure_accepts_complete_api_capability(
         contract["domain_path_pattern"].replace("<domain>", "sample")
     ]
     assert report["valid"] is True
+
+
+def test_structure_rejects_ambiguous_non_prd_feature_name(tmp_path: Path) -> None:
+    pack = Path(__file__).resolve().parents[1] / "react_ai"
+    _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
+    (tmp_path / "PRD.md").write_text(
+        "# Todo application\n\nUsers create tasks and receive notifications.\n"
+    )
+    feature = tmp_path / "apps/frontend/src/features/identity"
+    for relative in ("components", "hooks", "tests"):
+        (feature / relative).mkdir(parents=True, exist_ok=True)
+    for relative in ("schemas.ts", "types.ts"):
+        (feature / relative).write_text("export {};\n")
+
+    with pytest.raises(RuntimeError, match="ambiguous-module-name"):
+        validate_structure(tmp_path, pack, "frontend")
+
+
+def test_structure_accepts_familiar_feature_fallback_and_rejects_oversized_module(
+    tmp_path: Path,
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / "react_ai"
+    _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
+    (tmp_path / "PRD.md").write_text("# Todo application\n\nUsers create todo items.\n")
+    feature = tmp_path / "apps/frontend/src/features/tasks"
+    for relative in ("components", "hooks", "tests"):
+        (feature / relative).mkdir(parents=True, exist_ok=True)
+    for relative in ("schemas.ts", "types.ts"):
+        (feature / relative).write_text("export {};\n")
+    component = feature / "components/TaskList.tsx"
+    component.write_text("export const TaskList = () => null;\n")
+
+    assert validate_structure(tmp_path, pack, "frontend")["valid"] is True
+
+    component.write_text("\n".join(["// line"] * 251))
+    with pytest.raises(RuntimeError, match="oversized-module"):
+        validate_structure(tmp_path, pack, "frontend")
+
+
+@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+def test_backend_structure_rejects_generic_transport_module_names(
+    tmp_path: Path, pack_name: str
+) -> None:
+    pack = Path(__file__).resolve().parents[1] / pack_name
+    _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
+    contract = json.loads((pack / "rules/project-structure.json").read_text())
+    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
+        "<domain>", "accounts"
+    )
+    domain.mkdir(parents=True, exist_ok=True)
+    for relative in contract["required_domain_paths"]:
+        path = domain / relative
+        if relative in set(contract["required_domain_directories"]):
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("domain artifact\n")
+    api_group = next(
+        group for group in contract["conditional_domain_groups"]
+        if group["name"] in {"rest-api", "json-api"}
+    )
+    for relative in api_group["required_paths"]:
+        path = domain / relative
+        if relative in set(api_group["required_directories"]):
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("api artifact\n")
+    packages = contract["module_naming"]["responsibility_packages"]
+    for package in packages:
+        forbidden = package["forbidden_module_names"][0]
+        (domain / package["path"] / forbidden).write_text("generic artifact\n")
+
+    with pytest.raises(RuntimeError, match="generic-filename"):
+        validate_structure(tmp_path, pack, "backend")
 
 
 def test_backend_structure_requires_a_resolved_dependency_lock(tmp_path: Path) -> None:
@@ -2488,8 +2569,8 @@ def test_backend_structure_requires_a_resolved_dependency_lock(tmp_path: Path) -
 @pytest.mark.parametrize(
     ("pack_name", "trigger", "expected_missing"),
     [
-        ("drf_ai", "views.py", "rest-api:serializers/__init__.py"),
-        ("fastapi_ai", "routes.py", "json-api:schemas/__init__.py"),
+        ("drf_ai", "views/users.py", "rest-api:serializers/__init__.py"),
+        ("fastapi_ai", "routes/users.py", "json-api:schemas/__init__.py"),
     ],
 )
 def test_backend_conditional_domain_groups_fail_closed(
@@ -2502,6 +2583,7 @@ def test_backend_conditional_domain_groups_fail_closed(
     domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
         "<domain>", "sample"
     )
+    (domain / trigger).parent.mkdir(parents=True, exist_ok=True)
     (domain / trigger).write_text("trigger conditional API capability\n")
 
     with pytest.raises(RuntimeError, match="structure is invalid"):
@@ -2716,13 +2798,13 @@ def test_client_realtime_capability_fails_closed_when_incomplete(
     [
         (
             "drf_ai",
-            "sample/serializers/input.py",
+            "sample/serializers/accounts.py",
             "from sample.services import create_order\n",
             "serializers-do-not-import-services",
         ),
         (
             "fastapi_ai",
-            "app/domains/sample/routes.py",
+            "app/domains/sample/routes/accounts.py",
             "async def create(db):\n    await db.commit()\n",
             "routes-do-not-persist",
         ),

@@ -52,6 +52,12 @@ def test_framework_packs_are_code_free_behavior_only() -> None:
             assert skill_path.is_file()
             assert skill_path.name == "SKILL.md"
         assert structure["required_paths"]
+        naming = structure["module_naming"]
+        assert naming["style"] in {"snake_case", "kebab-case"}
+        assert naming["ambiguous_names"]
+        assert naming["familiar_fallback_names"]
+        assert "<module>" in structure["module_path_pattern"]
+        assert naming["max_lines"]
         assert "required_directories" in structure
         assert set(structure.get("required_directories", [])) <= set(structure["required_paths"])
         for path_set in structure.get("required_path_sets", []):
