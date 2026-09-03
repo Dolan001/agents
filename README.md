@@ -19,6 +19,7 @@ The supported application combinations are:
 | Web frontend | React or Next.js | `apps/frontend` |
 | Mobile | Flutter for Android and iOS | `apps/mobile` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
+| AI capability | RAG (optional, requirement-triggered) | Selected backend and clients |
 | Deployment | AWS (optional) | `infra`, `.github/workflows`, `ops` |
 
 Both backend choices use PostgreSQL. Generated tables and schema changes are owned by
@@ -81,7 +82,7 @@ must:
    git submodule update --init --recursive
    ```
 
-4. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, and all seven nested
+4. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, and all eight nested
    behavior repositories.
 5. Make no application changes, commits, pushes, or remote branches during setup.
 6. Tell the user to reopen Codex so skill discovery refreshes.
@@ -143,7 +144,7 @@ equivalent CLI invocation, see [`USER_GUIDE.md`](USER_GUIDE.md).
 ### 1. Install and pin the workflow
 
 The real project stores `ai_workflow` directly at `.agents`. The nested `base_ai`,
-`drf_ai`, `fastapi_ai`, `flutter_ai`, `react_ai`, `nextjs_ai`, and `aws_ai` repositories are initialized
+`drf_ai`, `fastapi_ai`, `flutter_ai`, `react_ai`, `nextjs_ai`, `rag_ai`, and `aws_ai` repositories are initialized
 recursively. Commit `.gitmodules` and the `.agents` gitlink so every collaborator gets
 the same reviewed workflow version:
 
@@ -428,6 +429,24 @@ states, and lifecycle cleanup. Reusable access tokens are prohibited in WebSocke
 cookies or short-lived single-use tickets acquired over HTTPS. Activated realtime surfaces produce
 `.ai/evidence/realtime/<phase>.json` proving authorization, protocol validation, limits, recovery,
 and relevant backend or client runtime checks.
+
+RAG is also conditional. The PRD generator records `RAG: Required` or `RAG: Not required`, and
+existing PRDs are deterministically recognized from explicit retrieval-augmented generation,
+semantic retrieval, document Q&A, grounded-answer, or knowledge-base requirements. When active,
+`rag_ai` augments the selected framework packs rather than generating a separate service.
+
+The default production design uses PostgreSQL full-text search plus pgvector hybrid retrieval,
+durable Celery/Redis ingestion, immutable source and embedding versions, authorization inside every
+candidate query, provider-neutral embedding/reranking/generation adapters, validated citations, and
+explicit abstention. User uploads use approved object storage. SSE is preferred for one-way answer
+streaming; WebSocket remains requirement-triggered for bidirectional behavior.
+
+Independent RAG evidence is required for the backend, every selected client, and integration under
+`.ai/evidence/rag/`. Verification uses a versioned evaluation set and checks retrieval separately
+from generation: recall/ranking, zero ACL leakage, groundedness, citation precision/coverage,
+unanswerable-query behavior, prompt injection and poisoned sources, deletion/reindexing, provider
+degradation, latency, and per-query usage/cost thresholds. Approximate retrieval is compared with an
+exact-search baseline so a visually convincing demo cannot pass with poor recall.
 
 ### 12. Integrate selected clients and backend
 
@@ -734,7 +753,7 @@ retained. It is not a normal recovery step.
 
 ## Linked repositories
 
-The workflow pins exact reviewed commits for seven behavior repositories while each
+The workflow pins exact reviewed commits for eight behavior repositories while each
 submodule records `branch = dev` for explicit update operations:
 
 ```text
@@ -753,12 +772,13 @@ submodule records `branch = dev` for explicit update operations:
 ├── fastapi_ai/              # FastAPI behavior pack
 ├── flutter_ai/              # Flutter Android/iOS behavior pack
 ├── nextjs_ai/               # Next.js behavior pack
+├── rag_ai/                  # Cross-stack RAG capability pack
 └── react_ai/                # React behavior pack
 ```
 
 The linked repositories are `Dolan001/base_ai`, `Dolan001/drf_ai`,
 `Dolan001/fastapi_ai`, `Dolan001/flutter_ai`, `Dolan001/nextjs_ai`,
-`Dolan001/react_ai`, and `Dolan001/aws_ai`.
+`Dolan001/react_ai`, `Dolan001/rag_ai`, and `Dolan001/aws_ai`.
 
 To update the workflow in a target project, review the new `ai_workflow` commit and its
 nested pins, then update the `.agents` gitlink explicitly. Do not copy skills into a
@@ -775,8 +795,8 @@ explicit later command: start-deployment → AWS asset readiness
 ```
 
 `config/pipeline.json` is the phase registry. Each phase resolves one manifest, one
-blueprint, and one gate. `config/framework-packs.json` maps selected frameworks to
-read-only behavior packs and target application roots. JSON is reserved for
+blueprint, and one gate. `config/framework-packs.json` maps selected frameworks and explicit
+capabilities to read-only behavior packs and target application roots. JSON is reserved for
 deterministic catalogs, schemas, graphs, configuration, state, and evidence. Agent
 behavior, skills, commands, hooks, and rules are Markdown.
 

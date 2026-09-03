@@ -27,5 +27,12 @@
       "role": "frontend",
       "target": "apps/frontend"
     }
+  },
+  "capability_packs": {
+    "rag": {
+      "path": "rag_ai",
+      "activation": "explicit-prd-capability",
+      "phases": ["requirements", "frontend", "mobile", "backend", "integration", "testing"]
+    }
   }
 }

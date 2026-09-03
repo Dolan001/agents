@@ -107,6 +107,12 @@ The command stops with `NEEDS_INPUT` when material decisions are missing and res
 `--answer` flags. Actual credentials are blocked; use variable names and placeholders only. Skip
 this command when a validated `PRD.md` already exists.
 
+The generated capability matrix always records `RAG: Required` or `RAG: Not required`. When RAG is
+required, intake also resolves source formats and retention, source ACLs, ingestion/versioning,
+embedding and provider policy, hybrid retrieval, citations/abstention, and measurable quality,
+latency, security, and cost gates. `$start-build` activates `rag_ai` automatically; there is no RAG
+framework flag and no separate RAG application command.
+
 ## Shared flags for start and resume skills
 
 The following flags are accepted by `$start-design`, `$start-generatehtml`, `$start-frontend`,
@@ -253,6 +259,10 @@ $start-build [resolved framework flags] [shared start flags]
 Runs the complete application lifecycle through delivery while always deferring deployment. Do not
 pass `--deployment`; run `$start-deployment --deployment aws` separately later. It does not push
 unless `--push` is explicit.
+
+If the PRD activates RAG, the same invocation additionally designs the RAG contract, builds client
+surfaces and the selected DRF/FastAPI implementation, connects the typed/streaming contract, and
+requires independent RAG evidence before the corresponding phase gates pass.
 
 Example with every meaningful selection:
 

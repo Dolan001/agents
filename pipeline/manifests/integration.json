@@ -4,7 +4,7 @@
   "agents": ["integration-engineer", "contract-test-agent"],
   "rules": ["rules/common.md", "rules/phases/integration.md"],
   "inputs": ["apps/frontend/**", "apps/mobile/**", "apps/backend/**", "docs/api/**"],
-  "outputs": ["typed web and/or mobile API clients", "tests/contract/**", "tests/integration/**"],
+  "outputs": ["typed web and/or mobile API clients", "tests/contract/**", "tests/integration/**", ".ai/evidence/rag/integration.json"],
   "scope": {"allowed_paths": ["apps/**", "packages/api-client/**", "tests/**", ".ai/evidence/**"]},
   "gate": "gates/contracts/integration.json"
 }

@@ -1,5 +1,5 @@
 {
   "phase": "integration",
   "required": [".ai/evidence/contract-verification.json"],
-  "assertions": ["typed_client_matches_openapi", "fixtures_replaced_or_explicitly_documented", "integration_tests_pass"]
+  "assertions": ["typed_client_matches_openapi", "fixtures_replaced_or_explicitly_documented", "rag_evidence_valid_when_required", "integration_tests_pass"]
 }

@@ -38,6 +38,9 @@ class StateStore:
         frameworks = state.get("frameworks")
         if isinstance(frameworks, dict):
             frameworks.setdefault("deployment", "unknown")
+        capabilities = state.setdefault("capabilities", {})
+        if isinstance(capabilities, dict):
+            capabilities.setdefault("rag", False)
         return state
 
     def save(self, state: dict[str, Any]) -> None:
@@ -55,6 +58,7 @@ class StateStore:
         assumptions: list[str],
         mobile: str = "unknown",
         deployment: str = "unknown",
+        capabilities: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
         if self.path.exists():
             raise RuntimeError("workflow state already exists; use ai status or ai resume")
@@ -70,6 +74,7 @@ class StateStore:
                 "backend": backend,
                 "deployment": deployment,
             },
+            "capabilities": capabilities or {"rag": False},
             "git": {"baseline_commit": baseline, "branch": branch},
             "features": {},
             "assumptions": assumptions,

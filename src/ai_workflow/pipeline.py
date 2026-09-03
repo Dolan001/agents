@@ -54,6 +54,29 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
     if not recovery.is_file() or not recovery.read_text(encoding="utf-8").strip():
         raise RuntimeError("bounded recovery policy is missing")
 
+    pack_config = read_json(repository / "config" / "framework-packs.json")
+    capability_packs = (
+        pack_config.get("capability_packs") if isinstance(pack_config, dict) else None
+    )
+    if not isinstance(capability_packs, dict):
+        raise RuntimeError("capability pack configuration is missing")
+    for capability, specification in capability_packs.items():
+        if not isinstance(capability, str) or not isinstance(specification, dict):
+            raise RuntimeError("capability pack configuration is invalid")
+        relative = specification.get("path")
+        if not isinstance(relative, str):
+            raise RuntimeError(f"capability pack path is missing: {capability}")
+        pack = _owned_path(repository, relative)
+        required = (
+            "AGENTS.md",
+            "agents/catalog.json",
+            "skills/catalog.json",
+            "hooks/lifecycle.json",
+            "rules/project-structure.json",
+        )
+        if any(not (pack / path).is_file() for path in required):
+            raise RuntimeError(f"capability pack is incomplete: {capability}")
+
     groups = config.get("execution_groups")
     if not isinstance(groups, list) or not all(isinstance(group, list) for group in groups):
         raise RuntimeError("pipeline execution_groups must be a list of phase lists")
@@ -127,6 +150,7 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
         "agentic_nodes": agentic_count,
         "hooks": len(instructions),
         "evaluation_policy": True,
+        "capability_packs": len(capability_packs),
         "valid": True,
     }
 

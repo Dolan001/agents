@@ -26,3 +26,7 @@
 	path = aws_ai
 	url = https://github.com/Dolan001/aws_ai.git
 	branch = dev
+[submodule "rag_ai"]
+	path = rag_ai
+	url = https://github.com/Dolan001/rag_ai.git
+	branch = dev

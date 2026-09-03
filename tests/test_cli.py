@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from ai_workflow.capabilities import detect_prd_capabilities
 from ai_workflow.cli import main
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
@@ -31,11 +32,76 @@ from ai_workflow.requirements import parse_prd
 from ai_workflow.structure import (
     validate_backend_evidence,
     validate_database_evidence,
+    validate_rag_evidence,
     validate_realtime_evidence,
     validate_structure,
 )
 from ai_workflow.tokens import parse_token
 from ai_workflow.visual_diff import compare_pixels
+
+
+def test_detects_explicit_and_requirement_backed_rag(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Product\n\n- RAG: Required\n- Provide document question answering.\n")
+    assert detect_prd_capabilities(prd) == {"rag": True}
+
+    prd.write_text("# Product\n\n- RAG: Not required\n")
+    assert detect_prd_capabilities(prd) == {"rag": False}
+
+    prd.write_text("# Product\n\n- Add semantic search over approved documents.\n")
+    assert detect_prd_capabilities(prd) == {"rag": True}
+
+
+def test_rejects_conflicting_rag_declaration(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("- RAG: Not required\n- Users need a knowledge-base assistant.\n")
+    with pytest.raises(RuntimeError, match="declares RAG not required"):
+        detect_prd_capabilities(prd)
+
+
+def test_rag_evidence_is_phase_specific_and_fail_closed(tmp_path: Path) -> None:
+    evidence = tmp_path / ".ai" / "evidence" / "rag"
+    evidence.mkdir(parents=True)
+    payload = {
+        "version": 1,
+        "capability": "rag",
+        "phase": "integration",
+        "dataset_version": "eval-v1",
+        "checks": {
+            "typed_api_contract": True,
+            "authorization_before_retrieval": True,
+            "tenant_isolation": True,
+            "grounded_abstention": True,
+            "citation_span_validation": True,
+            "stream_recovery": True,
+            "source_authorization": True,
+        },
+        "metrics": [
+            {
+                "name": "citation_precision",
+                "value": 1.0,
+                "threshold": 1.0,
+                "comparison": ">=",
+                "passed": True,
+            }
+        ],
+        "commands": [{"argv": ["pytest", "tests/integration"], "cwd": ".", "exit_code": 0}],
+        "verified": True,
+    }
+    (evidence / "integration.json").write_text(json.dumps(payload))
+    schema = Path(__file__).resolve().parents[1] / "schemas" / "rag-verification.schema.json"
+    assert validate_rag_evidence(tmp_path, schema, "integration")["verified"] is True
+
+    payload["checks"].pop("tenant_isolation")
+    (evidence / "integration.json").write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError, match="RAG verification evidence is invalid"):
+        validate_rag_evidence(tmp_path, schema, "integration")
+
+    payload["checks"]["tenant_isolation"] = True
+    payload["metrics"][0]["value"] = 0.5
+    (evidence / "integration.json").write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError, match="does not satisfy its threshold"):
+        validate_rag_evidence(tmp_path, schema, "integration")
 
 
 def _valid_generated_prd(
@@ -66,6 +132,7 @@ def _valid_generated_prd(
         "Background jobs: Not required",
         "Scheduled jobs: Not required",
         "Realtime: Not required",
+        "RAG: Not required",
         "File uploads: Not required",
         "Object storage: Not required",
         "External integrations: None",
@@ -267,6 +334,76 @@ def _generated_decision_sources(prd: str) -> dict[str, str]:
     decisions, errors = architecture_decisions(prd)
     assert errors == []
     return {key: "requirements" for key in decisions}
+
+
+def test_prd_validator_accepts_a_complete_production_rag_contract(tmp_path: Path) -> None:
+    content = _valid_generated_prd()
+    content = content.replace("Background jobs: Not required", "Background jobs: Required")
+    content = content.replace("RAG: Not required", "RAG: Required")
+    content = content.replace(
+        "Background execution: Not applicable",
+        "Background execution: Celery with Redis and transactional outbox",
+    )
+    rag_decisions = "\n".join(
+        [
+            "- RAG mode: Document Q&A knowledge assistant",
+            (
+                "- RAG source policy: PDF format, 20 MB size, 90-day retention, 24-hour deletion, "
+                "and immutable document version history"
+            ),
+            "- RAG authorization: Tenant and source ACL filters inside queries before retrieval",
+            (
+                "- RAG ingestion: Idempotent worker background pipeline to parse and chunk with "
+                "bounded retry and dead-letter handling"
+            ),
+            (
+                "- RAG embeddings: Provider model with 1536 dimensions, isolated version, and "
+                "shadow re-embedding migration"
+            ),
+            (
+                "- RAG retrieval: PostgreSQL full-text search and pgvector hybrid candidates with "
+                "RRF fusion"
+            ),
+            (
+                "- RAG generation: Provider-neutral adapter with untrusted evidence context and "
+                "structured responses"
+            ),
+            (
+                "- RAG citations and abstention: Validate every citation source span and abstain "
+                "when unsupported"
+            ),
+            (
+                "- RAG evaluation: Recall@k, groundedness, citation quality, abstention, zero "
+                "leakage, p95 latency, and per-query cost thresholds"
+            ),
+            (
+                "- RAG provider policy: 20-second timeout, bounded retry, zero-retention mode, "
+                "redacted logs, and usage limits"
+            ),
+        ]
+    )
+    content = content.replace(
+        "- Realtime transport: Not applicable",
+        f"- Realtime transport: Not applicable\n{rag_decisions}",
+    )
+    content = content.replace(
+        "Account belongs to exactly one customer.",
+        (
+            "Account belongs to exactly one customer. A knowledge base owns a source document, "
+            "immutable document version, source ACL, ingestion attempt, chunk with provenance, "
+            "and embedding with model version."
+        ),
+    )
+    content = content.replace(
+        "API, authorization, integration, browser, and security checks must pass.",
+        (
+            "API, authorization, integration, browser, retrieval, grounded-answer, citation, "
+            "prompt injection, latency, and cost checks must pass."
+        ),
+    )
+    prd = tmp_path / "PRD.md"
+    prd.write_text(content)
+    assert validate_prd(prd) == []
 
 
 def test_generate_prd_asks_once_then_resumes_to_ready(

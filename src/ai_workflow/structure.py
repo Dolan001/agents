@@ -815,6 +815,56 @@ def validate_realtime_evidence(
     return evidence
 
 
+def validate_rag_evidence(
+    project: Path, schema_path: Path, phase: str
+) -> dict[str, Any]:
+    evidence = read_json(project / ".ai" / "evidence" / "rag" / f"{phase}.json")
+    schema = read_json(schema_path)
+    if not isinstance(evidence, dict) or not isinstance(schema, dict):
+        raise RuntimeError(f"{phase} RAG verification evidence or schema is missing")
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(evidence),
+        key=lambda item: list(item.path),
+    )
+    if errors:
+        summaries = [
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
+            for error in errors
+        ]
+        raise RuntimeError(f"{phase} RAG verification evidence is invalid: {summaries}")
+    if evidence["phase"] != phase:
+        raise RuntimeError("RAG verification phase does not match the current phase")
+    for metric in evidence["metrics"]:
+        comparison = metric["comparison"]
+        value = metric["value"]
+        threshold = metric["threshold"]
+        satisfied = (
+            value >= threshold
+            if comparison == ">="
+            else value <= threshold
+            if comparison == "<="
+            else value == threshold
+        )
+        if not satisfied:
+            raise RuntimeError(f"RAG metric does not satisfy its threshold: {metric['name']}")
+    if phase == "backend":
+        metric_names = [str(metric["name"]).lower() for metric in evidence["metrics"]]
+        required_metric_terms = {
+            "retrieval quality": ("recall", "mrr", "ndcg"),
+            "authorization leakage": ("authorization_leakage", "acl_leakage"),
+            "groundedness": ("ground", "faithful"),
+            "citation quality": ("citation",),
+            "abstention quality": ("abstention",),
+            "latency": ("latency",),
+            "cost or usage": ("cost", "usage"),
+        }
+        for label, terms in required_metric_terms.items():
+            if not any(any(term in name for term in terms) for name in metric_names):
+                raise RuntimeError(f"backend RAG evidence is missing metric: {label}")
+    _reject_secret_evidence(evidence, "RAG verification")
+    return evidence
+
+
 def validate_monorepo(project: Path, contract_path: Path) -> dict[str, Any]:
     contract = read_json(contract_path)
     if not isinstance(contract, dict):

@@ -10,6 +10,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from .capabilities import detect_prd_capabilities
 from .commands import run_command_groups
 from .deployment import deployment_status, execute_operation
 from .design import classify_design_inputs, ingest_design_inputs
@@ -126,6 +127,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
         ],
         mobile=frameworks["mobile"],
         deployment=frameworks["deployment"],
+        capabilities=detect_prd_capabilities(prd),
     )
     save_inventory(project, inventory(project))
     design_inputs = classify_design_inputs(project)
@@ -141,6 +143,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             "decision": "workflow_initialized",
             "mode": mode,
             "frameworks": frameworks,
+            "capabilities": state["capabilities"],
             "design_mode": design_inputs["mode"],
             "ingested_design_inputs": ingested_design,
         },

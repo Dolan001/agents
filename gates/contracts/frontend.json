@@ -1,5 +1,5 @@
 {
   "phase": "frontend",
   "required": ["apps/frontend/**", ".ai/test-commands.json", ".ai/evidence/monorepo-bootstrap.json", ".ai/evidence/structure/monorepo.json", ".ai/evidence/structure/frontend.json", ".ai/evidence/design-fidelity/frontend/manifest.json", ".ai/evidence/design-fidelity/frontend/comparison.json", ".ai/evidence/design-fidelity/frontend/repair-plan.md", ".ai/evidence/design-fidelity/frontend/verification.json", ".ai/evidence/frontend-verification.json", "README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile"],
-  "assertions": ["target_monorepo_structure_valid", "selected_pack_structure_valid", "frontend_tests_pass", "responsive_and_accessible_states_evidenced", "approved_html_design_fidelity_independently_verified"]
+  "assertions": ["target_monorepo_structure_valid", "selected_pack_structure_valid", "rag_evidence_valid_when_required", "frontend_tests_pass", "responsive_and_accessible_states_evidenced", "approved_html_design_fidelity_independently_verified"]
 }

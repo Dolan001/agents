@@ -208,6 +208,55 @@ def test_aws_deployment_pack_is_code_free_and_routes_by_role() -> None:
     assert pack / "hooks" / "pre-verify.md" in controls
 
 
+def test_rag_capability_pack_is_code_free_and_routes_only_when_active() -> None:
+    root = Path(__file__).resolve().parents[1]
+    pack = root / "rag_ai"
+    files = [path for path in pack.rglob("*") if path.is_file() and ".git" not in path.parts]
+    assert not [path for path in files if path.suffix in FORBIDDEN_SUFFIXES]
+    agents = json.loads((pack / "agents" / "catalog.json").read_text())
+    skills = json.loads((pack / "skills" / "catalog.json").read_text())
+    assert agents["framework"] == "rag"
+    assert skills["framework"] == "rag"
+    assert len(agents["agents"]) == 3
+
+    frameworks = {
+        "frontend": "react",
+        "mobile": "unknown",
+        "backend": "fastapi",
+        "deployment": "unknown",
+    }
+    inactive = _skill_paths(
+        root,
+        "backend",
+        "implement-backend-slices",
+        frameworks,
+        feature={"description": "RAG knowledge-base question answering"},
+        capabilities={"rag": False},
+    )
+    assert not any(pack in path.parents for path in inactive)
+
+    active = _skill_paths(
+        root,
+        "backend",
+        "implement-backend-slices",
+        frameworks,
+        feature={"description": "RAG knowledge-base question answering"},
+        capabilities={"rag": True},
+    )
+    assert {path.parent.name for path in active if pack in path.parents} == {
+        "implement-rag-backend"
+    }
+    controls = _control_paths(
+        root,
+        "backend",
+        "verify-backend",
+        frameworks,
+        {"rag": True},
+    )
+    assert pack / "rules" / "verification.md" in controls
+    assert root / "schemas" / "rag-verification.schema.json" in controls
+
+
 def test_backend_packs_require_postgresql_domains_and_database_api_guidance() -> None:
     root = Path(__file__).resolve().parents[1]
     for pack_name in ("drf_ai", "fastapi_ai"):

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "capability", "phase", "dataset_version", "checks", "metrics", "commands", "verified"],
+  "properties": {
+    "version": {"const": 1},
+    "capability": {"const": "rag"},
+    "phase": {"enum": ["frontend", "mobile", "backend", "integration"]},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_lifecycle": {"const": true},
+        "idempotent_ingestion": {"const": true},
+        "embedding_version_isolation": {"const": true},
+        "authorization_before_retrieval": {"const": true},
+        "tenant_isolation": {"const": true},
+        "hybrid_retrieval": {"const": true},
+        "exact_recall_baseline": {"const": true},
+        "context_budget": {"const": true},
+        "grounded_abstention": {"const": true},
+        "citation_span_validation": {"const": true},
+        "prompt_injection_resistance": {"const": true},
+        "provider_failure_bounds": {"const": true},
+        "deletion_and_reindex": {"const": true},
+        "usage_accounting": {"const": true},
+        "typed_api_contract": {"const": true},
+        "safe_rendering": {"const": true},
+        "complete_states": {"const": true},
+        "stream_recovery": {"const": true},
+        "accessible_citations": {"const": true},
+        "source_authorization": {"const": true},
+        "feedback_contract": {"const": true}
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value", "threshold", "comparison", "passed"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "value": {"type": "number"},
+          "threshold": {"type": "number"},
+          "comparison": {"enum": [">=", "<=", "=="]},
+          "passed": {"const": true}
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["argv", "cwd", "exit_code"],
+        "properties": {
+          "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
+          "exit_code": {"const": 0}
+        }
+      }
+    },
+    "verified": {"const": true}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"phase": {"const": "backend"}}, "required": ["phase"]},
+      "then": {"properties": {"checks": {"required": ["source_lifecycle", "idempotent_ingestion", "embedding_version_isolation", "authorization_before_retrieval", "tenant_isolation", "hybrid_retrieval", "exact_recall_baseline", "context_budget", "grounded_abstention", "citation_span_validation", "prompt_injection_resistance", "provider_failure_bounds", "deletion_and_reindex", "usage_accounting"]}}}
+    },
+    {
+      "if": {"properties": {"phase": {"enum": ["frontend", "mobile"]}}, "required": ["phase"]},
+      "then": {"properties": {"checks": {"required": ["typed_api_contract", "safe_rendering", "complete_states", "stream_recovery", "accessible_citations", "source_authorization", "feedback_contract"]}}}
+    },
+    {
+      "if": {"properties": {"phase": {"const": "integration"}}, "required": ["phase"]},
+      "then": {"properties": {"checks": {"required": ["typed_api_contract", "authorization_before_retrieval", "tenant_isolation", "grounded_abstention", "citation_span_validation", "stream_recovery", "source_authorization"]}}}
+    }
+  ]
+}
