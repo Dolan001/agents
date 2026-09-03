@@ -13,6 +13,8 @@ _RAG_TERMS = re.compile(
     r"(?i)\b(?:RAG|retrieval[- ]augmented generation|semantic (?:search|retrieval)|"
     r"document (?:Q&A|question answering)|knowledge[- ]base (?:assistant|chat)|"
     r"grounded (?:answer|response)s?|answer(?:ing)? (?:from|over) (?:uploaded )?documents?)\b"
+    r"|\b(?:vector search|chat with (?:uploaded )?documents?|"
+    r"(?:ask|answer) questions? (?:about|over|from) documents?)\b"
 )
 _NEGATED = re.compile(r"(?i)\b(?:not required|out of scope|non-goal|will not|do not)\b")
 
@@ -32,4 +34,3 @@ def detect_prd_capabilities(path: Path) -> dict[str, bool]:
             raise RuntimeError("PRD declares RAG not required but also contains a RAG requirement")
         return {"rag": required}
     return {"rag": bool(affirmative_lines)}
-

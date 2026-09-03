@@ -51,6 +51,9 @@ def test_detects_explicit_and_requirement_backed_rag(tmp_path: Path) -> None:
     prd.write_text("# Product\n\n- Add semantic search over approved documents.\n")
     assert detect_prd_capabilities(prd) == {"rag": True}
 
+    prd.write_text("# Product\n\n- Let customers chat with uploaded documents.\n")
+    assert detect_prd_capabilities(prd) == {"rag": True}
+
 
 def test_rejects_conflicting_rag_declaration(tmp_path: Path) -> None:
     prd = tmp_path / "PRD.md"
