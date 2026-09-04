@@ -249,7 +249,7 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
 def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     candidates = [root / "base" / "agents" / f"{name}.md", root / "agents" / f"{name}.md"]
     selected = {
-        "frontend": {"nextjs": "nextjs", "react": "react"}.get(frameworks["frontend"]),
+        "frontend": {"nextjs": "nextjs", "react": "reactjs"}.get(frameworks["frontend"]),
         "mobile": {"flutter": "flutter"}.get(frameworks["mobile"]),
         "backend": {"django-drf": "drf", "fastapi": "fastapi"}.get(frameworks["backend"]),
         "deployment": {"aws": "aws"}.get(frameworks["deployment"]),
@@ -291,7 +291,7 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
 
 def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path | None:
     mapping = {
-        "frontend": {"nextjs": "nextjs", "react": "react"},
+        "frontend": {"nextjs": "nextjs", "react": "reactjs"},
         "mobile": {"flutter": "flutter"},
         "backend": {"django-drf": "drf", "fastapi": "fastapi"},
         "deployment": {"aws": "aws"},

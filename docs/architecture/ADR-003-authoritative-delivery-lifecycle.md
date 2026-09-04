@@ -5,8 +5,8 @@ Status: accepted
 The workflow repositories contain behavior and control logic, never a demonstration
 application. A user supplies a separate target monorepo with a required PRD and
 optional design evidence. `base` is private shared behavior; `drf`, `fastapi`,
-`flutter`, `react`, `nextjs`, `rag`, `webscraping`, and `aws` describe exact generated structures and
-production decisions; `ai_workflow` links them as pinned submodules and executes the lifecycle.
+`flutter`, `reactjs`, `nextjs`, `rag`, `webscraping`, and `aws` describe exact generated structures and
+production decisions; `agent` links them as pinned submodules and executes the lifecycle.
 
 The default lifecycle is strictly sequential:
 

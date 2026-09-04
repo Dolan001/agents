@@ -105,7 +105,7 @@ def test_framework_packs_have_production_roles_and_progressive_references() -> N
 def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents() -> None:
     root = Path(__file__).resolve().parents[1]
     cases = (
-        ("frontend", "react", "react"),
+        ("frontend", "react", "reactjs"),
         ("frontend", "nextjs", "nextjs"),
         ("mobile", "flutter", "flutter"),
         ("backend", "django-drf", "drf"),

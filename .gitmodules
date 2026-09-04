@@ -14,9 +14,9 @@
 	path = nextjs
 	url = https://github.com/Dolan001/nextjs.git
 	branch = dev
-[submodule "react"]
-	path = react
-	url = https://github.com/Dolan001/react.git
+[submodule "reactjs"]
+	path = reactjs
+	url = https://github.com/Dolan001/reactjs.git
 	branch = dev
 [submodule "flutter"]
 	path = flutter

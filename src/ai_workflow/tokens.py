@@ -558,7 +558,7 @@ def resolve_token(
     area = str(token["area"])
     framework = workflow_state.get("frameworks", {}).get(area)
     packs = {
-        "frontend": {"react": "react", "nextjs": "nextjs"},
+        "frontend": {"react": "reactjs", "nextjs": "nextjs"},
         "mobile": {"flutter": "flutter"},
         "backend": {"django-drf": "drf", "fastapi": "fastapi"},
     }

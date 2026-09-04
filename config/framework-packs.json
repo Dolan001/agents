@@ -23,7 +23,7 @@
       "target": "apps/frontend"
     },
     "react": {
-      "path": "react",
+      "path": "reactjs",
       "role": "frontend",
       "target": "apps/frontend"
     }

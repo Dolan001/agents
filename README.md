@@ -1,6 +1,6 @@
-# ai_workflow
+# Agent
 
-`ai_workflow` is a Codex-first control plane that turns a required PRD and optional
+`agent` is a Codex-first control plane that turns a required PRD and optional
 design evidence into a verified full-stack monorepo. It coordinates specialized agents,
 skills, phase rules, framework behavior packs, deterministic checks, evidence gates,
 durable checkpoints, and safe Git delivery.
@@ -63,7 +63,7 @@ The user does not need to remember or run Git submodule commands. After adding t
 current project, open Codex in that project and send this single plain-text request:
 
 ```text
-setup-workflow "https://github.com/Dolan001/ai_workflow.git"
+setup-workflow "https://github.com/Dolan001/agent.git"
 ```
 
 `setup-workflow` is a readable instruction to Codex, not a terminal command, `$skill`, or installed
@@ -78,11 +78,11 @@ must:
 3. Execute:
 
    ```bash
-   git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
+   git submodule add -b dev https://github.com/Dolan001/agent.git .agents
    git submodule update --init --recursive
    ```
 
-4. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, and all eight nested
+4. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, and all nine nested
    behavior repositories.
 5. Make no application changes, commits, pushes, or remote branches during setup.
 6. Tell the user to reopen Codex so skill discovery refreshes.
@@ -101,10 +101,10 @@ installed; the plain `setup-workflow "<git-url>"` request above is the portable 
 ## Quick start
 
 The following is the manual fallback for an experienced user. Run it inside the target project, not
-inside `ai_workflow` itself:
+inside `agent` itself:
 
 ```bash
-git submodule add -b dev https://github.com/Dolan001/ai_workflow.git .agents
+git submodule add -b dev https://github.com/Dolan001/agent.git .agents
 git submodule update --init --recursive
 ```
 
@@ -143,8 +143,8 @@ equivalent CLI invocation, see [`USER_GUIDE.md`](USER_GUIDE.md).
 
 ### 1. Install and pin the workflow
 
-The real project stores `ai_workflow` directly at `.agents`. The nested `base`,
-`drf`, `fastapi`, `flutter`, `react`, `nextjs`, `rag`, and `aws` repositories are initialized
+The real project stores `agent` directly at `.agents`. The nested `base`,
+`drf`, `fastapi`, `flutter`, `reactjs`, `nextjs`, `rag`, `webscraping`, and `aws` repositories are initialized
 recursively. Commit `.gitmodules` and the `.agents` gitlink so every collaborator gets
 the same reviewed workflow version:
 
@@ -786,15 +786,15 @@ submodule records `branch = dev` for explicit update operations:
 ├── flutter/                 # Flutter Android/iOS behavior pack
 ├── nextjs/                  # Next.js behavior pack
 ├── rag/                     # Cross-stack RAG capability pack
-├── react/                   # React behavior pack
+├── reactjs/                 # React behavior pack
 └── webscraping/             # backend-only scraping capability pack
 ```
 
 The linked repositories are `Dolan001/base`, `Dolan001/drf`,
 `Dolan001/fastapi`, `Dolan001/flutter`, `Dolan001/nextjs`,
-`Dolan001/react`, `Dolan001/rag`, `Dolan001/aws`, and `Dolan001/webscraping`.
+`Dolan001/reactjs`, `Dolan001/rag`, `Dolan001/aws`, and `Dolan001/webscraping`.
 
-To update the workflow in a target project, review the new `ai_workflow` commit and its
+To update the workflow in a target project, review the new `agent` commit and its
 nested pins, then update the `.agents` gitlink explicitly. Do not copy skills into a
 second `.agents` directory.
 

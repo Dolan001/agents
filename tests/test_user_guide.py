@@ -60,7 +60,7 @@ def test_user_guide_covers_catalog_and_cli_flags_in_workflow_order() -> None:
 def test_readme_has_zero_knowledge_codex_bootstrap() -> None:
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text()
-    assert 'setup-workflow "https://github.com/Dolan001/ai_workflow.git"' in readme
+    assert 'setup-workflow "https://github.com/Dolan001/agent.git"' in readme
     assert "not a terminal command, `$skill`, or installed" in readme
     assert "git submodule add -b dev" in readme
     assert "git submodule update --init --recursive" in readme

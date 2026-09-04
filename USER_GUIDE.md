@@ -1,7 +1,7 @@
 # AI Workflow User Guide
 
 This guide presents the workflow in the order a user normally follows it and includes the complete
-command and flag reference for every skill shipped by `ai_workflow`.
+command and flag reference for every skill shipped by `agent`.
 The workflow must be mounted in the target project as `.agents` with all nested submodules
 initialized.
 
@@ -9,7 +9,7 @@ For first installation, the user can give Codex only this plain-text instruction
 or preinstalled workflow skill is needed:
 
 ```text
-setup-workflow "https://github.com/Dolan001/ai_workflow.git"
+setup-workflow "https://github.com/Dolan001/agent.git"
 ```
 
 This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the

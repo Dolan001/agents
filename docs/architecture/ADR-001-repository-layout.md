@@ -4,11 +4,11 @@ Status: accepted
 
 ## Decision
 
-Keep `base`, each code-free framework behavior pack, and `ai_workflow` as
+Keep `base`, each code-free framework behavior pack, and `agent` as
 independently versioned repository directories.
-`ai_workflow/base`, `ai_workflow/drf`, `ai_workflow/fastapi`,
-`ai_workflow/flutter`, `ai_workflow/nextjs`, `ai_workflow/react`, `ai_workflow/rag`,
-`ai_workflow/webscraping`, and `ai_workflow/aws` are
+`agent/base`, `agent/drf`, `agent/fastapi`,
+`agent/flutter`, `agent/nextjs`, `agent/reactjs`, `agent/rag`,
+`agent/webscraping`, and `agent/aws` are
 root-level Git submodules pinned to reviewed revisions. Their `.gitmodules` entries use the GitHub repositories
 and declare `branch = dev`, matching the `claude-fullstack` repository convention.
 
@@ -23,12 +23,12 @@ separate target monorepo with `apps`, `packages`, `HTML`, `docs`, `tests`, `arti
 - `drf`: Django/DRF agents, skills, commands, hooks, and rules.
 - `fastapi`: FastAPI agents, skills, commands, hooks, and rules.
 - `flutter`: Flutter Android/iOS agents, skills, commands, hooks, structures, and rules.
-- `react`: React agents, skills, commands, hooks, and rules.
+- `reactjs`: React agents, skills, commands, hooks, and rules.
 - `nextjs`: Next.js agents, skills, commands, hooks, and rules.
 - `rag`: requirement-triggered retrieval-augmented generation behavior.
 - `webscraping`: backend-only website discovery, selector, extraction, and verification behavior.
 - `aws`: separately invoked AWS architecture and deployment behavior.
-- `ai_workflow`: commands, manifests, blueprints, gates, rules, hooks, user CLI,
+- `agent`: commands, manifests, blueprints, gates, rules, hooks, user CLI,
   discovery, reconciliation, state, framework-pack selection, reporting, and recovery.
 
 ## Consequences

@@ -2694,7 +2694,7 @@ def test_existing_design_run_requires_a_client_before_backend(
 
 
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "react"
+    pack = Path(__file__).resolve().parents[1] / "reactjs"
     with pytest.raises(RuntimeError, match="structure is invalid"):
         validate_structure(tmp_path, pack, "frontend")
     report = json.loads((tmp_path / ".ai" / "evidence" / "structure" / "frontend.json").read_text())
@@ -2773,7 +2773,7 @@ def test_backend_structure_accepts_complete_api_capability(tmp_path: Path, pack_
 
 
 def test_structure_rejects_ambiguous_non_prd_feature_name(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "react"
+    pack = Path(__file__).resolve().parents[1] / "reactjs"
     _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
     (tmp_path / "PRD.md").write_text(
         "# Todo application\n\nUsers create tasks and receive notifications.\n"
@@ -2791,7 +2791,7 @@ def test_structure_rejects_ambiguous_non_prd_feature_name(tmp_path: Path) -> Non
 def test_structure_accepts_familiar_feature_fallback_and_rejects_oversized_module(
     tmp_path: Path,
 ) -> None:
-    pack = Path(__file__).resolve().parents[1] / "react"
+    pack = Path(__file__).resolve().parents[1] / "reactjs"
     _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
     (tmp_path / "PRD.md").write_text("# Todo application\n\nUsers create todo items.\n")
     feature = tmp_path / "apps/frontend/src/features/tasks"
@@ -3065,7 +3065,7 @@ def test_backend_realtime_capability_and_evidence_fail_closed(
 @pytest.mark.parametrize(
     ("pack_name", "trigger"),
     [
-        ("react", "src/realtime/client.ts"),
+        ("reactjs", "src/realtime/client.ts"),
         ("nextjs", "lib/realtime/client.ts"),
         ("flutter", "lib/core/realtime/realtime_client.dart"),
     ],
