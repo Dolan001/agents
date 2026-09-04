@@ -3,11 +3,11 @@
 Add this repository directly at Codex's canonical project path:
 
 ```bash
-git submodule add -b dev https://github.com/Dolan001/agent.git .agents
+git submodule add -b dev https://github.com/Dolan001/agents.git .agents
 git submodule update --init --recursive
 ```
 
-The `.agents` directory is the tracked `agent` submodule itself, not a generated
+The `.agents` directory is the tracked `agents` submodule itself, not a generated
 copy. Codex discovers `.agents/skills` directly. Commit `.gitmodules` and the `.agents`
 gitlink to the real project so every developer receives the same pinned workflow with
 `git clone --recurse-submodules`. No setup or skill-copy command is required. Runtime
