@@ -4,10 +4,11 @@ Status: accepted
 
 ## Decision
 
-Keep `base_ai`, each code-free framework behavior pack, and `ai_workflow` as
+Keep `base`, each code-free framework behavior pack, and `ai_workflow` as
 independently versioned repository directories.
-`ai_workflow/base_ai`, `ai_workflow/drf_ai`, `ai_workflow/fastapi_ai`,
-`ai_workflow/flutter_ai`, `ai_workflow/nextjs_ai`, and `ai_workflow/react_ai` are
+`ai_workflow/base`, `ai_workflow/drf`, `ai_workflow/fastapi`,
+`ai_workflow/flutter`, `ai_workflow/nextjs`, `ai_workflow/react`, `ai_workflow/rag`,
+`ai_workflow/webscraping`, and `ai_workflow/aws` are
 root-level Git submodules pinned to reviewed revisions. Their `.gitmodules` entries use the GitHub repositories
 and declare `branch = dev`, matching the `claude-fullstack` repository convention.
 
@@ -17,18 +18,21 @@ separate target monorepo with `apps`, `packages`, `HTML`, `docs`, `tests`, `arti
 
 ## Responsibilities
 
-- `base_ai`: reusable behavior, contracts, policies, agent profiles, skills, hooks,
+- `base`: reusable behavior, contracts, policies, agent profiles, skills, hooks,
   state rules, leases, context, recovery, Git safety, and verification rules.
-- `drf_ai`: Django/DRF agents, skills, commands, hooks, and rules.
-- `fastapi_ai`: FastAPI agents, skills, commands, hooks, and rules.
-- `flutter_ai`: Flutter Android/iOS agents, skills, commands, hooks, structures, and rules.
-- `react_ai`: React agents, skills, commands, hooks, and rules.
-- `nextjs_ai`: Next.js agents, skills, commands, hooks, and rules.
+- `drf`: Django/DRF agents, skills, commands, hooks, and rules.
+- `fastapi`: FastAPI agents, skills, commands, hooks, and rules.
+- `flutter`: Flutter Android/iOS agents, skills, commands, hooks, structures, and rules.
+- `react`: React agents, skills, commands, hooks, and rules.
+- `nextjs`: Next.js agents, skills, commands, hooks, and rules.
+- `rag`: requirement-triggered retrieval-augmented generation behavior.
+- `webscraping`: backend-only website discovery, selector, extraction, and verification behavior.
+- `aws`: separately invoked AWS architecture and deployment behavior.
 - `ai_workflow`: commands, manifests, blueprints, gates, rules, hooks, user CLI,
   discovery, reconciliation, state, framework-pack selection, reporting, and recovery.
 
 ## Consequences
 
-Application boilerplate cannot live in `base_ai` or a framework pack. Framework
+Application boilerplate cannot live in `base` or a framework pack. Framework
 behavior upgrades are reviewed and versioned independently. Agents generate only
 requirement-backed code in the target monorepo.

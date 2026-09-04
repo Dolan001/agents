@@ -3,36 +3,43 @@
   "copy_application_source": false,
   "packs": {
     "django-drf": {
-      "path": "drf_ai",
+      "path": "drf",
       "role": "backend",
       "target": "apps/backend"
     },
     "fastapi": {
-      "path": "fastapi_ai",
+      "path": "fastapi",
       "role": "backend",
       "target": "apps/backend"
     },
     "flutter": {
-      "path": "flutter_ai",
+      "path": "flutter",
       "role": "mobile",
       "target": "apps/mobile"
     },
     "nextjs": {
-      "path": "nextjs_ai",
+      "path": "nextjs",
       "role": "frontend",
       "target": "apps/frontend"
     },
     "react": {
-      "path": "react_ai",
+      "path": "react",
       "role": "frontend",
       "target": "apps/frontend"
     }
   },
   "capability_packs": {
     "rag": {
-      "path": "rag_ai",
+      "path": "rag",
       "activation": "explicit-prd-capability",
       "phases": ["requirements", "frontend", "mobile", "backend", "integration", "testing"]
+    },
+    "webscraping": {
+      "path": "webscraping",
+      "activation": "explicit-prd-capability",
+      "backend_only": true,
+      "requires": ["django-drf-or-fastapi", "postgresql", "celery", "redis"],
+      "phases": ["requirements", "backend", "integration", "testing"]
     }
   }
 }

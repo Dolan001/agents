@@ -465,7 +465,7 @@ def _diagnose_plan(
     adapter: str,
     agent: Path,
     pack: Path,
-    capability_pack: Path | None,
+    capability_packs: list[Path],
     plan_path: Path,
     snapshot: dict[str, str],
 ) -> dict[str, Any]:
@@ -477,9 +477,13 @@ def _diagnose_plan(
         context_bundle = _token_context_bundle(
             project, token, "diagnosis", plan_path, prior_failure or None
         )
-        recovery_path = workflow_root() / "base_ai" / "skills" / "recover-failure" / "SKILL.md"
+        recovery_path = workflow_root() / "base" / "skills" / "recover-failure" / "SKILL.md"
         recovery = f"Recovery skill: {recovery_path}\n" if prior_failure else ""
-        capability_line = str(capability_pack) if capability_pack else "Not applicable."
+        capability_line = (
+            "\n".join(str(path) for path in capability_packs)
+            if capability_packs
+            else "Not applicable."
+        )
         prompt = f"""Diagnose one controlled project work token without implementing it.
 
 Project root: {project}
@@ -488,7 +492,7 @@ Area: {token["area"]}
 Primary agent instruction: {agent}
 Selected framework pack: {pack}
 Selected capability pack: {capability_line}
-Context skill: {workflow_root() / "base_ai" / "skills" / "build-context-bundle" / "SKILL.md"}
+Context skill: {workflow_root() / "base" / "skills" / "build-context-bundle" / "SKILL.md"}
 Bounded context bundle: {context_bundle}
 {recovery}Current images: {json.dumps(token["images"]["current"])}
 Expected images: {json.dumps(token["images"]["expected"])}
@@ -554,9 +558,9 @@ def resolve_token(
     area = str(token["area"])
     framework = workflow_state.get("frameworks", {}).get(area)
     packs = {
-        "frontend": {"react": "react_ai", "nextjs": "nextjs_ai"},
-        "mobile": {"flutter": "flutter_ai"},
-        "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"},
+        "frontend": {"react": "react", "nextjs": "nextjs"},
+        "mobile": {"flutter": "flutter"},
+        "backend": {"django-drf": "drf", "fastapi": "fastapi"},
     }
     pack_name = packs[area].get(framework)
     if not pack_name:
@@ -587,7 +591,7 @@ def resolve_token(
         *token["images"]["expected"],
     ]
     token_hash = _digest_paths(project, token_files)
-    agent = workflow_root() / "base_ai" / "agents" / "token-resolution-agent.md"
+    agent = workflow_root() / "base" / "agents" / "token-resolution-agent.md"
     pack = workflow_root() / pack_name
     if not agent.is_file() or not pack.is_dir():
         raise RuntimeError("token resolver behavior pack is unavailable")
@@ -604,9 +608,32 @@ def resolve_token(
             "embedding",
         )
     )
-    capability_pack = workflow_root() / "rag_ai" if rag_relevant else None
-    if capability_pack is not None and not capability_pack.is_dir():
-        raise RuntimeError("selected RAG capability pack is unavailable")
+    scraping_relevant = (
+        area == "backend"
+        and bool(workflow_state.get("capabilities", {}).get("webscraping"))
+        and any(
+            term in token_text
+            for term in (
+                "scrap",
+                "crawl",
+                "selector",
+                "xpath",
+                "iframe",
+                "shadow root",
+                "browser factory",
+            )
+        )
+    )
+    capability_packs = [
+        path
+        for active, path in (
+            (rag_relevant, workflow_root() / "rag"),
+            (scraping_relevant, workflow_root() / "webscraping"),
+        )
+        if active
+    ]
+    if any(not path.is_dir() for path in capability_packs):
+        raise RuntimeError("selected capability pack is unavailable")
 
     if isinstance(existing, dict) and existing.get("status") == "pr_created":
         if existing.get("token_hash") != token_hash:
@@ -685,7 +712,7 @@ def resolve_token(
                 adapter,
                 agent,
                 pack,
-                capability_pack,
+                capability_packs,
                 plan_path,
                 observed_snapshot,
             )
@@ -752,15 +779,33 @@ def resolve_token(
         context_bundle = _token_context_bundle(
             project, token, "implementation", plan_path, prior_failure or None
         )
-        recovery_path = workflow_root() / "base_ai" / "skills" / "recover-failure" / "SKILL.md"
+        recovery_path = workflow_root() / "base" / "skills" / "recover-failure" / "SKILL.md"
         recovery = f"Recovery skill: {recovery_path}\n" if prior_failure else ""
-        capability_line = str(capability_pack) if capability_pack else "Not applicable."
+        capability_line = (
+            "\n".join(str(path) for path in capability_packs)
+            if capability_packs
+            else "Not applicable."
+        )
+        capability_skills: list[Path] = []
+        if rag_relevant:
+            capability_skills.append(
+                workflow_root()
+                / "rag"
+                / "skills"
+                / ("implement-rag-backend" if area == "backend" else "implement-rag-client")
+                / "SKILL.md"
+            )
+        if scraping_relevant:
+            capability_skills.append(
+                workflow_root()
+                / "webscraping"
+                / "skills"
+                / "implement-web-scraping-backend"
+                / "SKILL.md"
+            )
         capability_skill = (
-            capability_pack
-            / "skills"
-            / ("implement-rag-backend" if area == "backend" else "implement-rag-client")
-            / "SKILL.md"
-            if capability_pack
+            "\n".join(str(path) for path in capability_skills)
+            if capability_skills
             else "Not applicable."
         )
         prompt = f"""Implement one explicitly approved project work-token plan.
@@ -774,9 +819,9 @@ Primary agent instruction: {agent}
 Selected framework pack: {pack}
 Selected capability pack: {capability_line}
 Capability skill: {capability_skill}
-Execution skill: {workflow_root() / "base_ai" / "skills" / "execute-task-contract" / "SKILL.md"}
-Verification skill: {workflow_root() / "base_ai" / "skills" / "verify-feature" / "SKILL.md"}
-Context skill: {workflow_root() / "base_ai" / "skills" / "build-context-bundle" / "SKILL.md"}
+Execution skill: {workflow_root() / "base" / "skills" / "execute-task-contract" / "SKILL.md"}
+Verification skill: {workflow_root() / "base" / "skills" / "verify-feature" / "SKILL.md"}
+Context skill: {workflow_root() / "base" / "skills" / "build-context-bundle" / "SKILL.md"}
 Bounded context bundle: {context_bundle}
 {recovery}Current images: {json.dumps(token["images"]["current"])}
 Expected images: {json.dumps(token["images"]["expected"])}

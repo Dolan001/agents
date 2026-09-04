@@ -30,6 +30,7 @@ from .structure import (
     validate_rag_evidence,
     validate_realtime_evidence,
     validate_structure,
+    validate_webscraping_evidence,
 )
 
 _IGNORED_CONTEXT_PARTS = {
@@ -233,15 +234,25 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             workflow_root() / "schemas" / "rag-verification.schema.json",
             phase,
         )
+    if state.get("capabilities", {}).get("webscraping") and phase in {
+        "backend",
+        "integration",
+        "testing",
+    }:
+        validate_webscraping_evidence(
+            project,
+            workflow_root() / "schemas" / "webscraping-verification.schema.json",
+            phase,
+        )
 
 
 def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
-    candidates = [root / "base_ai" / "agents" / f"{name}.md", root / "agents" / f"{name}.md"]
+    candidates = [root / "base" / "agents" / f"{name}.md", root / "agents" / f"{name}.md"]
     selected = {
-        "frontend": {"nextjs": "nextjs_ai", "react": "react_ai"}.get(frameworks["frontend"]),
-        "mobile": {"flutter": "flutter_ai"}.get(frameworks["mobile"]),
-        "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"}.get(frameworks["backend"]),
-        "deployment": {"aws": "aws_ai"}.get(frameworks["deployment"]),
+        "frontend": {"nextjs": "nextjs", "react": "react"}.get(frameworks["frontend"]),
+        "mobile": {"flutter": "flutter"}.get(frameworks["mobile"]),
+        "backend": {"django-drf": "drf", "fastapi": "fastapi"}.get(frameworks["backend"]),
+        "deployment": {"aws": "aws"}.get(frameworks["deployment"]),
     }
     for pack in selected.values():
         if pack:
@@ -280,10 +291,10 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
 
 def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path | None:
     mapping = {
-        "frontend": {"nextjs": "nextjs_ai", "react": "react_ai"},
-        "mobile": {"flutter": "flutter_ai"},
-        "backend": {"django-drf": "drf_ai", "fastapi": "fastapi_ai"},
-        "deployment": {"aws": "aws_ai"},
+        "frontend": {"nextjs": "nextjs", "react": "react"},
+        "mobile": {"flutter": "flutter"},
+        "backend": {"django-drf": "drf", "fastapi": "fastapi"},
+        "deployment": {"aws": "aws"},
     }
     if phase not in mapping:
         return None
@@ -332,7 +343,7 @@ def _skill_paths(
     names = ["build-context-bundle", *base_names[phase]]
     if retrying:
         names.append("recover-failure")
-    paths = [root / "base_ai" / "skills" / name / "SKILL.md" for name in names]
+    paths = [root / "base" / "skills" / name / "SKILL.md" for name in names]
     rag_active = bool((capabilities or {}).get("rag"))
     feature_text = json.dumps(feature or {}).lower()
     rag_feature = any(
@@ -368,10 +379,40 @@ def _skill_paths(
                 "verify-rag-system" if node.startswith("verify-") else "implement-rag-client"
             )
         if rag_skill:
-            paths.append(root / "rag_ai" / "skills" / rag_skill / "SKILL.md")
-    if phase in {"frontend", "mobile"} and (
-        node.startswith("sync-") or node.startswith("verify-")
-    ):
+            paths.append(root / "rag" / "skills" / rag_skill / "SKILL.md")
+    scraping_active = bool((capabilities or {}).get("webscraping"))
+    scraping_feature = any(
+        term in feature_text
+        for term in (
+            "web scraping",
+            "web-scraping",
+            "webscraping",
+            "scraper",
+            "scraping",
+            "crawl",
+            "selector",
+            "xpath",
+            "iframe",
+        )
+    )
+    if scraping_active:
+        scraping_skills: list[str] = []
+        scraping_verification_node = node.startswith("verify-")
+        if phase == "requirements":
+            scraping_skills = ["design-web-scraping"]
+        elif scraping_verification_node or phase == "testing":
+            scraping_skills = ["verify-web-scraping"]
+        elif phase == "backend" and scraping_feature:
+            scraping_skills = [
+                "discover-target-selectors",
+                "implement-web-scraping-backend",
+            ]
+        elif phase == "integration" and scraping_feature:
+            scraping_skills = ["implement-web-scraping-backend"]
+        paths.extend(
+            root / "webscraping" / "skills" / skill / "SKILL.md" for skill in scraping_skills
+        )
+    if phase in {"frontend", "mobile"} and (node.startswith("sync-") or node.startswith("verify-")):
         paths.append(root / "skills" / "sync-design" / "SKILL.md")
     pack = _selected_pack(root, phase, frameworks)
     if pack is not None:
@@ -394,8 +435,7 @@ def _skill_paths(
             selected_skills = [
                 path
                 for path in available
-                if path.parent.name
-                in {"verify-aws-deployment", "verify-aws-disaster-recovery"}
+                if path.parent.name in {"verify-aws-deployment", "verify-aws-disaster-recovery"}
             ]
         elif node == "scaffold-target-monorepo":
             selected_skills = [path for path in available if path.parent.name.startswith("create-")]
@@ -506,24 +546,25 @@ def _control_paths(
             paths.append(root / "schemas" / "deployment-readiness.schema.json")
     if (capabilities or {}).get("rag"):
         feature_text = json.dumps(feature or {}).lower()
-        relevant = phase == "requirements" or (feature is not None and any(
-            term in feature_text
-            for term in (
-                "rag",
-                "retrieval",
-                "semantic",
-                "knowledge base",
-                "knowledge-base",
-                "citation",
-                "embedding",
+        relevant = phase == "requirements" or (
+            feature is not None
+            and any(
+                term in feature_text
+                for term in (
+                    "rag",
+                    "retrieval",
+                    "semantic",
+                    "knowledge base",
+                    "knowledge-base",
+                    "citation",
+                    "embedding",
+                )
             )
-        ))
+        )
         rag_phases = {"requirements", "frontend", "mobile", "backend", "integration", "testing"}
         rag_verification_node = node.startswith("verify-") and not node.endswith("-design")
-        if phase in rag_phases and (
-            relevant or rag_verification_node or phase == "testing"
-        ):
-            lifecycle = read_json(root / "rag_ai" / "hooks" / "lifecycle.json")
+        if phase in rag_phases and (relevant or rag_verification_node or phase == "testing"):
+            lifecycle = read_json(root / "rag" / "hooks" / "lifecycle.json")
             raw_rag_instructions = (
                 lifecycle.get("instructions") if isinstance(lifecycle, dict) else None
             )
@@ -534,25 +575,78 @@ def _control_paths(
                 raise RuntimeError("RAG hook instructions are invalid")
             rag_instructions: dict[str, str] = raw_rag_instructions
             verifying = rag_verification_node or phase == "testing"
-            events = ["pre_task", "pre_verify", "pre_commit"] if verifying else [
-                "pre_task",
-                "pre_write",
-                "post_write",
-            ]
-            paths.extend(root / "rag_ai" / rag_instructions[event] for event in events)
+            events = (
+                ["pre_task", "pre_verify", "pre_commit"]
+                if verifying
+                else [
+                    "pre_task",
+                    "pre_write",
+                    "post_write",
+                ]
+            )
+            paths.extend(root / "rag" / rag_instructions[event] for event in events)
             paths.extend(
                 [
-                    root / "rag_ai" / "rules" / "architecture.md",
-                    root / "rag_ai" / "rules" / "project-structure.md",
-                    root
-                    / "rag_ai"
-                    / "rules"
-                    / ("verification.md" if verifying else "generation.md"),
-                    root / "rag_ai" / "hooks" / "lifecycle.json",
+                    root / "rag" / "rules" / "architecture.md",
+                    root / "rag" / "rules" / "project-structure.md",
+                    root / "rag" / "rules" / ("verification.md" if verifying else "generation.md"),
+                    root / "rag" / "hooks" / "lifecycle.json",
                 ]
             )
             if verifying:
                 paths.append(root / "schemas" / "rag-verification.schema.json")
+    if (capabilities or {}).get("webscraping"):
+        feature_text = json.dumps(feature or {}).lower()
+        relevant = phase == "requirements" or (
+            feature is not None
+            and any(
+                term in feature_text
+                for term in (
+                    "scrap",
+                    "crawl",
+                    "selector",
+                    "xpath",
+                    "iframe",
+                    "website extraction",
+                )
+            )
+        )
+        scraping_phases = {"requirements", "backend", "integration", "testing"}
+        scraping_verification_node = node.startswith("verify-")
+        if phase in scraping_phases and (
+            relevant or scraping_verification_node or phase == "testing"
+        ):
+            scraping_root = root / "webscraping"
+            scraping_lifecycle = read_json(scraping_root / "hooks" / "lifecycle.json")
+            raw_scraping_instructions = (
+                scraping_lifecycle.get("instructions")
+                if isinstance(scraping_lifecycle, dict)
+                else None
+            )
+            if not isinstance(raw_scraping_instructions, dict) or not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in raw_scraping_instructions.items()
+            ):
+                raise RuntimeError("web-scraping hook instructions are invalid")
+            verifying = scraping_verification_node or phase == "testing"
+            scraping_events = (
+                ["pre_task", "pre_verify", "pre_commit"]
+                if verifying
+                else ["pre_task", "pre_write", "post_write"]
+            )
+            paths.extend(
+                scraping_root / raw_scraping_instructions[event] for event in scraping_events
+            )
+            paths.extend(
+                [
+                    scraping_root / "rules" / "architecture.md",
+                    scraping_root / "rules" / "project-structure.md",
+                    scraping_root / "rules" / ("verification.md" if verifying else "generation.md"),
+                    scraping_root / "hooks" / "lifecycle.json",
+                ]
+            )
+            if verifying:
+                paths.append(root / "schemas" / "webscraping-verification.schema.json")
     if any(not path.is_file() for path in paths):
         raise RuntimeError("workflow control instruction is missing")
     return paths
@@ -627,9 +721,7 @@ def _node_input_files(
         if scoped:
             files = scoped
         files = {
-            path
-            for path in files
-            if Path(path).name.lower() not in {"prd.md", "requirements.json"}
+            path for path in files if Path(path).name.lower() not in {"prd.md", "requirements.json"}
         }
         test_matrix = project / "artifacts" / "tests" / "command-results.json"
         if phase == "testing" and test_matrix.is_file():
@@ -660,9 +752,7 @@ def _build_context_bundle(
     config = read_json(workflow_root() / "config" / "pipeline.json")
     context = config["execution"]["context"]
     maximum_files = int(
-        context["maximum_files_per_feature"]
-        if feature
-        else context["maximum_files_per_task"]
+        context["maximum_files_per_feature"] if feature else context["maximum_files_per_task"]
     )
     maximum_characters = int(
         context["maximum_characters_per_feature"]
@@ -761,7 +851,7 @@ def _prompt(
     pack = _selected_pack(root, phase, state["frameworks"])
     manifest = root / "pipeline" / "manifests" / f"{phase}.json"
     gate = root / "gates" / "contracts" / f"{phase}.json"
-    pack_line = str(pack) if pack else "Use base_ai only for this phase."
+    pack_line = str(pack) if pack else "Use base only for this phase."
     resolved_skills = _skill_paths(
         root,
         phase,
@@ -793,19 +883,29 @@ def _prompt(
             feature,
         )
     )
-    capability_agent = "Not applicable."
-    if any(root / "rag_ai" in path.parents for path in resolved_skills):
+    capability_agents: list[str] = []
+    if any(root / "rag" in path.parents for path in resolved_skills):
         rag_agent = (
             "rag-independent-verifier"
-            if (
-                node["id"].startswith("verify-") and not node["id"].endswith("-design")
-            )
+            if (node["id"].startswith("verify-") and not node["id"].endswith("-design"))
             or phase == "testing"
             else "rag-solution-architect"
             if phase == "requirements"
             else "rag-system-implementer"
         )
-        capability_agent = str(root / "rag_ai" / "agents" / f"{rag_agent}.md")
+        capability_agents.append(str(root / "rag" / "agents" / f"{rag_agent}.md"))
+    if any(root / "webscraping" in path.parents for path in resolved_skills):
+        scraping_agent = (
+            "web-scraping-independent-verifier"
+            if node["id"].startswith("verify-") or phase == "testing"
+            else "web-scraping-architect"
+            if phase == "requirements"
+            else "selector-discovery-agent"
+            if any(path.parent.name == "discover-target-selectors" for path in resolved_skills)
+            else "web-scraping-implementer"
+        )
+        capability_agents.append(str(root / "webscraping" / "agents" / f"{scraping_agent}.md"))
+    capability_agent = "\n".join(capability_agents) or "Not applicable."
     retry = (
         f"\nRetry context from the prior failed attempt:\n{retry_context}\n"
         if retry_context
@@ -1178,9 +1278,7 @@ def execute_phase(
                     identity,
                     adapter,
                     failure_reasons,
-                    0
-                    if nonretryable_class
-                    else min(len(failure_reasons), maximum_retries),
+                    0 if nonretryable_class else min(len(failure_reasons), maximum_retries),
                     resolved,
                     nonretryable_class,
                 )

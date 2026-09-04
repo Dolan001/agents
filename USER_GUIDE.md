@@ -110,8 +110,20 @@ this command when a validated `PRD.md` already exists.
 The generated capability matrix always records `RAG: Required` or `RAG: Not required`. When RAG is
 required, intake also resolves source formats and retention, source ACLs, ingestion/versioning,
 embedding and provider policy, hybrid retrieval, citations/abstention, and measurable quality,
-latency, security, and cost gates. `$start-build` activates `rag_ai` automatically; there is no RAG
+latency, security, and cost gates. `$start-build` activates `rag` automatically; there is no RAG
 framework flag and no separate RAG application command.
+
+It also records `Web scraping: Required` or `Web scraping: Not required`. When required, intake asks
+only for missing website scope, target fields, access/authentication ownership, navigation complexity,
+schedule and limits, PostgreSQL identity/update rules, and sanitized evidence policy. `$start-build`
+then loads `webscraping` only for requirements, relevant backend/integration work, and independent
+testing. It never creates a separate scraper application or loads scraping guidance for unrelated
+features.
+
+Generated site adapters store approved selector routes as versioned YAML: URL/page state, window,
+nested iframe chain, open shadow-root chain, reveal actions, primary ID/semantic/CSS/XPath selector,
+fallbacks, transforms, validation and structural fingerprint. Fixture verification is the default;
+live discovery or smoke testing requires an explicitly approved domain/account/page scope.
 
 ## Shared flags for start and resume skills
 

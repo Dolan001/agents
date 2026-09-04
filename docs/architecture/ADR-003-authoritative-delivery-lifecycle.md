@@ -4,8 +4,8 @@ Status: accepted
 
 The workflow repositories contain behavior and control logic, never a demonstration
 application. A user supplies a separate target monorepo with a required PRD and
-optional design evidence. `base_ai` is private shared behavior; `drf_ai`, `fastapi_ai`,
-`flutter_ai`, `react_ai`, `nextjs_ai`, `rag_ai`, and `aws_ai` describe exact generated structures and
+optional design evidence. `base` is private shared behavior; `drf`, `fastapi`,
+`flutter`, `react`, `nextjs`, `rag`, `webscraping`, and `aws` describe exact generated structures and
 production decisions; `ai_workflow` links them as pinned submodules and executes the lifecycle.
 
 The default lifecycle is strictly sequential:
@@ -29,11 +29,16 @@ checks, artifact contracts, independent verification, and fail-closed gates, not
 loading one enormous prompt. Time and tokens are reduced through bounded context,
 focused checks, checkpoints, and verified artifact reuse.
 
-`rag_ai` is a cross-stack, requirement-triggered capability pack. It augments the selected backend
+`rag` is a cross-stack, requirement-triggered capability pack. It augments the selected backend
 and clients, defaults to PostgreSQL full-text plus pgvector hybrid retrieval, and requires separate
 retrieval/generation evaluation and zero-leak authorization evidence. It is not a new lifecycle
 phase or a standalone generated application, which preserves the existing critical path and avoids
 loading RAG context for ordinary products.
+
+`webscraping` is a backend-only, requirement-triggered capability pack. It augments the selected DRF
+or FastAPI backend with approved site adapters, versioned selector/context routes, a canonical UC
+factory, durable execution and independent fixture-first verification. It is not loaded for ordinary
+backend work and is not a separate generated application.
 
 Application changes occur only on `ai/<github-user>/<feature>` branches. A feature can
 be committed only after independent verification and the test/security gate; staging

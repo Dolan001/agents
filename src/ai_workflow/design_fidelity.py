@@ -320,9 +320,9 @@ def _selected_targets(state: dict[str, Any], requested: str) -> list[tuple[str, 
 
 def _resources(target: str, framework: str) -> tuple[Path, Path, Path, list[Path], list[Path]]:
     root = workflow_root()
-    pack_name = {"react": "react_ai", "nextjs": "nextjs_ai", "flutter": "flutter_ai"}[framework]
+    pack_name = {"react": "react", "nextjs": "nextjs", "flutter": "flutter"}[framework]
     pack = root / pack_name
-    resolver = root / "base_ai" / "agents" / "design-fidelity-resolver.md"
+    resolver = root / "base" / "agents" / "design-fidelity-resolver.md"
     implementers = sorted((pack / "agents").glob("*-implementer.md"))
     verifiers = sorted((pack / "agents").glob("*-independent-verifier.md"))
     implement_skills = sorted((pack / "skills").glob("implement-*/SKILL.md"))

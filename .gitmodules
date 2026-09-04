@@ -1,32 +1,36 @@
-[submodule "base_ai"]
-	path = base_ai
-	url = https://github.com/Dolan001/base_ai.git
+[submodule "base"]
+	path = base
+	url = https://github.com/Dolan001/base.git
 	branch = dev
-[submodule "drf_ai"]
-	path = drf_ai
-	url = https://github.com/Dolan001/drf_ai.git
+[submodule "drf"]
+	path = drf
+	url = https://github.com/Dolan001/drf.git
 	branch = dev
-[submodule "fastapi_ai"]
-	path = fastapi_ai
-	url = https://github.com/Dolan001/fastapi_ai.git
+[submodule "fastapi"]
+	path = fastapi
+	url = https://github.com/Dolan001/fastapi.git
 	branch = dev
-[submodule "nextjs_ai"]
-	path = nextjs_ai
-	url = https://github.com/Dolan001/nextjs_ai.git
+[submodule "nextjs"]
+	path = nextjs
+	url = https://github.com/Dolan001/nextjs.git
 	branch = dev
-[submodule "react_ai"]
-	path = react_ai
-	url = https://github.com/Dolan001/react_ai.git
+[submodule "react"]
+	path = react
+	url = https://github.com/Dolan001/react.git
 	branch = dev
-[submodule "flutter_ai"]
-	path = flutter_ai
-	url = https://github.com/Dolan001/flutter_ai.git
+[submodule "flutter"]
+	path = flutter
+	url = https://github.com/Dolan001/flutter.git
 	branch = dev
-[submodule "aws_ai"]
-	path = aws_ai
-	url = https://github.com/Dolan001/aws_ai.git
+[submodule "aws"]
+	path = aws
+	url = https://github.com/Dolan001/aws.git
 	branch = dev
-[submodule "rag_ai"]
-	path = rag_ai
-	url = https://github.com/Dolan001/rag_ai.git
+[submodule "rag"]
+	path = rag
+	url = https://github.com/Dolan001/rag.git
+	branch = dev
+[submodule "webscraping"]
+	path = webscraping
+	url = https://github.com/Dolan001/webscraping.git
 	branch = dev

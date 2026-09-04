@@ -105,11 +105,11 @@ def test_framework_packs_have_production_roles_and_progressive_references() -> N
 def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents() -> None:
     root = Path(__file__).resolve().parents[1]
     cases = (
-        ("frontend", "react", "react_ai"),
-        ("frontend", "nextjs", "nextjs_ai"),
-        ("mobile", "flutter", "flutter_ai"),
-        ("backend", "django-drf", "drf_ai"),
-        ("backend", "fastapi", "fastapi_ai"),
+        ("frontend", "react", "react"),
+        ("frontend", "nextjs", "nextjs"),
+        ("mobile", "flutter", "flutter"),
+        ("backend", "django-drf", "drf"),
+        ("backend", "fastapi", "fastapi"),
     )
     for phase, framework, pack_name in cases:
         frameworks = {
@@ -177,7 +177,7 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
 
 def test_aws_deployment_pack_is_code_free_and_routes_by_role() -> None:
     root = Path(__file__).resolve().parents[1]
-    pack = root / "aws_ai"
+    pack = root / "aws"
     assert pack.is_dir()
     files = [path for path in pack.rglob("*") if path.is_file() and ".git" not in path.parts]
     assert not [path for path in files if path.suffix in FORBIDDEN_SUFFIXES]
@@ -210,7 +210,7 @@ def test_aws_deployment_pack_is_code_free_and_routes_by_role() -> None:
 
 def test_rag_capability_pack_is_code_free_and_routes_only_when_active() -> None:
     root = Path(__file__).resolve().parents[1]
-    pack = root / "rag_ai"
+    pack = root / "rag"
     files = [path for path in pack.rglob("*") if path.is_file() and ".git" not in path.parts]
     assert not [path for path in files if path.suffix in FORBIDDEN_SUFFIXES]
     agents = json.loads((pack / "agents" / "catalog.json").read_text())
@@ -257,9 +257,80 @@ def test_rag_capability_pack_is_code_free_and_routes_only_when_active() -> None:
     assert root / "schemas" / "rag-verification.schema.json" in controls
 
 
+def test_webscraping_pack_is_backend_only_and_routes_only_when_active() -> None:
+    root = Path(__file__).resolve().parents[1]
+    pack = root / "webscraping"
+    config = json.loads((root / "config" / "framework-packs.json").read_text())
+    specification = config["capability_packs"]["webscraping"]
+    assert specification["backend_only"] is True
+    assert specification["phases"] == ["requirements", "backend", "integration", "testing"]
+
+    files = [path for path in pack.rglob("*") if path.is_file() and ".git" not in path.parts]
+    assert not [path for path in files if path.suffix in FORBIDDEN_SUFFIXES]
+    agents = json.loads((pack / "agents" / "catalog.json").read_text())
+    skills = json.loads((pack / "skills" / "catalog.json").read_text())
+    assert agents["framework"] == "webscraping"
+    assert skills["framework"] == "webscraping"
+    assert len(agents["agents"]) == 4
+
+    frameworks = {
+        "frontend": "react",
+        "mobile": "unknown",
+        "backend": "fastapi",
+        "deployment": "unknown",
+    }
+    feature = {
+        "description": (
+            "Scrape approved ticket websites, discover selectors and nested iframe targets"
+        )
+    }
+    inactive = _skill_paths(
+        root,
+        "backend",
+        "implement-backend-slices",
+        frameworks,
+        feature=feature,
+        capabilities={"webscraping": False},
+    )
+    assert not any(pack in path.parents for path in inactive)
+
+    active = _skill_paths(
+        root,
+        "backend",
+        "implement-backend-slices",
+        frameworks,
+        feature=feature,
+        capabilities={"webscraping": True},
+    )
+    assert {path.parent.name for path in active if pack in path.parents} == {
+        "discover-target-selectors",
+        "implement-web-scraping-backend",
+    }
+    controls = _control_paths(
+        root,
+        "backend",
+        "verify-backend",
+        frameworks,
+        {"webscraping": True},
+    )
+    assert pack / "rules" / "verification.md" in controls
+    assert pack / "hooks" / "pre-verify.md" in controls
+    assert root / "schemas" / "webscraping-verification.schema.json" in controls
+
+    frontend = _skill_paths(
+        root,
+        "frontend",
+        "implement-frontend-slices",
+        frameworks,
+        feature=feature,
+        capabilities={"webscraping": True},
+    )
+    assert not any(pack in path.parents for path in frontend)
+
+
 def test_backend_packs_require_postgresql_domains_and_database_api_guidance() -> None:
     root = Path(__file__).resolve().parents[1]
-    for pack_name in ("drf_ai", "fastapi_ai"):
+    for pack_name in ("drf", "fastapi"):
         pack = root / pack_name
         structure = json.loads((pack / "rules" / "project-structure.json").read_text())
         assert structure["minimum_domain_instances"] == 1
@@ -281,7 +352,7 @@ def test_backend_packs_require_postgresql_domains_and_database_api_guidance() ->
             "constraint",
             "index",
             "query",
-            "serializer" if pack_name == "drf_ai" else "schema",
-            "url" if pack_name == "drf_ai" else "router",
+            "serializer" if pack_name == "drf" else "schema",
+            "url" if pack_name == "drf" else "router",
         ):
             assert concern in guidance, f"{pack_name} lacks {concern} guidance"

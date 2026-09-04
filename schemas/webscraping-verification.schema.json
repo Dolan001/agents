@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Web-scraping verification evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "capability",
+    "phase",
+    "backend",
+    "fixture_first",
+    "sites",
+    "checks",
+    "live_scope",
+    "unresolved_critical",
+    "verified",
+    "checked_at"
+  ],
+  "properties": {
+    "version": {"const": "1.0.0"},
+    "capability": {"const": "webscraping"},
+    "phase": {"enum": ["backend", "integration", "testing"]},
+    "backend": {"enum": ["django-drf", "fastapi"]},
+    "fixture_first": {"const": true},
+    "sites": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "site",
+          "registry_version",
+          "fixture_ids",
+          "required_field_accuracy",
+          "required_field_completeness",
+          "selector_trials_passed",
+          "selector_trials_total",
+          "nested_contexts_tested",
+          "fallbacks_tested"
+        ],
+        "properties": {
+          "site": {"type": "string", "minLength": 1},
+          "registry_version": {"type": "string", "minLength": 1},
+          "fixture_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "required_field_accuracy": {"type": "number", "minimum": 0, "maximum": 1},
+          "required_field_completeness": {"type": "number", "minimum": 0, "maximum": 1},
+          "selector_trials_passed": {"type": "integer", "minimum": 1},
+          "selector_trials_total": {"type": "integer", "minimum": 1},
+          "nested_contexts_tested": {"type": "boolean"},
+          "fallbacks_tested": {"type": "boolean"}
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["idempotency", "no_change_success", "error_taxonomy", "bounded_execution", "browser_cleanup", "secret_scan", "evidence_retention"],
+      "properties": {
+        "idempotency": {"const": true},
+        "no_change_success": {"const": true},
+        "error_taxonomy": {"const": true},
+        "bounded_execution": {"const": true},
+        "browser_cleanup": {"const": true},
+        "secret_scan": {"const": true},
+        "evidence_retention": {"const": true}
+      }
+    },
+    "live_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "approved_domains", "page_limit"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "approved_domains": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "page_limit": {"type": "integer", "minimum": 0}
+      }
+    },
+    "unresolved_critical": {"type": "array", "maxItems": 0},
+    "verified": {"const": true},
+    "checked_at": {"type": "string", "format": "date-time"}
+  }
+}

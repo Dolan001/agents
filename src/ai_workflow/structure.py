@@ -151,9 +151,7 @@ def _conditional_path_groups(
             for candidate in target.glob(glob):
                 resolved = candidate.resolve()
                 if resolved != target and target not in resolved.parents:
-                    raise RuntimeError(
-                        f"framework conditional path escapes target: {name}"
-                    )
+                    raise RuntimeError(f"framework conditional path escapes target: {name}")
                 triggered = True
                 break
             if triggered:
@@ -161,9 +159,7 @@ def _conditional_path_groups(
         if not triggered:
             continue
         active.append(name)
-        group_missing, group_wrong_type = _missing_or_wrong_type(
-            target, required, set(directories)
-        )
+        group_missing, group_wrong_type = _missing_or_wrong_type(target, required, set(directories))
         missing.extend(f"{name}:{relative}" for relative in group_missing)
         wrong_type.extend(f"{name}:{relative}" for relative in group_wrong_type)
         for rule in patterns:
@@ -216,9 +212,7 @@ def _conditional_path_groups(
                         f"framework source file is not UTF-8: {candidate}"
                     ) from error
             if not matched:
-                missing_patterns.append(
-                    {"group": name, "rule": rule_id, "message": message}
-                )
+                missing_patterns.append({"group": name, "rule": rule_id, "message": message})
     return active, missing, wrong_type, missing_patterns
 
 
@@ -313,14 +307,18 @@ def _domain_instances(target: Path, contract: dict[str, Any]) -> list[Path]:
     if not isinstance(excluded, list) or not all(isinstance(item, str) for item in excluded):
         raise RuntimeError("framework domain exclusions are invalid")
     excluded_paths = {(target / item).resolve() for item in excluded}
-    instances = [
-        child
-        for child in sorted(parent.iterdir())
-        if child.is_dir()
-        and child.resolve() not in excluded_paths
-        and (not suffix or child.as_posix().endswith(suffix))
-        and not child.name.startswith((".", "__"))
-    ] if parent.is_dir() else []
+    instances = (
+        [
+            child
+            for child in sorted(parent.iterdir())
+            if child.is_dir()
+            and child.resolve() not in excluded_paths
+            and (not suffix or child.as_posix().endswith(suffix))
+            and not child.name.startswith((".", "__"))
+        ]
+        if parent.is_dir()
+        else []
+    )
     if len(instances) < minimum:
         raise RuntimeError(
             f"generated backend structure requires at least {minimum} domain instance(s)"
@@ -474,7 +472,8 @@ def _module_organization_violations(
                 )
                 continue
             modules = [
-                path for path in package.iterdir()
+                path
+                for path in package.iterdir()
                 if path.is_file()
                 and path.name not in {"__init__.py"}
                 and (not extensions or path.suffix in extensions)
@@ -513,9 +512,7 @@ def _module_organization_violations(
             for glob in globs:
                 for path in instance.glob(glob):
                     lines = (
-                        len(path.read_text(encoding="utf-8").splitlines())
-                        if path.is_file()
-                        else 0
+                        len(path.read_text(encoding="utf-8").splitlines()) if path.is_file() else 0
                     )
                     if lines > maximum:
                         violations.append(
@@ -616,8 +613,10 @@ def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
     if not isinstance(raw_required_text, dict):
         raise RuntimeError("framework required text contract is invalid")
     for relative, values in raw_required_text.items():
-        if not isinstance(relative, str) or not isinstance(values, list) or not all(
-            isinstance(value, str) and value for value in values
+        if (
+            not isinstance(relative, str)
+            or not isinstance(values, list)
+            or not all(isinstance(value, str) and value for value in values)
         ):
             raise RuntimeError("framework required text contract is invalid")
         path = _contract_path(target, relative)
@@ -703,14 +702,11 @@ def validate_database_evidence(
     )
     if errors:
         summaries = [
-            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
-            for error in errors
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
         ]
         raise RuntimeError(f"database verification evidence is invalid: {summaries}")
     if evidence["framework"] != expected_framework:
-        raise RuntimeError(
-            "database verification framework does not match the selected backend"
-        )
+        raise RuntimeError("database verification framework does not match the selected backend")
     _reject_secret_evidence(evidence, "database verification")
     return evidence
 
@@ -726,8 +722,7 @@ def validate_deployment_evidence(project: Path, schema_path: Path) -> dict[str, 
     )
     if errors:
         summaries = [
-            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
-            for error in errors
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
         ]
         raise RuntimeError(f"deployment readiness evidence is invalid: {summaries}")
     _reject_secret_evidence(evidence, "deployment readiness")
@@ -766,8 +761,7 @@ def validate_backend_evidence(
     )
     if errors:
         summaries = [
-            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
-            for error in errors
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
         ]
         raise RuntimeError(f"backend verification evidence is invalid: {summaries}")
     if evidence["framework"] != expected_framework:
@@ -805,8 +799,7 @@ def validate_realtime_evidence(
     )
     if errors:
         summaries = [
-            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
-            for error in errors
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
         ]
         raise RuntimeError(f"{phase} realtime verification evidence is invalid: {summaries}")
     if evidence["phase"] != phase:
@@ -815,9 +808,7 @@ def validate_realtime_evidence(
     return evidence
 
 
-def validate_rag_evidence(
-    project: Path, schema_path: Path, phase: str
-) -> dict[str, Any]:
+def validate_rag_evidence(project: Path, schema_path: Path, phase: str) -> dict[str, Any]:
     evidence = read_json(project / ".ai" / "evidence" / "rag" / f"{phase}.json")
     schema = read_json(schema_path)
     if not isinstance(evidence, dict) or not isinstance(schema, dict):
@@ -828,8 +819,7 @@ def validate_rag_evidence(
     )
     if errors:
         summaries = [
-            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}"
-            for error in errors
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
         ]
         raise RuntimeError(f"{phase} RAG verification evidence is invalid: {summaries}")
     if evidence["phase"] != phase:
@@ -862,6 +852,35 @@ def validate_rag_evidence(
             if not any(any(term in name for term in terms) for name in metric_names):
                 raise RuntimeError(f"backend RAG evidence is missing metric: {label}")
     _reject_secret_evidence(evidence, "RAG verification")
+    return evidence
+
+
+def validate_webscraping_evidence(project: Path, schema_path: Path, phase: str) -> dict[str, Any]:
+    evidence = read_json(project / ".ai" / "evidence" / "webscraping" / f"{phase}.json")
+    schema = read_json(schema_path)
+    if not isinstance(evidence, dict) or not isinstance(schema, dict):
+        raise RuntimeError(f"{phase} web-scraping verification evidence or schema is missing")
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(evidence),
+        key=lambda item: list(item.path),
+    )
+    if errors:
+        summaries = [
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
+        ]
+        raise RuntimeError(f"{phase} web-scraping verification evidence is invalid: {summaries}")
+    if evidence["phase"] != phase:
+        raise RuntimeError("web-scraping verification phase does not match the current phase")
+    if not evidence["verified"] or evidence["unresolved_critical"]:
+        raise RuntimeError("web-scraping verification is not release-ready")
+    for site in evidence["sites"]:
+        if site["required_field_accuracy"] < 1 or site["required_field_completeness"] < 1:
+            raise RuntimeError(
+                f"web-scraping required fields are not exact for site: {site['site']}"
+            )
+        if site["selector_trials_passed"] != site["selector_trials_total"]:
+            raise RuntimeError(f"web-scraping selectors are unstable for site: {site['site']}")
+    _reject_secret_evidence(evidence, "web-scraping verification")
     return evidence
 
 

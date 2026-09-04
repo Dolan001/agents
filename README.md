@@ -143,8 +143,8 @@ equivalent CLI invocation, see [`USER_GUIDE.md`](USER_GUIDE.md).
 
 ### 1. Install and pin the workflow
 
-The real project stores `ai_workflow` directly at `.agents`. The nested `base_ai`,
-`drf_ai`, `fastapi_ai`, `flutter_ai`, `react_ai`, `nextjs_ai`, `rag_ai`, and `aws_ai` repositories are initialized
+The real project stores `ai_workflow` directly at `.agents`. The nested `base`,
+`drf`, `fastapi`, `flutter`, `react`, `nextjs`, `rag`, and `aws` repositories are initialized
 recursively. Commit `.gitmodules` and the `.agents` gitlink so every collaborator gets
 the same reviewed workflow version:
 
@@ -365,7 +365,7 @@ the raw captures, accessibility, responsiveness, focused tests, and production b
 
 ### 10. Build the optional Flutter mobile application
 
-When selected, the mobile phase loads only `flutter_ai`, establishes any missing
+When selected, the mobile phase loads only `flutter`, establishes any missing
 monorepo root structure, and generates one application under `apps/mobile/` for Android
 and iOS. It creates feature-first boundaries, validated environments, navigation,
 localization, adaptive design, typed networking, secure storage, lifecycle and offline
@@ -433,7 +433,7 @@ and relevant backend or client runtime checks.
 RAG is also conditional. The PRD generator records `RAG: Required` or `RAG: Not required`, and
 existing PRDs are deterministically recognized from explicit retrieval-augmented generation,
 semantic retrieval, document Q&A, grounded-answer, or knowledge-base requirements. When active,
-`rag_ai` augments the selected framework packs rather than generating a separate service.
+`rag` augments the selected framework packs rather than generating a separate service.
 
 The default production design uses PostgreSQL full-text search plus pgvector hybrid retrieval,
 durable Celery/Redis ingestion, immutable source and embedding versions, authorization inside every
@@ -447,6 +447,19 @@ from generation: recall/ranking, zero ACL leakage, groundedness, citation precis
 unanswerable-query behavior, prompt injection and poisoned sources, deletion/reindexing, provider
 degradation, latency, and per-query usage/cost thresholds. Approximate retrieval is compared with an
 exact-search baseline so a visually convincing demo cannot pass with poor recall.
+
+Web scraping is a separate backend-only conditional capability. The PRD generator records
+`Web scraping: Required` only when requirements name websites or approved URL scopes and data to
+extract. When active, `webscraping` augments the selected DRF or FastAPI backend; unrelated features
+do not load its agents, skills, rules, hooks, or references.
+
+Each generated site owns an adapter and versioned YAML selector registry containing navigation/page
+state, window, nested iframe and open shadow-root chains, prerequisite actions, primary and fallback
+ID/class/semantic/CSS/XPath locators, transforms, validation and structural fingerprints. Browser-backed
+sites receive UC only through the canonical centralized factory. Durable Celery workers, Redis leases,
+PostgreSQL idempotency, bounded execution, no-change success, selector-drift diagnosis, sanitized
+fixtures and independent accuracy/cleanup evidence are mandatory. CAPTCHA, queues, access denials and
+other protective controls stop and report the job; they are not bypassed.
 
 ### 12. Integrate selected clients and backend
 
@@ -753,7 +766,7 @@ retained. It is not a normal recovery step.
 
 ## Linked repositories
 
-The workflow pins exact reviewed commits for eight behavior repositories while each
+The workflow pins exact reviewed commits for nine behavior repositories while each
 submodule records `branch = dev` for explicit update operations:
 
 ```text
@@ -766,19 +779,20 @@ submodule records `branch = dev` for explicit update operations:
 ├── pipeline/                # manifests, evaluation, and recovery policy
 ├── rules/                   # shared and phase scope rules
 ├── skills/                  # Codex-discoverable user entrypoints
-├── base_ai/                 # shared agents and skills
-├── aws_ai/                  # AWS infrastructure and deployment behavior pack
-├── drf_ai/                  # Django DRF behavior pack
-├── fastapi_ai/              # FastAPI behavior pack
-├── flutter_ai/              # Flutter Android/iOS behavior pack
-├── nextjs_ai/               # Next.js behavior pack
-├── rag_ai/                  # Cross-stack RAG capability pack
-└── react_ai/                # React behavior pack
+├── base/                    # shared agents and skills
+├── aws/                     # AWS infrastructure and deployment behavior pack
+├── drf/                     # Django DRF behavior pack
+├── fastapi/                 # FastAPI behavior pack
+├── flutter/                 # Flutter Android/iOS behavior pack
+├── nextjs/                  # Next.js behavior pack
+├── rag/                     # Cross-stack RAG capability pack
+├── react/                   # React behavior pack
+└── webscraping/             # backend-only scraping capability pack
 ```
 
-The linked repositories are `Dolan001/base_ai`, `Dolan001/drf_ai`,
-`Dolan001/fastapi_ai`, `Dolan001/flutter_ai`, `Dolan001/nextjs_ai`,
-`Dolan001/react_ai`, `Dolan001/rag_ai`, and `Dolan001/aws_ai`.
+The linked repositories are `Dolan001/base`, `Dolan001/drf`,
+`Dolan001/fastapi`, `Dolan001/flutter`, `Dolan001/nextjs`,
+`Dolan001/react`, `Dolan001/rag`, `Dolan001/aws`, and `Dolan001/webscraping`.
 
 To update the workflow in a target project, review the new `ai_workflow` commit and its
 nested pins, then update the `.agents` gitlink explicitly. Do not copy skills into a

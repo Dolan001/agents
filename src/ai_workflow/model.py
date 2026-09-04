@@ -74,7 +74,7 @@ class StateStore:
                 "backend": backend,
                 "deployment": deployment,
             },
-            "capabilities": capabilities or {"rag": False},
+            "capabilities": capabilities or {"rag": False, "webscraping": False},
             "git": {"baseline_commit": baseline, "branch": branch},
             "features": {},
             "assumptions": assumptions,

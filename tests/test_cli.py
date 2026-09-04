@@ -35,6 +35,7 @@ from ai_workflow.structure import (
     validate_rag_evidence,
     validate_realtime_evidence,
     validate_structure,
+    validate_webscraping_evidence,
 )
 from ai_workflow.tokens import parse_token
 from ai_workflow.visual_diff import compare_pixels
@@ -43,22 +44,49 @@ from ai_workflow.visual_diff import compare_pixels
 def test_detects_explicit_and_requirement_backed_rag(tmp_path: Path) -> None:
     prd = tmp_path / "PRD.md"
     prd.write_text("# Product\n\n- RAG: Required\n- Provide document question answering.\n")
-    assert detect_prd_capabilities(prd) == {"rag": True}
+    assert detect_prd_capabilities(prd) == {"rag": True, "webscraping": False}
 
     prd.write_text("# Product\n\n- RAG: Not required\n")
-    assert detect_prd_capabilities(prd) == {"rag": False}
+    assert detect_prd_capabilities(prd) == {"rag": False, "webscraping": False}
 
     prd.write_text("# Product\n\n- Add semantic search over approved documents.\n")
-    assert detect_prd_capabilities(prd) == {"rag": True}
+    assert detect_prd_capabilities(prd) == {"rag": True, "webscraping": False}
 
     prd.write_text("# Product\n\n- Let customers chat with uploaded documents.\n")
-    assert detect_prd_capabilities(prd) == {"rag": True}
+    assert detect_prd_capabilities(prd) == {"rag": True, "webscraping": False}
 
 
 def test_rejects_conflicting_rag_declaration(tmp_path: Path) -> None:
     prd = tmp_path / "PRD.md"
     prd.write_text("- RAG: Not required\n- Users need a knowledge-base assistant.\n")
     with pytest.raises(RuntimeError, match="declares RAG not required"):
+        detect_prd_capabilities(prd)
+
+
+def test_detects_explicit_and_requirement_backed_webscraping(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(
+        "# Product\n\n- RAG: Not required\n- Web scraping: Required\n"
+        "- Scrape https://tickets.example.com for match availability.\n"
+    )
+    assert detect_prd_capabilities(prd) == {"rag": False, "webscraping": True}
+
+    prd.write_text("# Product\n\n- RAG: Not required\n- Web scraping: Not required\n")
+    assert detect_prd_capabilities(prd) == {"rag": False, "webscraping": False}
+
+    prd.write_text(
+        "# Product\n\n- Extract data from a website and monitor the website for changes.\n"
+    )
+    assert detect_prd_capabilities(prd) == {"rag": False, "webscraping": True}
+
+
+def test_rejects_conflicting_webscraping_declaration(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(
+        "- Web scraping: Not required\n"
+        "- Scrape https://tickets.example.com for match availability.\n"
+    )
+    with pytest.raises(RuntimeError, match="declares web scraping not required"):
         detect_prd_capabilities(prd)
 
 
@@ -107,6 +135,54 @@ def test_rag_evidence_is_phase_specific_and_fail_closed(tmp_path: Path) -> None:
         validate_rag_evidence(tmp_path, schema, "integration")
 
 
+def test_webscraping_evidence_requires_exact_stable_results(tmp_path: Path) -> None:
+    evidence = tmp_path / ".ai" / "evidence" / "webscraping"
+    evidence.mkdir(parents=True)
+    payload = {
+        "version": "1.0.0",
+        "capability": "webscraping",
+        "phase": "backend",
+        "backend": "fastapi",
+        "fixture_first": True,
+        "sites": [
+            {
+                "site": "example-tickets",
+                "registry_version": "v1",
+                "fixture_ids": ["match-list-v1"],
+                "required_field_accuracy": 1.0,
+                "required_field_completeness": 1.0,
+                "selector_trials_passed": 6,
+                "selector_trials_total": 6,
+                "nested_contexts_tested": True,
+                "fallbacks_tested": True,
+            }
+        ],
+        "checks": {
+            "idempotency": True,
+            "no_change_success": True,
+            "error_taxonomy": True,
+            "bounded_execution": True,
+            "browser_cleanup": True,
+            "secret_scan": True,
+            "evidence_retention": True,
+        },
+        "live_scope": {"enabled": False, "approved_domains": [], "page_limit": 0},
+        "unresolved_critical": [],
+        "verified": True,
+        "checked_at": "2026-09-04T10:00:00+00:00",
+    }
+    (evidence / "backend.json").write_text(json.dumps(payload))
+    schema = (
+        Path(__file__).resolve().parents[1] / "schemas" / "webscraping-verification.schema.json"
+    )
+    assert validate_webscraping_evidence(tmp_path, schema, "backend")["verified"] is True
+
+    payload["sites"][0]["required_field_accuracy"] = 0.99
+    (evidence / "backend.json").write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError, match="required fields are not exact"):
+        validate_webscraping_evidence(tmp_path, schema, "backend")
+
+
 def _valid_generated_prd(
     frontend: str = "react",
     backend: str = "fastapi",
@@ -136,6 +212,7 @@ def _valid_generated_prd(
         "Scheduled jobs: Not required",
         "Realtime: Not required",
         "RAG: Not required",
+        "Web scraping: Not required",
         "File uploads: Not required",
         "Object storage: Not required",
         "External integrations: None",
@@ -337,6 +414,88 @@ def _generated_decision_sources(prd: str) -> dict[str, str]:
     decisions, errors = architecture_decisions(prd)
     assert errors == []
     return {key: "requirements" for key in decisions}
+
+
+def test_prd_validator_accepts_complete_webscraping_contract(tmp_path: Path) -> None:
+    content = _valid_generated_prd()
+    content = content.replace("Background jobs: Not required", "Background jobs: Required")
+    content = content.replace("Web scraping: Not required", "Web scraping: Required")
+    content = content.replace(
+        "Background execution: Not applicable",
+        "Background execution: Celery with Redis and transactional outbox",
+    )
+    scraping_decisions = "\n".join(
+        [
+            (
+                "- Scraping websites: Example Tickets https://tickets.example.com with allowed "
+                "path scope /matches/** and prohibited account paths"
+            ),
+            (
+                "- Scraping targets: Match record fields title, date, price and availability "
+                "with required types and validation"
+            ),
+            (
+                "- Scraping access policy: Product owner authorized access; stop on CAPTCHA, "
+                "queue, denial or block"
+            ),
+            "- Scraping authentication: Not required for approved public match pages",
+            (
+                "- Scraping source strategy: Static HTTP first; canonical UC browser only for "
+                "JavaScript-rendered pages"
+            ),
+            (
+                "- Scraping navigation: URL match pages with pagination, nested iframe checks, "
+                "open shadow checks and state waits"
+            ),
+            (
+                "- Scraping selector registry: Versioned YAML with primary selector, fallbacks, "
+                "validation, fingerprint and rollback"
+            ),
+            (
+                "- Scraping execution: On-demand and hourly schedule with domain rate and "
+                "concurrency limits, timeout, cancellation and bounded retry"
+            ),
+            (
+                "- Scraping persistence: PostgreSQL natural keys and idempotent updates with "
+                "duplicate history and success-with-no-change"
+            ),
+            (
+                "- Scraping evidence: Sanitized fixtures and captures with private access, "
+                "seven-day retention and deletion"
+            ),
+            (
+                "- Scraping observability: Durable job states, failure taxonomy, metrics, alerts "
+                "and completion notifications"
+            ),
+        ]
+    )
+    content = content.replace(
+        "- Web scraping: Required\n",
+        f"- Web scraping: Required\n{scraping_decisions}\n",
+    )
+    content = content.replace(
+        "Account belongs to exactly one customer.",
+        (
+            "Account belongs to exactly one customer. A scraping job uses one selector version "
+            "and stores validated extracted records."
+        ),
+    )
+    content = content.replace(
+        "API, authorization, integration, browser, and security checks must pass.",
+        (
+            "API, authorization, selector accuracy, nested iframe, idempotency, browser cleanup, "
+            "integration, and security checks must pass."
+        ),
+    )
+    prd = tmp_path / "PRD.md"
+    prd.write_text(content)
+    assert validate_prd(prd) == []
+    assert (
+        validate_decision_sources(
+            content, {"decision_sources": _generated_decision_sources(content)}
+        )
+        == []
+    )
 
 
 def test_prd_validator_accepts_a_complete_production_rag_contract(tmp_path: Path) -> None:
@@ -603,9 +762,12 @@ def test_prd_validator_accepts_complete_selected_stack_profiles(
     content = _valid_generated_prd(frontend, backend, aws)
     prd.write_text(content)
     assert validate_prd(prd) == []
-    assert validate_decision_sources(
-        content, {"decision_sources": _generated_decision_sources(content)}
-    ) == []
+    assert (
+        validate_decision_sources(
+            content, {"decision_sources": _generated_decision_sources(content)}
+        )
+        == []
+    )
 
 
 def test_prd_validator_accepts_flutter_profile(tmp_path: Path) -> None:
@@ -613,9 +775,12 @@ def test_prd_validator_accepts_flutter_profile(tmp_path: Path) -> None:
     content = _valid_generated_prd("nextjs", "django-drf", mobile=True)
     prd.write_text(content)
     assert validate_prd(prd) == []
-    assert validate_decision_sources(
-        content, {"decision_sources": _generated_decision_sources(content)}
-    ) == []
+    assert (
+        validate_decision_sources(
+            content, {"decision_sources": _generated_decision_sources(content)}
+        )
+        == []
+    )
 
 
 def test_prd_validator_rejects_old_shallow_profile(tmp_path: Path) -> None:
@@ -650,12 +815,16 @@ def test_prd_validator_rejects_missing_decision_provenance() -> None:
 
 def test_prd_validator_rejects_empty_section_and_unmeasurable_nfr(tmp_path: Path) -> None:
     prd = tmp_path / "PRD.md"
-    content = _valid_generated_prd().replace(
-        "## Product Summary\n\nA customer account system for registered customers.",
-        "## Product Summary\n\n",
-    ).replace(
-        "The account API responds within 300 ms at p95 under expected peak traffic.",
-        "The account API should be fast.",
+    content = (
+        _valid_generated_prd()
+        .replace(
+            "## Product Summary\n\nA customer account system for registered customers.",
+            "## Product Summary\n\n",
+        )
+        .replace(
+            "The account API responds within 300 ms at p95 under expected peak traffic.",
+            "The account API should be fast.",
+        )
     )
     prd.write_text(content)
     failures = validate_prd(prd)
@@ -665,9 +834,7 @@ def test_prd_validator_rejects_empty_section_and_unmeasurable_nfr(tmp_path: Path
 
 def test_prd_validator_rejects_incomplete_aws_recovery_profile(tmp_path: Path) -> None:
     prd = tmp_path / "PRD.md"
-    content = _valid_generated_prd(aws=True).replace(
-        "- Recovery point objective: 15 minutes\n", ""
-    )
+    content = _valid_generated_prd(aws=True).replace("- Recovery point objective: 15 minutes\n", "")
     prd.write_text(content)
     assert "missing architecture decision: recovery point objective" in validate_prd(prd)
 
@@ -678,9 +845,8 @@ def test_prd_validator_requires_durable_background_execution(tmp_path: Path) -> 
         "Background jobs: Not required", "Background jobs: Required"
     )
     prd.write_text(content)
-    assert (
-        "invalid architecture decision for background execution: Not applicable"
-        in validate_prd(prd)
+    assert "invalid architecture decision for background execution: Not applicable" in validate_prd(
+        prd
     )
 
 
@@ -804,9 +970,7 @@ def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) ->
         json.dumps(
             {
                 "version": 1,
-                "commands": {
-                    "backend": [{"argv": ["./scripts/check.sh"], "cwd": "apps/backend"}]
-                },
+                "commands": {"backend": [{"argv": ["./scripts/check.sh"], "cwd": "apps/backend"}]},
             }
         )
     )
@@ -836,9 +1000,7 @@ def test_failure_hook_persists_and_groups_terminal_command_errors(tmp_path: Path
         json.dumps(
             {
                 "version": 1,
-                "commands": {
-                    "backend": [{"argv": [sys.executable, "-c", "pass"], "cwd": "."}]
-                },
+                "commands": {"backend": [{"argv": [sys.executable, "-c", "pass"], "cwd": "."}]},
             }
         )
     )
@@ -856,9 +1018,7 @@ def test_failure_hook_redacts_secret_values(tmp_path: Path) -> None:
         message="database failed password=do-not-store Bearer abc.def.ghi",
         command="start-build",
     )
-    stored = "\n".join(
-        path.read_text() for path in (tmp_path / ".ai" / "issues").iterdir()
-    )
+    stored = "\n".join(path.read_text() for path in (tmp_path / ".ai" / "issues").iterdir())
     assert "do-not-store" not in stored
     assert "abc.def.ghi" not in stored
     assert "[REDACTED]" in stored
@@ -1479,19 +1639,11 @@ def test_sync_design_check_only_reports_drift_without_editing(
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
 
     monkeypatch.setattr("ai_workflow.execution._run_adapter", fake_comparison)
-    assert (
-        main(["sync-design", "--project", str(tmp_path), "--check-only"])
-        == 2
-    )
+    assert main(["sync-design", "--project", str(tmp_path), "--check-only"]) == 2
     assert (tmp_path / "apps" / "frontend" / "existing.tsx").read_text() == application_before
     comparison = json.loads(
         (
-            tmp_path
-            / ".ai"
-            / "evidence"
-            / "design-fidelity"
-            / "frontend"
-            / "comparison.json"
+            tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "comparison.json"
         ).read_text()
     )
     assert comparison["aligned"] is False
@@ -1518,9 +1670,7 @@ def test_design_fidelity_rejects_tampered_metrics_and_diff(tmp_path: Path) -> No
     _initialize_design_sync_target(tmp_path)
     prompt = "Target/framework: frontend/react"
     _write_design_fidelity_evidence(tmp_path, prompt, "frontend")
-    manifest_path = (
-        tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "manifest.json"
-    )
+    manifest_path = tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     first = manifest["cases"][0]
     metrics_path = tmp_path / first["metrics"]
@@ -1615,8 +1765,14 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         checks = [
             {"name": name, "passed": True, "evidence": f"pilot {name}"}
             for name in (
-                "format", "validate", "security", "identity", "supply-chain",
-                "migration", "rollback", "recovery",
+                "format",
+                "validate",
+                "security",
+                "identity",
+                "supply-chain",
+                "migration",
+                "rollback",
+                "recovery",
             )
         ]
         path.write_text(
@@ -2033,9 +2189,7 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
     assert not (tmp_path / "apps").exists()
     assert not (tmp_path / "README.md").exists()
     assert issue_summary(tmp_path)["total_occurrences"] == 0
-    assert "No unresolved build issues" in (
-        tmp_path / ".ai" / "issues" / "REPORT.md"
-    ).read_text()
+    assert "No unresolved build issues" in (tmp_path / ".ai" / "issues" / "REPORT.md").read_text()
 
     assert main(["start-generatehtml", "--project", str(tmp_path), "--adapter", "codex"]) == 0
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
@@ -2240,8 +2394,7 @@ def test_start_build_defers_aws_even_when_explicitly_declared(
     assert not (tmp_path / "infra" / "environments" / "production").exists()
     assert not (tmp_path / ".github" / "workflows" / "deploy-production.yml").exists()
     decisions = [
-        json.loads(line)
-        for line in (tmp_path / ".ai" / "decisions.jsonl").read_text().splitlines()
+        json.loads(line) for line in (tmp_path / ".ai" / "decisions.jsonl").read_text().splitlines()
     ]
     assert any(
         item.get("decision") == "optional_phase_skipped" and item.get("phase") == "deployment"
@@ -2301,8 +2454,7 @@ def test_one_shot_defers_deployment_saved_by_an_older_build(tmp_path: Path) -> N
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
     assert state["frameworks"]["deployment"] == "unknown"
     decisions = [
-        json.loads(line)
-        for line in (tmp_path / ".ai" / "decisions.jsonl").read_text().splitlines()
+        json.loads(line) for line in (tmp_path / ".ai" / "decisions.jsonl").read_text().splitlines()
     ]
     assert any(item.get("decision") == "deployment_deferred" for item in decisions)
 
@@ -2328,8 +2480,7 @@ def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
     evidence_root = tmp_path / ".ai" / "evidence" / "deployment"
     evidence_root.mkdir(parents=True, exist_ok=True)
     readiness_checks = [
-        {"name": f"check-{index}", "passed": True, "evidence": "verified"}
-        for index in range(8)
+        {"name": f"check-{index}", "passed": True, "evidence": "verified"} for index in range(8)
     ]
     (evidence_root / "readiness.json").write_text(
         json.dumps(
@@ -2402,9 +2553,10 @@ def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
         == 0
     )
     production = json.loads((evidence_root / "production.json").read_text())
-    assert production["artifact_digest"] == json.loads(
-        (evidence_root / "staging.json").read_text()
-    )["artifact_digest"]
+    assert (
+        production["artifact_digest"]
+        == json.loads((evidence_root / "staging.json").read_text())["artifact_digest"]
+    )
 
 
 def test_start_build_supports_flutter_only_client(
@@ -2542,7 +2694,7 @@ def test_existing_design_run_requires_a_client_before_backend(
 
 
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "react_ai"
+    pack = Path(__file__).resolve().parents[1] / "react"
     with pytest.raises(RuntimeError, match="structure is invalid"):
         validate_structure(tmp_path, pack, "frontend")
     report = json.loads((tmp_path / ".ai" / "evidence" / "structure" / "frontend.json").read_text())
@@ -2551,7 +2703,7 @@ def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> No
 
 
 def test_backend_structure_requires_a_complete_domain(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    pack = Path(__file__).resolve().parents[1] / "fastapi"
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
     target = tmp_path / contract["target_root"]
     directories = set(contract["required_directories"])
@@ -2566,10 +2718,8 @@ def test_backend_structure_requires_a_complete_domain(tmp_path: Path) -> None:
         validate_structure(tmp_path, pack, "backend")
 
 
-@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
-def test_backend_structure_accepts_minimal_generated_domain(
-    tmp_path: Path, pack_name: str
-) -> None:
+@pytest.mark.parametrize("pack_name", ["drf", "fastapi"])
+def test_backend_structure_accepts_minimal_generated_domain(tmp_path: Path, pack_name: str) -> None:
     pack = Path(__file__).resolve().parents[1] / pack_name
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
@@ -2581,16 +2731,16 @@ def test_backend_structure_accepts_minimal_generated_domain(
     assert report["source_violations"] == []
 
 
-@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
-def test_backend_structure_accepts_complete_api_capability(
-    tmp_path: Path, pack_name: str
-) -> None:
+@pytest.mark.parametrize("pack_name", ["drf", "fastapi"])
+def test_backend_structure_accepts_complete_api_capability(tmp_path: Path, pack_name: str) -> None:
     pack = Path(__file__).resolve().parents[1] / pack_name
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
-    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
-        "<domain>", "sample"
+    domain = (
+        tmp_path
+        / contract["target_root"]
+        / contract["domain_path_pattern"].replace("<domain>", "sample")
     )
     api_group = next(
         group
@@ -2613,14 +2763,17 @@ def test_backend_structure_accepts_complete_api_capability(
 
     report = validate_structure(tmp_path, pack, "backend")
 
-    assert api_group["name"] in report["active_domain_groups"][
-        contract["domain_path_pattern"].replace("<domain>", "sample")
-    ]
+    assert (
+        api_group["name"]
+        in report["active_domain_groups"][
+            contract["domain_path_pattern"].replace("<domain>", "sample")
+        ]
+    )
     assert report["valid"] is True
 
 
 def test_structure_rejects_ambiguous_non_prd_feature_name(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "react_ai"
+    pack = Path(__file__).resolve().parents[1] / "react"
     _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
     (tmp_path / "PRD.md").write_text(
         "# Todo application\n\nUsers create tasks and receive notifications.\n"
@@ -2638,7 +2791,7 @@ def test_structure_rejects_ambiguous_non_prd_feature_name(tmp_path: Path) -> Non
 def test_structure_accepts_familiar_feature_fallback_and_rejects_oversized_module(
     tmp_path: Path,
 ) -> None:
-    pack = Path(__file__).resolve().parents[1] / "react_ai"
+    pack = Path(__file__).resolve().parents[1] / "react"
     _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
     (tmp_path / "PRD.md").write_text("# Todo application\n\nUsers create todo items.\n")
     feature = tmp_path / "apps/frontend/src/features/tasks"
@@ -2656,15 +2809,17 @@ def test_structure_accepts_familiar_feature_fallback_and_rejects_oversized_modul
         validate_structure(tmp_path, pack, "frontend")
 
 
-@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+@pytest.mark.parametrize("pack_name", ["drf", "fastapi"])
 def test_backend_structure_rejects_generic_transport_module_names(
     tmp_path: Path, pack_name: str
 ) -> None:
     pack = Path(__file__).resolve().parents[1] / pack_name
     _create_pack_structure(tmp_path, f"Selected framework pack: {pack}")
     contract = json.loads((pack / "rules/project-structure.json").read_text())
-    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
-        "<domain>", "accounts"
+    domain = (
+        tmp_path
+        / contract["target_root"]
+        / contract["domain_path_pattern"].replace("<domain>", "accounts")
     )
     domain.mkdir(parents=True, exist_ok=True)
     for relative in contract["required_domain_paths"]:
@@ -2675,7 +2830,8 @@ def test_backend_structure_rejects_generic_transport_module_names(
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("domain artifact\n")
     api_group = next(
-        group for group in contract["conditional_domain_groups"]
+        group
+        for group in contract["conditional_domain_groups"]
         if group["name"] in {"rest-api", "json-api"}
     )
     for relative in api_group["required_paths"]:
@@ -2695,7 +2851,7 @@ def test_backend_structure_rejects_generic_transport_module_names(
 
 
 def test_backend_structure_requires_a_resolved_dependency_lock(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    pack = Path(__file__).resolve().parents[1] / "fastapi"
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
@@ -2709,8 +2865,8 @@ def test_backend_structure_requires_a_resolved_dependency_lock(tmp_path: Path) -
 @pytest.mark.parametrize(
     ("pack_name", "trigger", "expected_missing"),
     [
-        ("drf_ai", "views/users.py", "rest-api:serializers/__init__.py"),
-        ("fastapi_ai", "routes/users.py", "json-api:schemas/__init__.py"),
+        ("drf", "views/users.py", "rest-api:serializers/__init__.py"),
+        ("fastapi", "routes/users.py", "json-api:schemas/__init__.py"),
     ],
 )
 def test_backend_conditional_domain_groups_fail_closed(
@@ -2720,8 +2876,10 @@ def test_backend_conditional_domain_groups_fail_closed(
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
-    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
-        "<domain>", "sample"
+    domain = (
+        tmp_path
+        / contract["target_root"]
+        / contract["domain_path_pattern"].replace("<domain>", "sample")
     )
     (domain / trigger).parent.mkdir(parents=True, exist_ok=True)
     (domain / trigger).write_text("trigger conditional API capability\n")
@@ -2758,12 +2916,8 @@ def _activate_complete_background_tasks(
         candidate = target / relative
         candidate.parent.mkdir(parents=True, exist_ok=True)
         candidate.write_text("background task infrastructure\n")
-    (target / "pyproject.toml").write_text(
-        '[project]\ndependencies = ["celery[redis]>=5"]\n'
-    )
-    (target / ".env.example").write_text(
-        "CELERY_BROKER_URL=redis://redis:6379/0\n"
-    )
+    (target / "pyproject.toml").write_text('[project]\ndependencies = ["celery[redis]>=5"]\n')
+    (target / ".env.example").write_text("CELERY_BROKER_URL=redis://redis:6379/0\n")
     (target / "compose.yaml").write_text(
         "services:\n"
         "  redis:\n"
@@ -2781,7 +2935,7 @@ def _activate_complete_background_tasks(
         )
     else:
         (target / "app/worker/config.py").write_text(
-            'CELERY_BROKER_URL = settings.CELERY_BROKER_URL\n'
+            "CELERY_BROKER_URL = settings.CELERY_BROKER_URL\n"
         )
         (target / "app/worker/celery_app.py").write_text(
             "from celery import Celery\n"
@@ -2790,7 +2944,7 @@ def _activate_complete_background_tasks(
     return contract, target
 
 
-@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+@pytest.mark.parametrize("pack_name", ["drf", "fastapi"])
 def test_backend_background_task_capability_is_complete_and_fail_closed(
     tmp_path: Path, pack_name: str
 ) -> None:
@@ -2798,8 +2952,10 @@ def test_backend_background_task_capability_is_complete_and_fail_closed(
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
-    domain = tmp_path / contract["target_root"] / contract["domain_path_pattern"].replace(
-        "<domain>", "sample"
+    domain = (
+        tmp_path
+        / contract["target_root"]
+        / contract["domain_path_pattern"].replace("<domain>", "sample")
     )
     (domain / "tasks.py").write_text("task trigger\n")
 
@@ -2817,7 +2973,7 @@ def test_backend_background_task_capability_is_complete_and_fail_closed(
 def test_backend_background_task_capability_requires_redis_dependency(
     tmp_path: Path,
 ) -> None:
-    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    pack = Path(__file__).resolve().parents[1] / "fastapi"
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     _, target = _activate_complete_background_tasks(tmp_path, pack)
@@ -2846,9 +3002,7 @@ def _activate_complete_backend_realtime(project: Path, pack: Path) -> dict[str, 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("realtime infrastructure artifact\n")
     (target / ".env.example").write_text("REALTIME_REDIS_URL=redis://redis:6379/1\n")
-    (target / "compose.yaml").write_text(
-        "services:\n  redis:\n    image: redis:7\n"
-    )
+    (target / "compose.yaml").write_text("services:\n  redis:\n    image: redis:7\n")
     if contract["framework"] == "django-drf":
         (target / "pyproject.toml").write_text(
             '[project]\ndependencies = ["channels", "channels-redis"]\n'
@@ -2868,7 +3022,7 @@ def _activate_complete_backend_realtime(project: Path, pack: Path) -> dict[str, 
     return contract
 
 
-@pytest.mark.parametrize("pack_name", ["drf_ai", "fastapi_ai"])
+@pytest.mark.parametrize("pack_name", ["drf", "fastapi"])
 def test_backend_realtime_capability_and_evidence_fail_closed(
     tmp_path: Path, pack_name: str
 ) -> None:
@@ -2898,9 +3052,7 @@ def test_backend_realtime_capability_and_evidence_fail_closed(
             "slow_consumer": True,
             "graceful_shutdown": True,
         },
-        "commands": [
-            {"argv": ["pytest", "tests/realtime"], "cwd": "apps/backend", "exit_code": 0}
-        ],
+        "commands": [{"argv": ["pytest", "tests/realtime"], "cwd": "apps/backend", "exit_code": 0}],
         "verified": True,
     }
     path = tmp_path / ".ai/evidence/realtime/backend.json"
@@ -2913,9 +3065,9 @@ def test_backend_realtime_capability_and_evidence_fail_closed(
 @pytest.mark.parametrize(
     ("pack_name", "trigger"),
     [
-        ("react_ai", "src/realtime/client.ts"),
-        ("nextjs_ai", "lib/realtime/client.ts"),
-        ("flutter_ai", "lib/core/realtime/realtime_client.dart"),
+        ("react", "src/realtime/client.ts"),
+        ("nextjs", "lib/realtime/client.ts"),
+        ("flutter", "lib/core/realtime/realtime_client.dart"),
     ],
 )
 def test_client_realtime_capability_fails_closed_when_incomplete(
@@ -2930,20 +3082,20 @@ def test_client_realtime_capability_fails_closed_when_incomplete(
     path.write_text("WebSocket realtime trigger\n")
 
     with pytest.raises(RuntimeError, match="conditional_missing"):
-        validate_structure(tmp_path, pack, "frontend" if pack_name != "flutter_ai" else "mobile")
+        validate_structure(tmp_path, pack, "frontend" if pack_name != "flutter" else "mobile")
 
 
 @pytest.mark.parametrize(
     ("pack_name", "relative", "source", "rule"),
     [
         (
-            "drf_ai",
+            "drf",
             "sample/serializers/accounts.py",
             "from sample.services import create_order\n",
             "serializers-do-not-import-services",
         ),
         (
-            "fastapi_ai",
+            "fastapi",
             "app/domains/sample/routes/accounts.py",
             "async def create(db):\n    await db.commit()\n",
             "routes-do-not-persist",
@@ -2971,7 +3123,7 @@ def test_backend_forbidden_source_rules_fail_closed(
 
 
 def test_backend_source_rules_ignore_python_comments(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    pack = Path(__file__).resolve().parents[1] / "fastapi"
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
@@ -2982,7 +3134,7 @@ def test_backend_source_rules_ignore_python_comments(tmp_path: Path) -> None:
 
 
 def test_backend_source_rules_inspect_runtime_configuration_strings(tmp_path: Path) -> None:
-    pack = Path(__file__).resolve().parents[1] / "fastapi_ai"
+    pack = Path(__file__).resolve().parents[1] / "fastapi"
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
@@ -2995,7 +3147,7 @@ def test_backend_source_rules_inspect_runtime_configuration_strings(tmp_path: Pa
 
 def test_database_evidence_requires_postgresql_and_complete_checks(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    prompt = f"Selected framework pack: {root / 'fastapi_ai'}"
+    prompt = f"Selected framework pack: {root / 'fastapi'}"
     _write_database_evidence(tmp_path, prompt)
     schema = root / "schemas" / "database-verification.schema.json"
     assert validate_database_evidence(tmp_path, schema, "fastapi")["verified"] is True
@@ -3015,9 +3167,9 @@ def test_backend_evidence_requires_runtime_api_transaction_and_security_checks(
     tmp_path: Path,
 ) -> None:
     root = Path(__file__).resolve().parents[1]
-    prompt = f"Selected framework pack: {root / 'fastapi_ai'}"
+    prompt = f"Selected framework pack: {root / 'fastapi'}"
     _create_pack_structure(tmp_path, prompt)
-    validate_structure(tmp_path, root / "fastapi_ai", "backend")
+    validate_structure(tmp_path, root / "fastapi", "backend")
     _write_backend_evidence(tmp_path, prompt)
     schema = root / "schemas" / "backend-verification.schema.json"
     assert validate_backend_evidence(tmp_path, schema, "fastapi")["verified"] is True
@@ -3037,7 +3189,7 @@ def test_backend_evidence_requires_worker_checks_when_background_tasks_are_activ
     tmp_path: Path,
 ) -> None:
     root = Path(__file__).resolve().parents[1]
-    pack = root / "fastapi_ai"
+    pack = root / "fastapi"
     prompt = f"Selected framework pack: {pack}"
     _create_pack_structure(tmp_path, prompt)
     _activate_complete_background_tasks(tmp_path, pack)
