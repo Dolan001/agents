@@ -10,7 +10,17 @@ from .git import baseline
 from .io import write_json
 from .model import utc_now
 
-IGNORED = {".git", ".next", "node_modules", ".venv", "venv", "__pycache__", "dist", "build"}
+IGNORED = {
+    ".agents",
+    ".git",
+    ".next",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+}
 
 
 def project_files(project: Path, maximum: int = 5000) -> list[str]:

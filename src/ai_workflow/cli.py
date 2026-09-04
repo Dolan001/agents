@@ -9,6 +9,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from .capabilities import detect_prd_capabilities
 from .commands import run_command_groups
@@ -28,6 +29,11 @@ from .issues import (
     try_track_build_issue,
 )
 from .model import PHASES, StateStore, utc_now
+from .packs import (
+    missing_framework_choices,
+    reconcile_selected_packs,
+    selected_pack_status,
+)
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
 from .requirements import parse_prd, save_requirement_outputs
@@ -114,6 +120,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
         for side in ("frontend", "mobile", "backend"):
             if frameworks[side] == "unknown":
                 frameworks[side] = detected[side]
+    capabilities = detect_prd_capabilities(prd)
     state = StateStore(project).create(
         project_id=project_slug(args.project_id or project.name),
         mode=mode,
@@ -127,7 +134,14 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
         ],
         mobile=frameworks["mobile"],
         deployment=frameworks["deployment"],
-        capabilities=detect_prd_capabilities(prd),
+        capabilities=capabilities,
+    )
+    pack_selection = reconcile_selected_packs(
+        project,
+        prd,
+        frameworks,
+        capabilities,
+        include_deployment=bool(getattr(args, "_include_deployment_packs", False)),
     )
     save_inventory(project, inventory(project))
     design_inputs = classify_design_inputs(project)
@@ -144,6 +158,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             "mode": mode,
             "frameworks": frameworks,
             "capabilities": state["capabilities"],
+            "selected_packs": [item["name"] for item in pack_selection["selected_packs"]],
             "design_mode": design_inputs["mode"],
             "ingested_design_inputs": ingested_design,
         },
@@ -155,10 +170,12 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
 
 
 def command_init(args: argparse.Namespace) -> int:
+    args._include_deployment_packs = args.deployment == "aws"
     return initialize(args, "new")
 
 
 def command_adopt(args: argparse.Namespace) -> int:
+    args._include_deployment_packs = args.deployment == "aws"
     return initialize(args, "brownfield")
 
 
@@ -260,6 +277,8 @@ def command_plan(args: argparse.Namespace) -> int:
 
 def command_build(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    if _state_has_recorded_prd(project):
+        _reconcile_state_packs(project, include_deployment=False)
     state_store = StateStore(project)
     state = state_store.load()
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
@@ -330,6 +349,8 @@ def command_one_shot(args: argparse.Namespace) -> int:
         ingest_design_inputs(project, args.html, args.screenshot)
         classify_design_inputs(project)
     _defer_deployment_selection(project)
+    if _state_has_recorded_prd(project):
+        _reconcile_state_packs(project, include_deployment=False)
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
@@ -477,10 +498,78 @@ def _verify_resume_boundary(project: Path) -> None:
         raise RuntimeError(f"resume branch mismatch: recorded={recorded}, current={branch}")
 
 
+def _recorded_prd(project: Path, state: dict[str, Any] | None = None) -> Path:
+    current = state or StateStore(project).load()
+    assumptions = current.get("assumptions", [])
+    source = next(
+        (
+            item
+            for item in assumptions
+            if isinstance(item, str) and item.startswith("PRD source: ")
+        ),
+        None,
+    )
+    if source is None:
+        raise RuntimeError("state does not record a PRD")
+    return require_prd(project, source.removeprefix("PRD source: "))
+
+
+def _state_has_recorded_prd(project: Path) -> bool:
+    state = StateStore(project).load()
+    return any(
+        isinstance(item, str) and item.startswith("PRD source: ")
+        for item in state.get("assumptions", [])
+    )
+
+
+def _reconcile_state_packs(project: Path, *, include_deployment: bool) -> dict[str, Any]:
+    """Re-evaluate a changed PRD and lazily initialize newly selected packs."""
+    store = StateStore(project)
+    state = store.load()
+    prd = _recorded_prd(project, state)
+    current = state["frameworks"]
+    resolved = resolve_frameworks(
+        prd,
+        current["frontend"],
+        current["mobile"],
+        current["backend"],
+        current["deployment"],
+    )
+    if not include_deployment:
+        resolved["deployment"] = "unknown"
+    capabilities = detect_prd_capabilities(prd)
+    state["frameworks"] = resolved
+    state["capabilities"] = capabilities
+    store.save(state)
+    previous = selected_pack_status(project)
+    selection = reconcile_selected_packs(
+        project,
+        prd,
+        resolved,
+        capabilities,
+        include_deployment=include_deployment,
+    )
+    previous_hash = previous.get("prd", {}).get("sha256") if previous else None
+    previous_names = (
+        {item["name"] for item in previous.get("selected_packs", [])} if previous else set()
+    )
+    selected_names = {item["name"] for item in selection["selected_packs"]}
+    if previous_hash != selection["prd"]["sha256"] or previous_names != selected_names:
+        append_jsonl(
+            project / ".ai" / "decisions.jsonl",
+            {
+                "at": utc_now(),
+                "decision": "behavior_packs_reconciled",
+                "selected_packs": [item["name"] for item in selection["selected_packs"]],
+                "unused_initialized_packs": selection["unused_initialized_packs"],
+            },
+        )
+    return selection
+
+
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     initialize_issue_tracker(project)
-    validate_control_plane()
     target = args.until
     defer_deployment = args.command in {"start-build", "resume-build"}
     if defer_deployment and args.deployment != "unknown":
@@ -500,6 +589,7 @@ def command_start(args: argparse.Namespace) -> int:
         args.mobile = resolved["mobile"]
         args.backend = resolved["backend"]
         args.deployment = resolved["deployment"]
+        args._include_deployment_packs = target == "deployment" and not defer_deployment
         _require_frameworks(target, resolved)
         if not baseline(project)["is_repository"] and not args.github_user:
             raise RuntimeError("--github-user is required to create a safe feature branch")
@@ -510,10 +600,21 @@ def command_start(args: argparse.Namespace) -> int:
             ingest_design_inputs(project, args.html, args.screenshot)
             classify_design_inputs(project)
         _apply_framework_selections(project, args)
-        _require_frameworks(target, StateStore(project).load()["frameworks"])
 
     if defer_deployment:
         _defer_deployment_selection(project)
+
+    selection = _reconcile_state_packs(
+        project,
+        include_deployment=target == "deployment" and not defer_deployment,
+    )
+    _require_frameworks(target, StateStore(project).load()["frameworks"])
+    if selection["missing_selected_packs"]:
+        raise RuntimeError(
+            "selected behavior packs are missing: "
+            f"{', '.join(selection['missing_selected_packs'])}"
+        )
+    validate_control_plane()
 
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
@@ -661,11 +762,13 @@ def command_status(args: argparse.Namespace) -> int:
     state = StateStore(project).load()
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
     issues = issue_summary(project)
+    packs = selected_pack_status(project)
     payload = {
         "state": state,
         "task_count": len(queue["tasks"]),
         "tasks": queue["tasks"],
         "issues": issues,
+        "packs": packs,
     }
     if args.json:
         print_json(payload)
@@ -673,7 +776,39 @@ def command_status(args: argparse.Namespace) -> int:
         print(f"{state['project_id']}: {state['status']} / {state['current_phase']}")
         print(f"tasks: {len(queue['tasks'])}")
         print(f"issues: {issues['unresolved']} unresolved / {issues['resolved']} resolved")
+        if packs:
+            selected = ", ".join(item["name"] for item in packs["selected_packs"])
+            missing = ", ".join(packs["missing_selected_packs"]) or "none"
+            print(f"packs: {selected}")
+            print(f"missing selected packs: {missing}")
         print(f"issue report: {issues['report']}")
+    return 0
+
+
+def command_select_packs(args: argparse.Namespace) -> int:
+    """Select and initialize only packs justified by the current PRD and explicit options."""
+    project = resolved_project(args.project)
+    prd = discover_prd(project, args.prd)
+    deployment_requested = args.deployment == "aws"
+    frameworks = resolve_frameworks(
+        prd, args.frontend, args.mobile, args.backend, args.deployment
+    )
+    capabilities = detect_prd_capabilities(prd)
+    selection = reconcile_selected_packs(
+        project,
+        prd,
+        frameworks,
+        capabilities,
+        include_deployment=deployment_requested,
+    )
+    missing = missing_framework_choices(frameworks)
+    print_json(
+        {
+            "status": "needs-input" if missing else "ready",
+            "missing_choices": missing,
+            "selection": selection,
+        }
+    )
     return 0
 
 
@@ -762,6 +897,8 @@ def command_generate_prd(args: argparse.Namespace) -> int:
 
 def command_resolve_token(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    if _state_has_recorded_prd(project):
+        _reconcile_state_packs(project, include_deployment=False)
     print_json(
         resolve_token(
             project,
@@ -958,6 +1095,18 @@ def parser() -> argparse.ArgumentParser:
     add_project(status)
     status.add_argument("--json", action="store_true")
     status.set_defaults(handler=command_status)
+    select_packs = commands.add_parser("select-packs")
+    add_project(select_packs)
+    select_packs.add_argument("--prd")
+    select_packs.add_argument(
+        "--frontend", choices=["react", "nextjs", "unknown"], default="unknown"
+    )
+    select_packs.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
+    select_packs.add_argument(
+        "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
+    )
+    select_packs.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
+    select_packs.set_defaults(handler=command_select_packs)
     resume = commands.add_parser("resume")
     add_project(resume)
     resume.set_defaults(handler=command_resume)

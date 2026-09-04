@@ -19,6 +19,10 @@ framework based on product requirements when it is not explicitly declared. Then
 `--frontend`, `--mobile`, and `--backend` arguments. Run through delivery. Do not add
 `--push` unless explicitly requested.
 
+The CLI deterministically reconciles `.ai/selected-packs.json` before execution and initializes only
+`base`, the selected application frameworks, and explicit RAG/web-scraping capabilities. Do not run
+a recursive submodule update. Previously downloaded but now-unused packs are reported, not deleted.
+
 The selected frontend and mobile phases automatically run `sync-design` after implementation and
 before their independent verifier. Require design-fidelity evidence for every selected client; do not
 skip it merely because component/widget tests pass.

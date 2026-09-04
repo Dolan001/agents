@@ -9,8 +9,10 @@ independently versioned repository directories.
 `agents/base`, `agents/drf`, `agents/fastapi`,
 `agents/flutter`, `agents/nextjs`, `agents/reactjs`, `agents/rag`,
 `agents/webscraping`, and `agents/aws` are
-root-level Git submodules pinned to reviewed revisions. Their `.gitmodules` entries use the GitHub repositories
-and declare `branch = dev`, matching the `claude-fullstack` repository convention.
+root-level Git submodules pinned to reviewed revisions. Their `.gitmodules` entries use the GitHub
+repositories and declare `branch = dev`. A target project initially checks out only the `agents`
+superproject; deterministic PRD selection initializes `base` and the required subset. Unselected
+packs remain uninitialized, and reconciliation never deletes an existing checkout automatically.
 
 No sample application lives in this workspace. One-shot agents create or adopt a
 separate target monorepo with `apps`, `packages`, `HTML`, `docs`, `tests`, `artifacts`,

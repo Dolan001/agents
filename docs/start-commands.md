@@ -4,14 +4,15 @@ Add this repository directly at Codex's canonical project path:
 
 ```bash
 git submodule add -b dev https://github.com/Dolan001/agents.git .agents
-git submodule update --init --recursive
+./.agents/bin/ai select-packs --project .
 ```
 
 The `.agents` directory is the tracked `agents` submodule itself, not a generated
-copy. Codex discovers `.agents/skills` directly. Commit `.gitmodules` and the `.agents`
-gitlink to the real project so every developer receives the same pinned workflow with
-`git clone --recurse-submodules`. No setup or skill-copy command is required. Runtime
-`.ai` state remains separate and appears only when development starts.
+copy. Codex discovers `.agents/skills` directly. The selector initializes `base` plus only the
+framework and capability packs justified by the PRD and explicit deployment request. It reports
+missing framework choices without guessing. Commit `.gitmodules` and the `.agents` gitlink to the
+real project; runtime `.ai/selected-packs.json` records the PRD hash, selected pins, missing packs,
+and unused existing checkouts.
 
 | Entrypoint | Result | Monorepo created? |
 |---|---|---:|

@@ -67,6 +67,8 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
         if not isinstance(relative, str):
             raise RuntimeError(f"capability pack path is missing: {capability}")
         pack = _owned_path(repository, relative)
+        if not pack.exists() or not any(pack.iterdir()):
+            continue
         required = (
             "AGENTS.md",
             "agents/catalog.json",

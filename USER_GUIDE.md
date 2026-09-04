@@ -2,8 +2,8 @@
 
 This guide presents the workflow in the order a user normally follows it and includes the complete
 command and flag reference for every skill shipped by `agents`.
-The workflow must be mounted in the target project as `.agents` with all nested submodules
-initialized.
+The workflow must be mounted in the target project as `.agents`. Only PRD-selected nested
+submodules are initialized.
 
 For first installation, the user can give Codex only this plain-text instruction—no Git knowledge
 or preinstalled workflow skill is needed:
@@ -13,8 +13,15 @@ setup-workflow "https://github.com/Dolan001/agents.git"
 ```
 
 This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the
-repository as `.agents`, initializes every nested submodule, verifies installation, and asks the
-user to reopen Codex. `$start-build` becomes available after that refresh.
+repository as `.agents`, runs the deterministic pack selector, asks only for missing framework
+choices, initializes `base` plus the selected packs, verifies them, and asks the user to reopen
+Codex. `$start-build` becomes available after that refresh.
+
+The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
+selects `nextjs`; Flutter selects `flutter`; and the backend selects exactly one of `drf` or
+`fastapi`. `rag` and `webscraping` are selected only by explicit PRD requirements. `aws` is loaded
+only by an explicit AWS deployment workflow. Selection evidence is stored in
+`.ai/selected-packs.json`, and later commands lazily reconcile it when the PRD changes.
 
 ## Invocation model
 
@@ -427,7 +434,7 @@ automatic destructive database reversal.
 
 ## Internal CLI utilities are not skills
 
-Commands such as `init`, `adopt`, `one-shot`, `inspect`, `reconcile`, `plan`, `build`, `verify`,
+Commands such as `select-packs`, `init`, `adopt`, `one-shot`, `inspect`, `reconcile`, `plan`, `build`, `verify`,
 `test`, `review`, `status`, `resume`, `push`, `doctor`, `pipeline`, `clean-state`, and
 `compare-images` are orchestration primitives used by skills or maintainers. They are intentionally
 not separate `$skills`. Use the user-facing skill commands above for normal operation.

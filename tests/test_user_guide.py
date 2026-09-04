@@ -63,6 +63,7 @@ def test_readme_has_zero_knowledge_codex_bootstrap() -> None:
     assert 'setup-workflow "https://github.com/Dolan001/agents.git"' in readme
     assert "not a terminal command, `$skill`, or installed" in readme
     assert "git submodule add -b dev" in readme
-    assert "git submodule update --init --recursive" in readme
+    assert "./.agents/bin/ai select-packs --project ." in readme
+    assert "--recursive" not in readme
     assert "Refuse to overwrite an existing `.agents`" in readme
     assert "$start-build" in readme

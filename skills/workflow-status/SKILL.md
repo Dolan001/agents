@@ -7,7 +7,8 @@ description: Inspect durable workflow checkpoints, completed phases, evidence, t
 
 Run `./.agents/bin/ai status --project . --json`. Report completed phases,
 the current phase, failed evidence, unresolved and resolved issue totals,
-`.ai/issues/REPORT.md`, and the exact next command. Do not mutate files, Git state, or
+`.ai/issues/REPORT.md`, selected/initialized/missing/unused behavior packs from
+`.ai/selected-packs.json`, and the exact next command. Do not mutate files, Git state, or
 remote systems.
 
 <!-- managed-by: ai_workflow -->

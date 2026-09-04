@@ -1,4 +1,4 @@
-# Agent
+# Agents
 
 `agents` is a Codex-first control plane that turns a required PRD and optional
 design evidence into a verified full-stack monorepo. It coordinates specialized agents,
@@ -79,13 +79,15 @@ must:
 
    ```bash
    git submodule add -b dev https://github.com/Dolan001/agents.git .agents
-   git submodule update --init --recursive
+   ./.agents/bin/ai select-packs --project .
    ```
 
-4. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, and all nine nested
-   behavior repositories.
-5. Make no application changes, commits, pushes, or remote branches during setup.
-6. Tell the user to reopen Codex so skill discovery refreshes.
+4. Read the selector output. If it reports missing framework choices, ask only for those choices and
+   rerun `select-packs` with the matching `--frontend`, `--mobile`, or `--backend` flags.
+5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `base`, and every selected
+   behavior repository. Unselected submodule directories must remain uninitialized.
+6. Make no application changes, commits, pushes, or remote branches during setup.
+7. Tell the user to reopen Codex so skill discovery refreshes.
 
 After reopening Codex, the only command needed is:
 
@@ -105,7 +107,7 @@ inside `agents` itself:
 
 ```bash
 git submodule add -b dev https://github.com/Dolan001/agents.git .agents
-git submodule update --init --recursive
+./.agents/bin/ai select-packs --project . --prd PRD.md
 ```
 
 Add the required PRD at one of the auto-discovered locations:
@@ -143,27 +145,29 @@ equivalent CLI invocation, see [`USER_GUIDE.md`](USER_GUIDE.md).
 
 ### 1. Install and pin the workflow
 
-The real project stores `agents` directly at `.agents`. The nested `base`,
-`drf`, `fastapi`, `flutter`, `reactjs`, `nextjs`, `rag`, `webscraping`, and `aws` repositories are initialized
-recursively. Commit `.gitmodules` and the `.agents` gitlink so every collaborator gets
-the same reviewed workflow version:
+The real project stores `agents` directly at `.agents`. `base` is always initialized. The selector
+initializes only the PRD-selected DRF or FastAPI backend, React or Next.js web client, optional
+Flutter client, and explicit RAG or web-scraping capabilities. AWS stays uninitialized until an
+explicit deployment workflow requests it. Commit `.gitmodules` and the `.agents` gitlink so every
+collaborator gets the same reviewed workflow version:
 
 ```bash
 git add .gitmodules .agents
 git commit -m "chore: add AI workflow"
 ```
 
-Another developer can then clone the project with:
+Another developer can then clone the project without recursively downloading every behavior pack:
 
 ```bash
-git clone --recurse-submodules <project-url>
+git clone <project-url>
+git submodule update --init .agents
+./.agents/bin/ai select-packs --project .
 ```
 
-or initialize an existing clone with:
-
-```bash
-git submodule update --init --recursive
-```
+The deterministic selection is recorded at `.ai/selected-packs.json`, including the PRD hash,
+selection reasons, pinned commits, missing selected packs, and already-downloaded packs that are no
+longer required. Reconciliation initializes newly required packs but never automatically deletes a
+previous checkout.
 
 ### 2. Supply the project inputs
 
@@ -766,8 +770,8 @@ retained. It is not a normal recovery step.
 
 ## Linked repositories
 
-The workflow pins exact reviewed commits for nine behavior repositories while each
-submodule records `branch = dev` for explicit update operations:
+The workflow catalogs nine pinned behavior repositories while each project initializes only its
+selected subset. Every submodule records `branch = dev` for explicit update operations:
 
 ```text
 .agents/

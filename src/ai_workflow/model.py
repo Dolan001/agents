@@ -41,6 +41,7 @@ class StateStore:
         capabilities = state.setdefault("capabilities", {})
         if isinstance(capabilities, dict):
             capabilities.setdefault("rag", False)
+            capabilities.setdefault("webscraping", False)
         return state
 
     def save(self, state: dict[str, Any]) -> None:
