@@ -5,8 +5,9 @@ description: Compare approved HTML with selected React, Next.js, and Flutter imp
 
 # Synchronize application design
 
-1. Require initialized workflow state, non-empty `HTML/approved/`, and at least one selected,
-   implemented web or mobile target.
+1. Require a discoverable PRD, initialized workflow state, non-empty `HTML/approved/`, and at least
+   one selected, implemented web or mobile target. The CLI reconciles PRD-selected packs before
+   loading design guidance, so do not manually initialize unrelated packs.
 2. Invoke the deterministic workflow entry point:
 
    ```text

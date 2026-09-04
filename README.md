@@ -59,8 +59,8 @@ Design-only commands stop before this monorepo is created. `start-frontend` or
 
 ## Setup for a user who knows only Codex
 
-The user does not need to remember or run Git submodule commands. After adding the PRD to the
-current project, open Codex in that project and send this single plain-text request:
+The user does not need to remember or run Git submodule commands. After adding either a PRD or an
+informal `REQUIREMENTS.md` to the current project, open Codex there and send this request:
 
 ```text
 setup-workflow "https://github.com/Dolan001/agents.git"
@@ -82,14 +82,16 @@ must:
    ./.agents/bin/ai select-packs --project .
    ```
 
-4. Read the selector output. If it reports missing framework choices, ask only for those choices and
-   rerun `select-packs` with the matching `--frontend`, `--mobile`, or `--backend` flags.
+4. Read the selector output. With requirements only, it initializes `base` and directs the user to
+   `$generate-prd`; PRD completion immediately initializes the exact framework/capability packs. If
+   a PRD reports missing framework choices, ask only for those choices and rerun `select-packs`.
 5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `base`, and every selected
    behavior repository. Unselected submodule directories must remain uninitialized.
 6. Make no application changes, commits, pushes, or remote branches during setup.
 7. Tell the user to reopen Codex so skill discovery refreshes.
 
-After reopening Codex, the only command needed is:
+After reopening Codex, use `$generate-prd --requirements REQUIREMENTS.md` first when no PRD exists;
+otherwise the only command needed is:
 
 ```text
 $start-build
@@ -119,14 +121,16 @@ docs/prd.md
 prd.md
 ```
 
-If only informal requirements are available, create `REQUIREMENTS.md` and invoke:
+If only informal requirements are available, the selector initializes `base` without requiring a
+PRD. Reopen Codex, then invoke:
 
 ```text
 $generate-prd REQUIREMENTS.md
 ```
 
 The generator sanitizes credential material, asks only for blocking decisions, validates the exact
-build contract, and writes `PRD.md`. Then invoke `$start-build` normally.
+build contract, writes `PRD.md`, and immediately initializes its selected packs. Then invoke
+`$start-build` normally.
 
 Keep exactly one of those files, or pass an explicit `--prd` path. Then reopen Codex
 so it discovers `.agents/skills`, and type this in Codex chat:

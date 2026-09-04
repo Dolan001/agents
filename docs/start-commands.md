@@ -8,11 +8,11 @@ git submodule add -b dev https://github.com/Dolan001/agents.git .agents
 ```
 
 The `.agents` directory is the tracked `agents` submodule itself, not a generated
-copy. Codex discovers `.agents/skills` directly. The selector initializes `base` plus only the
-framework and capability packs justified by the PRD and explicit deployment request. It reports
-missing framework choices without guessing. Commit `.gitmodules` and the `.agents` gitlink to the
-real project; runtime `.ai/selected-packs.json` records the PRD hash, selected pins, missing packs,
-and unused existing checkouts.
+copy. Codex discovers `.agents/skills` directly. With only `REQUIREMENTS.md`, the selector initializes
+`base` and returns the PRD-generation command. With a PRD, it initializes only the justified
+framework and capability packs and reports missing framework choices without guessing. Commit
+`.gitmodules` and the `.agents` gitlink to the real project; runtime `.ai/selected-packs.json`
+records source hashes, selected pins, missing packs, and unused existing checkouts.
 
 | Entrypoint | Result | Monorepo created? |
 |---|---|---:|
@@ -29,7 +29,7 @@ and unused existing checkouts.
 | `resume-build` | Continue from unchanged verified checkpoints | As needed |
 | `workflow-status` | Read-only progress and recovery report | No change |
 
-The PRD is required. Without `--prd`, the engine accepts exactly one of `docs/PRD.md`,
+The PRD is required to build, but not to install the workflow. Without `--prd`, the engine accepts exactly one of `docs/PRD.md`,
 `PRD.md`, `docs/prd.md`, or `prd.md`. HTML and screenshots are optional repeatable
 arguments. The engine prioritizes supplied HTML, otherwise screenshots, otherwise PRD
 generation. The engine automatically uses explicit PRD declarations for React,

@@ -19,7 +19,8 @@ the returned questions together and stop. After the user answers, resume with on
 `--answer <QUESTION_ID=answer>` argument per answer; never invent a missing business or architecture
 decision.
 
-On `READY`, report `PRD.md`, its explicit framework selections, recorded assumptions, and the exact
-next command `$start-build --prd PRD.md`. Do not start the build unless the user separately requests
-it. Durable sanitized intake state lives under `.ai/prd-intake/`; do not copy the original raw
-requirements or credential values there.
+On `READY`, confirm the command also reconciled `.ai/selected-packs.json` and initialized every
+framework/capability pack selected by the PRD. Report `PRD.md`, its explicit framework selections,
+recorded assumptions, selected packs, and the exact next command `$start-build --prd PRD.md`. Do not
+start the build unless the user separately requests it. Durable sanitized intake state lives under
+`.ai/prd-intake/`; do not copy the original raw requirements or credential values there.

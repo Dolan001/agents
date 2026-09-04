@@ -13,15 +13,16 @@ setup-workflow "https://github.com/Dolan001/agents.git"
 ```
 
 This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the
-repository as `.agents`, runs the deterministic pack selector, asks only for missing framework
-choices, initializes `base` plus the selected packs, verifies them, and asks the user to reopen
-Codex. `$start-build` becomes available after that refresh.
+repository as `.agents`, and runs the deterministic pack selector. With only requirements it
+initializes `base`, asks the user to reopen Codex, and points to `$generate-prd`. With a PRD it asks
+only for missing framework choices and initializes the selected packs.
 
 The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
 selects `nextjs`; Flutter selects `flutter`; and the backend selects exactly one of `drf` or
 `fastapi`. `rag` and `webscraping` are selected only by explicit PRD requirements. `aws` is loaded
 only by an explicit AWS deployment workflow. Selection evidence is stored in
-`.ai/selected-packs.json`, and later commands lazily reconcile it when the PRD changes.
+`.ai/selected-packs.json`. Successful PRD generation reconciles immediately, and build, token, and
+design-sync commands reconcile again before using project guidance.
 
 ## Invocation model
 
@@ -41,11 +42,20 @@ need to be written. Direct CLI commands support `-h` or `--help`.
 
 ## Recommended command order
 
-Most users need only the one-shot path:
+With an existing PRD, most users need only:
 
 ```text
 setup-workflow "<workflow-git-url>"
     -> reopen Codex
+    -> $start-build
+```
+
+With requirements only, use:
+
+```text
+setup-workflow "<workflow-git-url>"
+    -> reopen Codex
+    -> $generate-prd --requirements REQUIREMENTS.md
     -> $start-build
 ```
 

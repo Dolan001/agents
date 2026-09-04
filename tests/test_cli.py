@@ -641,6 +641,13 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     assert main([*command, "--answer", "Q001=React and FastAPI"]) == 0
     assert calls == 2
     assert validate_prd(tmp_path / "PRD.md") == []
+    selection = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
+    assert selection["status"] == "ready"
+    assert {item["name"] for item in selection["selected_packs"]} == {
+        "base",
+        "fastapi",
+        "reactjs",
+    }
     ready = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
     assert ready["status"] == "ready"
     assert main(command) == 0
@@ -1569,6 +1576,13 @@ def test_design_input_routing_is_deterministic(
 
 
 def _initialize_design_sync_target(project: Path, frontend: str = "react") -> None:
+    (project / "PRD.md").write_text(
+        "# Product\n\n"
+        f"Frontend framework: {'React' if frontend == 'react' else 'Next.js'}\n"
+        "Backend framework: FastAPI\n"
+        "RAG: Not required\n"
+        "Web scraping: Not required\n"
+    )
     StateStore(project).create(
         project_id="design-sync",
         mode="new",
@@ -1576,7 +1590,7 @@ def _initialize_design_sync_target(project: Path, frontend: str = "react") -> No
         backend="fastapi",
         baseline=None,
         branch=None,
-        assumptions=[],
+        assumptions=["PRD source: PRD.md"],
     )
     approved = project / "HTML" / "approved" / "index.html"
     approved.parent.mkdir(parents=True)
@@ -1617,6 +1631,12 @@ def test_sync_design_repairs_and_independently_verifies_frontend(
     monkeypatch.setattr("ai_workflow.execution._run_adapter", fake_design_agent)
     assert main(["sync-design", "--project", str(tmp_path)]) == 0
     assert calls == ["resolver", "verifier"]
+    selection = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
+    assert {item["name"] for item in selection["selected_packs"]} == {
+        "base",
+        "fastapi",
+        "reactjs",
+    }
     assert validate_design_fidelity_evidence(tmp_path, "frontend", "react")["verified"] is True
 
 

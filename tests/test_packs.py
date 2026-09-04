@@ -1,10 +1,14 @@
+import argparse
 import json
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
-from ai_workflow.cli import main
+from ai_workflow.cli import main, parser
 from ai_workflow.packs import (
+    bootstrap_base_pack,
+    build_lightweight_parser,
     lightweight_main,
     missing_framework_choices,
     reconcile_selected_packs,
@@ -176,6 +180,10 @@ def test_reconcile_initializes_only_selected_and_preserves_unused(tmp_path: Path
     assert manifest["unused_initialized_packs"] == ["rag"]
     assert not [call for call in calls if call[:2] == ["submodule", "update"]]
     assert json.loads((project / ".ai" / "selected-packs.json").read_text()) == manifest
+    schema = json.loads(
+        (Path(__file__).parents[1] / "schemas" / "selected-packs.schema.json").read_text()
+    )
+    Draft202012Validator(schema).validate(manifest)
 
 
 def test_reconcile_lazily_initializes_new_capability_only(tmp_path: Path) -> None:
@@ -287,3 +295,58 @@ def test_lightweight_bootstrap_entrypoint_needs_no_workflow_state(tmp_path: Path
         "fastapi",
         "flutter",
     }
+
+
+def test_requirements_only_bootstrap_selects_base_and_records_source(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    workflow = tmp_path / "agents"
+    project.mkdir()
+    _fake_workflow(workflow)
+    _initialize_fake_pack(workflow, "base")
+    requirements = project / "REQUIREMENTS.md"
+    requirements.write_text("Build an account application.\n")
+
+    manifest = bootstrap_base_pack(project, requirements, root=workflow)
+
+    assert manifest["status"] == "awaiting-prd"
+    assert manifest["source"]["kind"] == "requirements"
+    assert manifest["prd"] is None
+    assert [item["name"] for item in manifest["selected_packs"]] == ["base"]
+
+
+def test_lightweight_requirements_only_setup_is_ready_for_prd_generation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text("Build a task manager.\n")
+
+    assert lightweight_main(["--project", str(tmp_path)]) == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "needs-prd"
+    assert output["next"] == "$generate-prd --requirements REQUIREMENTS.md"
+    assert [item["name"] for item in output["selection"]["selected_packs"]] == ["base"]
+
+
+def _option_strings(command_parser: argparse.ArgumentParser) -> set[str]:
+    return {
+        option
+        for action in command_parser._actions
+        for option in action.option_strings
+        if option not in {"-h", "--help"}
+    }
+
+
+def test_full_and_lightweight_selectors_share_exact_flags() -> None:
+    subparsers = next(action for action in parser()._actions if action.dest == "command")
+    full = subparsers.choices["select-packs"]
+    assert _option_strings(full) == _option_strings(build_lightweight_parser())
+    assert "--requirements" in _option_strings(full)
+
+
+def test_selected_pack_status_rejects_tampered_manifest(tmp_path: Path) -> None:
+    state = tmp_path / ".ai"
+    state.mkdir()
+    (state / "selected-packs.json").write_text(json.dumps({"version": 2}))
+
+    with pytest.raises(RuntimeError, match="invalid selected-pack manifest field"):
+        selected_pack_status(tmp_path)

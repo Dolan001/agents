@@ -26,6 +26,7 @@ FRAMEWORK_PACKS = {
     "fastapi": "fastapi",
 }
 CAPABILITY_PACKS = {"rag": "rag", "webscraping": "webscraping"}
+MANIFEST_VERSION = 2
 
 
 def _run_git(directory: Path, arguments: list[str]) -> tuple[int, str]:
@@ -125,6 +126,173 @@ def _workflow_commit(root: Path, runner: GitRunner) -> str | None:
     return output.splitlines()[0] if code == 0 and output else None
 
 
+def _validate_manifest(payload: Any, repository: Path | None = None) -> dict[str, Any]:
+    """Validate the selection manifest without requiring bootstrap dependencies."""
+    if not isinstance(payload, dict):
+        raise RuntimeError("selected-pack manifest must be a JSON object")
+    required = {
+        "version": int,
+        "status": str,
+        "generated_at": str,
+        "source": dict,
+        "frameworks": dict,
+        "capabilities": dict,
+        "deployment_included": bool,
+        "selected_packs": list,
+        "missing_selected_packs": list,
+        "unused_initialized_packs": list,
+        "all_packs": list,
+    }
+    for field, expected in required.items():
+        if not isinstance(payload.get(field), expected):
+            raise RuntimeError(f"invalid selected-pack manifest field: {field}")
+    if payload["version"] != MANIFEST_VERSION:
+        raise RuntimeError(f"unsupported selected-pack manifest version: {payload['version']}")
+    if "prd" not in payload:
+        raise RuntimeError("invalid selected-pack manifest field: prd")
+    if payload.get("workflow_commit") is not None and not isinstance(
+        payload.get("workflow_commit"), str
+    ):
+        raise RuntimeError("invalid selected-pack manifest field: workflow_commit")
+    if payload["status"] not in {"awaiting-prd", "ready"}:
+        raise RuntimeError("invalid selected-pack manifest status")
+    source = payload["source"]
+    if source.get("kind") not in {"requirements", "prd"}:
+        raise RuntimeError("invalid selected-pack manifest source kind")
+    if not all(
+        isinstance(source.get(field), str) and source[field] for field in ("path", "sha256")
+    ):
+        raise RuntimeError("selected-pack manifest source requires path and sha256")
+    prd = payload.get("prd")
+    if prd is not None and not (
+        isinstance(prd, dict)
+        and isinstance(prd.get("path"), str)
+        and isinstance(prd.get("sha256"), str)
+    ):
+        raise RuntimeError("invalid selected-pack manifest PRD evidence")
+    if payload["status"] == "ready" and prd is None:
+        raise RuntimeError("ready selected-pack manifest requires PRD evidence")
+    pack_fields = {
+        "name": str,
+        "path": str,
+        "selected": bool,
+        "initialized": bool,
+    }
+    for pack in payload["all_packs"]:
+        if not isinstance(pack, dict) or any(
+            not isinstance(pack.get(field), expected) for field, expected in pack_fields.items()
+        ):
+            raise RuntimeError("invalid selected-pack manifest pack entry")
+        if pack.get("reason") is not None and not isinstance(pack.get("reason"), str):
+            raise RuntimeError("invalid selected-pack manifest pack reason")
+        if pack.get("pinned_commit") is not None and not isinstance(
+            pack.get("pinned_commit"), str
+        ):
+            raise RuntimeError("invalid selected-pack manifest pinned commit")
+    schema = (repository or workflow_root()) / "schemas" / "selected-packs.schema.json"
+    if schema.is_file():
+        try:
+            from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+        except ModuleNotFoundError:
+            pass
+        else:
+            errors = sorted(
+                Draft202012Validator(read_json(schema)).iter_errors(payload),
+                key=lambda error: list(error.absolute_path),
+            )
+            if errors:
+                location = ".".join(str(part) for part in errors[0].absolute_path) or "root"
+                raise RuntimeError(
+                    f"selected-pack manifest schema violation at {location}: "
+                    f"{errors[0].message}"
+                )
+    return payload
+
+
+def _pack_status(
+    repository: Path,
+    catalog: dict[str, str],
+    reasons: dict[str, str],
+    *,
+    initialize: bool,
+    runner: GitRunner,
+) -> list[dict[str, Any]]:
+    unknown = sorted(set(reasons) - set(catalog))
+    if unknown:
+        raise RuntimeError(f"selected packs are absent from the catalog: {', '.join(unknown)}")
+    missing = [name for name in reasons if not _is_initialized(repository, catalog[name])]
+    if initialize and missing:
+        paths = [catalog[name] for name in missing]
+        code, output = runner(repository, ["submodule", "update", "--init", "--", *paths])
+        if code != 0:
+            raise RuntimeError(
+                "required behavior-pack initialization failed "
+                f"({', '.join(missing)}): {output or 'git returned no diagnostic'}"
+            )
+        still_missing = [name for name in missing if not _is_initialized(repository, catalog[name])]
+        if still_missing:
+            raise RuntimeError(
+                "required behavior packs remain unavailable after initialization: "
+                f"{', '.join(still_missing)}"
+            )
+    for name in reasons:
+        if _is_initialized(repository, catalog[name]):
+            _validate_pack_contract(repository, name, catalog[name])
+    return [
+        {
+            "name": name,
+            "path": relative,
+            "selected": name in reasons,
+            "initialized": _is_initialized(repository, relative),
+            "reason": reasons.get(name),
+            "pinned_commit": _pinned_commit(repository, relative, runner),
+        }
+        for name, relative in catalog.items()
+    ]
+
+
+def _manifest(
+    project: Path,
+    repository: Path,
+    source: Path,
+    source_kind: str,
+    frameworks: dict[str, str],
+    capabilities: dict[str, bool],
+    include_deployment: bool,
+    pack_status: list[dict[str, Any]],
+    runner: GitRunner,
+) -> dict[str, Any]:
+    source_evidence = {
+        "path": source.relative_to(project).as_posix(),
+        "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    }
+    selected = [item for item in pack_status if item["selected"]]
+    payload: dict[str, Any] = {
+        "version": MANIFEST_VERSION,
+        "status": "ready" if source_kind == "prd" else "awaiting-prd",
+        "generated_at": utc_now(),
+        "workflow_commit": _workflow_commit(repository, runner),
+        "source": {"kind": source_kind, **source_evidence},
+        "prd": source_evidence if source_kind == "prd" else None,
+        "frameworks": dict(frameworks),
+        "capabilities": dict(capabilities),
+        "deployment_included": include_deployment,
+        "selected_packs": selected,
+        "missing_selected_packs": [
+            item["name"] for item in selected if not item["initialized"]
+        ],
+        "unused_initialized_packs": [
+            item["name"]
+            for item in pack_status
+            if item["initialized"] and not item["selected"]
+        ],
+        "all_packs": pack_status,
+    }
+    _validate_manifest(payload, repository)
+    write_json(project / ".ai" / "selected-packs.json", payload)
+    return payload
+
+
 def reconcile_selected_packs(
     project: Path,
     prd: Path,
@@ -147,73 +315,71 @@ def reconcile_selected_packs(
     reasons = select_pack_names(
         frameworks, capabilities, include_deployment=include_deployment
     )
-    unknown = sorted(set(reasons) - set(catalog))
-    if unknown:
-        raise RuntimeError(f"selected packs are absent from the catalog: {', '.join(unknown)}")
+    pack_status = _pack_status(
+        repository, catalog, reasons, initialize=initialize, runner=runner
+    )
+    return _manifest(
+        project_root,
+        repository,
+        prd_path,
+        "prd",
+        frameworks,
+        capabilities,
+        include_deployment,
+        pack_status,
+        runner,
+    )
 
-    missing = [name for name in reasons if not _is_initialized(repository, catalog[name])]
-    if initialize and missing:
-        paths = [catalog[name] for name in missing]
-        code, output = runner(repository, ["submodule", "update", "--init", "--", *paths])
-        if code != 0:
-            raise RuntimeError(
-                "required behavior-pack initialization failed "
-                f"({', '.join(missing)}): {output or 'git returned no diagnostic'}"
-            )
-        still_missing = [name for name in missing if not _is_initialized(repository, catalog[name])]
-        if still_missing:
-            raise RuntimeError(
-                "required behavior packs remain unavailable after initialization: "
-                f"{', '.join(still_missing)}"
-            )
-    for name in reasons:
-        if _is_initialized(repository, catalog[name]):
-            _validate_pack_contract(repository, name, catalog[name])
 
-    pack_status = []
-    for name, relative in catalog.items():
-        initialized = _is_initialized(repository, relative)
-        pack_status.append(
-            {
-                "name": name,
-                "path": relative,
-                "selected": name in reasons,
-                "initialized": initialized,
-                "reason": reasons.get(name),
-                "pinned_commit": _pinned_commit(repository, relative, runner),
-            }
-        )
-    selected = [item for item in pack_status if item["selected"]]
-    missing_selected = [item["name"] for item in selected if not item["initialized"]]
-    unused_initialized = [
-        item["name"] for item in pack_status if item["initialized"] and not item["selected"]
-    ]
-    manifest: dict[str, Any] = {
-        "version": 1,
-        "generated_at": utc_now(),
-        "workflow_commit": _workflow_commit(repository, runner),
-        "prd": {
-            "path": prd_path.relative_to(project_root).as_posix(),
-            "sha256": hashlib.sha256(prd_path.read_bytes()).hexdigest(),
-        },
-        "frameworks": dict(frameworks),
-        "capabilities": dict(capabilities),
-        "deployment_included": include_deployment,
-        "selected_packs": selected,
-        "missing_selected_packs": missing_selected,
-        "unused_initialized_packs": unused_initialized,
-        "all_packs": pack_status,
+def bootstrap_base_pack(
+    project: Path,
+    requirements: Path,
+    *,
+    initialize: bool = True,
+    root: Path | None = None,
+    runner: GitRunner = _run_git,
+) -> dict[str, Any]:
+    """Initialize only base so a requirements-only project can generate its PRD."""
+    project_root = project.resolve()
+    repository = (root or workflow_root()).resolve()
+    source = requirements.resolve()
+    if source != project_root and project_root not in source.parents:
+        raise RuntimeError("requirements must be inside the project directory")
+    if not source.is_file() or not source.read_text(encoding="utf-8").strip():
+        raise RuntimeError(f"required requirements file is missing or empty: {source}")
+    status = _pack_status(
+        repository,
+        _catalog(repository),
+        {"base": "required to generate a build-ready PRD"},
+        initialize=initialize,
+        runner=runner,
+    )
+    frameworks = {
+        "frontend": "unknown",
+        "mobile": "unknown",
+        "backend": "unknown",
+        "deployment": "unknown",
     }
-    write_json(project_root / ".ai" / "selected-packs.json", manifest)
-    return manifest
+    return _manifest(
+        project_root,
+        repository,
+        source,
+        "requirements",
+        frameworks,
+        {"rag": False, "webscraping": False},
+        False,
+        status,
+        runner,
+    )
 
 
 def selected_pack_status(project: Path) -> dict[str, Any] | None:
     """Return selection evidence with live initialization and PRD-hash status."""
     project_root = project.resolve()
-    payload = read_json(project_root / ".ai" / "selected-packs.json")
-    if not isinstance(payload, dict):
+    raw = read_json(project_root / ".ai" / "selected-packs.json")
+    if raw is None:
         return None
+    payload = _validate_manifest(raw, workflow_root())
     packs = payload.get("all_packs")
     if isinstance(packs, list):
         for item in packs:
@@ -244,7 +410,9 @@ def selected_pack_status(project: Path) -> dict[str, Any] | None:
     return payload
 
 
-def _discover_prd(project: Path, value: str | None) -> Path:
+def _discover_input(
+    project: Path, value: str | None, candidates: tuple[str, ...], label: str
+) -> Path | None:
     if value:
         path = Path(value)
         candidate = (path if path.is_absolute() else project / path).resolve()
@@ -252,7 +420,7 @@ def _discover_prd(project: Path, value: str | None) -> Path:
     else:
         choices = []
         identities: set[tuple[int, int]] = set()
-        for relative in ("docs/PRD.md", "PRD.md", "docs/prd.md", "prd.md"):
+        for relative in candidates:
             candidate = project / relative
             if not candidate.is_file():
                 continue
@@ -261,61 +429,99 @@ def _discover_prd(project: Path, value: str | None) -> Path:
             if identity not in identities:
                 choices.append(candidate.resolve())
                 identities.add(identity)
+    if not choices and not value:
+        return None
     if len(choices) != 1:
-        raise RuntimeError(
-            "provide --prd or keep exactly one PRD at docs/PRD.md, PRD.md, docs/prd.md, or prd.md"
-        )
-    prd = choices[0]
-    if project != prd and project not in prd.parents:
-        raise RuntimeError("PRD must be inside the project directory")
-    if not prd.is_file() or not prd.read_text(encoding="utf-8").strip():
-        raise RuntimeError(f"required PRD is missing or empty: {prd}")
-    return prd
+        locations = ", ".join(candidates)
+        raise RuntimeError(f"provide --{label} or keep exactly one {label} at {locations}")
+    selected = choices[0]
+    if project != selected and project not in selected.parents:
+        raise RuntimeError(f"{label} must be inside the project directory")
+    if not selected.is_file() or not selected.read_text(encoding="utf-8").strip():
+        raise RuntimeError(f"required {label} is missing or empty: {selected}")
+    return selected
 
 
-def lightweight_main(arguments: list[str] | None = None) -> int:
-    """Dependency-free bootstrap CLI used before framework packs are initialized."""
-    from .capabilities import detect_prd_capabilities
-    from .frameworks import resolve_frameworks
+def discover_pack_prd(project: Path, value: str | None) -> Path | None:
+    return _discover_input(
+        project, value, ("docs/PRD.md", "PRD.md", "docs/prd.md", "prd.md"), "prd"
+    )
 
-    parser = argparse.ArgumentParser(prog="ai select-packs")
+
+def discover_pack_requirements(project: Path, value: str | None) -> Path | None:
+    return _discover_input(
+        project,
+        value,
+        ("docs/REQUIREMENTS.md", "REQUIREMENTS.md", "docs/requirements.md", "requirements.md"),
+        "requirements",
+    )
+
+
+def add_pack_selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".")
     parser.add_argument("--prd")
+    parser.add_argument("--requirements")
     parser.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
     parser.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
     parser.add_argument(
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
     parser.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
+
+
+def select_from_inputs(args: argparse.Namespace) -> dict[str, Any]:
+    """Apply the shared PRD-or-requirements selection behavior for both CLIs."""
+    from .capabilities import detect_prd_capabilities
+    from .frameworks import resolve_frameworks
+
+    project = Path(args.project).expanduser().resolve()
+    if not project.is_dir():
+        raise RuntimeError(f"project directory does not exist: {project}")
+    prd = discover_pack_prd(project, args.prd)
+    if prd is None:
+        requirements = discover_pack_requirements(project, args.requirements)
+        if requirements is None:
+            raise RuntimeError(
+                "no PRD or requirements found; provide --prd or --requirements"
+            )
+        selection = bootstrap_base_pack(project, requirements)
+        return {
+            "status": "needs-prd",
+            "missing_choices": [],
+            "next": f"$generate-prd --requirements {requirements.relative_to(project).as_posix()}",
+            "selection": selection,
+        }
+    deployment_requested = args.deployment == "aws"
+    frameworks = resolve_frameworks(
+        prd, args.frontend, args.mobile, args.backend, args.deployment
+    )
+    selection = reconcile_selected_packs(
+        project,
+        prd,
+        frameworks,
+        detect_prd_capabilities(prd),
+        include_deployment=deployment_requested,
+    )
+    missing = missing_framework_choices(frameworks)
+    return {
+        "status": "needs-input" if missing else "ready",
+        "missing_choices": missing,
+        "selection": selection,
+    }
+
+
+def build_lightweight_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="ai select-packs")
+    add_pack_selection_arguments(parser)
+    return parser
+
+
+def lightweight_main(arguments: list[str] | None = None) -> int:
+    """Dependency-free bootstrap CLI used before framework packs are initialized."""
+    parser = build_lightweight_parser()
     try:
         args = parser.parse_args(arguments)
-        project = Path(args.project).expanduser().resolve()
-        if not project.is_dir():
-            raise RuntimeError(f"project directory does not exist: {project}")
-        prd = _discover_prd(project, args.prd)
-        deployment_requested = args.deployment == "aws"
-        frameworks = resolve_frameworks(
-            prd, args.frontend, args.mobile, args.backend, args.deployment
-        )
-        selection = reconcile_selected_packs(
-            project,
-            prd,
-            frameworks,
-            detect_prd_capabilities(prd),
-            include_deployment=deployment_requested,
-        )
-        missing = missing_framework_choices(frameworks)
-        print(
-            json.dumps(
-                {
-                    "status": "needs-input" if missing else "ready",
-                    "missing_choices": missing,
-                    "selection": selection,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
+        print(json.dumps(select_from_inputs(args), indent=2, sort_keys=True))
         return 0
     except Exception as error:  # noqa: BLE001 - stable bootstrap error boundary
         print(json.dumps({"error": str(error)}), file=sys.stderr)

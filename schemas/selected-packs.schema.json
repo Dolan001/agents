@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://potential.dev/schemas/selected-packs.schema.json",
+  "title": "Selected behavior packs",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version", "status", "generated_at", "workflow_commit", "source", "prd",
+    "frameworks", "capabilities", "deployment_included", "selected_packs",
+    "missing_selected_packs", "unused_initialized_packs", "all_packs"
+  ],
+  "properties": {
+    "version": {"const": 2},
+    "status": {"enum": ["awaiting-prd", "ready"]},
+    "generated_at": {"type": "string", "minLength": 1},
+    "workflow_commit": {"type": ["string", "null"]},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "sha256"],
+      "properties": {
+        "kind": {"enum": ["requirements", "prd"]},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "prd": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          }
+        }
+      ]
+    },
+    "frameworks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frontend", "mobile", "backend", "deployment"],
+      "properties": {
+        "frontend": {"enum": ["react", "nextjs", "unknown"]},
+        "mobile": {"enum": ["flutter", "unknown"]},
+        "backend": {"enum": ["django-drf", "fastapi", "unknown"]},
+        "deployment": {"enum": ["aws", "unknown"]}
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rag", "webscraping"],
+      "properties": {
+        "rag": {"type": "boolean"},
+        "webscraping": {"type": "boolean"}
+      }
+    },
+    "deployment_included": {"type": "boolean"},
+    "selected_packs": {"type": "array", "items": {"$ref": "#/$defs/pack"}},
+    "missing_selected_packs": {
+      "type": "array", "uniqueItems": true, "items": {"type": "string"}
+    },
+    "unused_initialized_packs": {
+      "type": "array", "uniqueItems": true, "items": {"type": "string"}
+    },
+    "all_packs": {"type": "array", "items": {"$ref": "#/$defs/pack"}}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ready"}}},
+      "then": {"properties": {"prd": {"type": "object"}, "source": {"properties": {"kind": {"const": "prd"}}}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "awaiting-prd"}}},
+      "then": {"properties": {"prd": {"type": "null"}, "source": {"properties": {"kind": {"const": "requirements"}}}}}
+    }
+  ],
+  "$defs": {
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "selected", "initialized", "reason", "pinned_commit"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "selected": {"type": "boolean"},
+        "initialized": {"type": "boolean"},
+        "reason": {"type": ["string", "null"]},
+        "pinned_commit": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

@@ -12,6 +12,10 @@ clarification-or-ready decision emitted by the PRD architect before any build st
 assessment must also provide decision provenance for the generated architecture matrix; each source
 is restricted to `requirements`, `answer`, `workflow-invariant`, or `assumption`.
 
+`selected-packs.schema.json` validates both requirements-only base bootstrap and PRD-ready pack
+selection evidence. The dependency-free bootstrap performs the matching structural validation on
+every manifest read and write, before the full Python dependency set is necessarily available.
+
 The four `design-fidelity-*.schema.json` contracts bind selected web/mobile comparisons to exact
 approved HTML hashes, deterministic route/screen cases, baseline/rendered/diff images, per-pixel
 metrics and bounded masks/tolerances, localized findings, observed changed paths, successful pixel/

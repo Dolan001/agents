@@ -30,8 +30,9 @@ from .issues import (
 )
 from .model import PHASES, StateStore, utc_now
 from .packs import (
-    missing_framework_choices,
+    add_pack_selection_arguments,
     reconcile_selected_packs,
+    select_from_inputs,
     selected_pack_status,
 )
 from .pipeline import ready_phases, validate_control_plane
@@ -549,7 +550,8 @@ def _reconcile_state_packs(project: Path, *, include_deployment: bool) -> dict[s
         capabilities,
         include_deployment=include_deployment,
     )
-    previous_hash = previous.get("prd", {}).get("sha256") if previous else None
+    previous_prd = previous.get("prd") if previous else None
+    previous_hash = previous_prd.get("sha256") if isinstance(previous_prd, dict) else None
     previous_names = (
         {item["name"] for item in previous.get("selected_packs", [])} if previous else set()
     )
@@ -787,28 +789,7 @@ def command_status(args: argparse.Namespace) -> int:
 
 def command_select_packs(args: argparse.Namespace) -> int:
     """Select and initialize only packs justified by the current PRD and explicit options."""
-    project = resolved_project(args.project)
-    prd = discover_prd(project, args.prd)
-    deployment_requested = args.deployment == "aws"
-    frameworks = resolve_frameworks(
-        prd, args.frontend, args.mobile, args.backend, args.deployment
-    )
-    capabilities = detect_prd_capabilities(prd)
-    selection = reconcile_selected_packs(
-        project,
-        prd,
-        frameworks,
-        capabilities,
-        include_deployment=deployment_requested,
-    )
-    missing = missing_framework_choices(frameworks)
-    print_json(
-        {
-            "status": "needs-input" if missing else "ready",
-            "missing_choices": missing,
-            "selection": selection,
-        }
-    )
+    print_json(select_from_inputs(args))
     return 0
 
 
@@ -884,13 +865,28 @@ def command_clean_state(args: argparse.Namespace) -> int:
 
 
 def command_generate_prd(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
     code, payload = generate_prd(
-        resolved_project(args.project),
+        project,
         args.requirements,
         args.output,
         args.answer,
         args.adapter,
     )
+    if code == 0 and payload.get("status") == "READY":
+        prd = require_prd(project, str(payload["output"]))
+        frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
+        selection = reconcile_selected_packs(
+            project,
+            prd,
+            frameworks,
+            detect_prd_capabilities(prd),
+            include_deployment=False,
+        )
+        payload["pack_selection"] = {
+            "manifest": ".ai/selected-packs.json",
+            "selected": [item["name"] for item in selection["selected_packs"]],
+        }
     print_json(payload)
     return code
 
@@ -913,8 +909,21 @@ def command_resolve_token(args: argparse.Namespace) -> int:
 
 
 def command_sync_design(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    if _state_has_recorded_prd(project):
+        _reconcile_state_packs(project, include_deployment=False)
+    else:
+        prd = discover_prd(project, None)
+        frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
+        reconcile_selected_packs(
+            project,
+            prd,
+            frameworks,
+            detect_prd_capabilities(prd),
+            include_deployment=False,
+        )
     code, payload = sync_design(
-        resolved_project(args.project),
+        project,
         args.adapter,
         args.target,
         check_only=args.check_only,
@@ -1096,16 +1105,7 @@ def parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true")
     status.set_defaults(handler=command_status)
     select_packs = commands.add_parser("select-packs")
-    add_project(select_packs)
-    select_packs.add_argument("--prd")
-    select_packs.add_argument(
-        "--frontend", choices=["react", "nextjs", "unknown"], default="unknown"
-    )
-    select_packs.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
-    select_packs.add_argument(
-        "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
-    )
-    select_packs.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
+    add_pack_selection_arguments(select_packs)
     select_packs.set_defaults(handler=command_select_packs)
     resume = commands.add_parser("resume")
     add_project(resume)
