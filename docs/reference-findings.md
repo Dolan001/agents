@@ -2,9 +2,9 @@
 
 Inspection date: 2026-08-06
 
-## Trustix
+## Local brownfield full-stack reference
 
-The local Trustix repository is a brownfield full-stack application with a root
+The inspected local reference is a brownfield full-stack application with a root
 Compose stack, a Django backend, two React Router frontends, PostgreSQL, Redis, Celery,
 Playwright configuration, and a large `.claude` workflow submodule. Its Django backend
 uses `core` plus root-level domain apps and decomposes settings by concern. Its AI layer

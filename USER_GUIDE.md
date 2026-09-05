@@ -296,7 +296,7 @@ requires independent RAG evidence before the corresponding phase gates pass.
 Example with every meaningful selection:
 
 ```text
-$start-build --project . --prd docs/PRD.md --project-id trustix \
+$start-build --project . --prd docs/PRD.md --project-id customer-platform \
   --github-user dolan --branch-feature customer-accounts \
   --html HTML/input/home.html --screenshot HTML/input/home-mobile.png \
   --frontend nextjs --mobile flutter --backend django-drf \
