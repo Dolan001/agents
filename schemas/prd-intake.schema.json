@@ -12,11 +12,19 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "question", "reason"],
+        "required": ["id", "question", "reason", "choices", "recommended_answer"],
         "properties": {
           "id": {"type": "string", "pattern": "^Q[0-9]{3}$"},
-          "question": {"type": "string", "minLength": 5},
-          "reason": {"type": "string", "minLength": 3}
+          "question": {"type": "string", "minLength": 5, "maxLength": 240},
+          "reason": {"type": "string", "minLength": 3, "maxLength": 180},
+          "choices": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "recommended_answer": {"type": "string", "minLength": 1}
         }
       }
     },

@@ -125,7 +125,7 @@ If only informal requirements are available, the selector initializes `base` wit
 PRD. Reopen Codex, then invoke:
 
 ```text
-$generate-prd REQUIREMENTS.md
+$generate-prd --requirements REQUIREMENTS.md
 ```
 
 The generator sanitizes credential material, asks only for blocking decisions, validates the exact
@@ -179,13 +179,14 @@ The PRD is required and must be non-empty. It should describe product scope, use
 features, acceptance criteria, business rules, data, integrations, security needs, and
 non-functional requirements.
 
-If the user does not yet have a PRD, `$generate-prd <requirements-path>` provides an optional
+If the user does not yet have a PRD, `$generate-prd --requirements <requirements-path>` provides an optional
 pre-workflow intake. It stores only sanitized input and answers under `.ai/prd-intake/`, batches at
-most five material questions, and writes the final PRD only after deterministic build-readiness
-validation. Actual passwords, tokens, private keys, connection credentials, or access-key values
-block generation; replace them with variable names or obvious placeholders and rotate exposed values.
-Clarification answers must use `QNNN=answer`, cover the complete active question batch exactly once,
-and cannot be attached to a stale or changed requirements source.
+most three questions when practical and never more than five, and writes the final PRD only after
+deterministic build-readiness validation. Questions use ordinary product language, simple choices,
+and a recommended answer; the user can reply naturally or say `use the recommended defaults`.
+Codex handles the internal `QNNN=answer` mapping. Actual passwords, tokens, private keys, connection
+credentials, or access-key values block generation; replace them with variable names or obvious
+placeholders and rotate exposed values.
 
 The generator does not use one generic architecture paragraph. It loads the monorepo profile plus
 only the selected DRF or FastAPI backend profile, React or Next.js web profile, Flutter mobile
@@ -198,10 +199,12 @@ require environment isolation, region/domain ownership, availability, RPO/RTO, t
 residency, backup retention, approval ownership, runtime topology, identity, rollback, alarms, and
 restore requirements. Every architecture decision records whether it came from supplied
 requirements, a clarification answer, a workflow invariant, or an explicit assumption; product- and
-operations-owned choices cannot pass as assumptions.
+operations-owned choices that materially affect access, privacy, legal obligations, cost, or release
+cannot pass as assumptions. Reversible implementation details are selected by the architect and
+recorded transparently instead of being asked of a nontechnical user.
 
-Framework declarations are optional. To make automatic selection unambiguous, use
-explicit declarations such as:
+Framework declarations are optional; without a preference, the architect chooses the supported fit
+and records it as an assumption. To force a selection, use explicit declarations such as:
 
 ```markdown
 Frontend framework: Next.js

@@ -584,6 +584,7 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
         candidate_match = re.search(r"Required candidate output: (.+)", prompt)
         answers_match = re.search(r"Sanitized durable answers: (.+)", prompt)
         assert assessment_match and candidate_match and answers_match
+        assert "nontechnical product owner" in prompt
         assessment = Path(assessment_match.group(1))
         candidate = Path(candidate_match.group(1))
         answers = json.loads(Path(answers_match.group(1)).read_text())
@@ -595,8 +596,10 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
                         "questions": [
                             {
                                 "id": "Q001",
-                                "question": "Which supported frontend and backend should be used?",
-                                "reason": "The build workflow requires explicit framework choices.",
+                                "question": "Where should people use the first version?",
+                                "reason": "This decides which user experience must be built first.",
+                                "choices": ["Website", "Mobile app", "Both"],
+                                "recommended_answer": "Website",
                             }
                         ],
                         "assumptions": [],
@@ -630,16 +633,24 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     assert main(command) == 2
     state = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
     assert state["status"] == "needs_input"
+    assert state["intake_contract_version"] == 2
     assert state["questions"][0]["id"] == "Q001"
+    assert state["questions"][0]["recommended_answer"] == "Website"
+    assert state["questions"][0]["choices"] == ["Website", "Mobile app", "Both"]
     assert not (tmp_path / "PRD.md").exists()
 
     assert main(command) == 2
     assert calls == 1
 
-    assert main([*command, "--answer", "Q999=Use another stack"]) == 1
-    assert calls == 1
-    assert main([*command, "--answer", "Q001=React and FastAPI"]) == 0
+    state["intake_contract_version"] = 1
+    (tmp_path / ".ai" / "prd-intake" / "state.json").write_text(json.dumps(state))
+    assert main(command) == 2
     assert calls == 2
+
+    assert main([*command, "--answer", "Q999=Use another stack"]) == 1
+    assert calls == 2
+    assert main([*command, "--answer", "Q001=React and FastAPI"]) == 0
+    assert calls == 3
     assert validate_prd(tmp_path / "PRD.md") == []
     selection = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
     assert selection["status"] == "ready"
@@ -651,7 +662,7 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     ready = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
     assert ready["status"] == "ready"
     assert main(command) == 0
-    assert calls == 2
+    assert calls == 3
 
 
 def test_generate_prd_blocks_and_redacts_supplied_credentials(
@@ -805,9 +816,9 @@ def test_prd_validator_rejects_old_shallow_profile(tmp_path: Path) -> None:
 def test_prd_validator_rejects_assumed_user_owned_decision() -> None:
     content = _valid_generated_prd()
     sources = _generated_decision_sources(content)
-    sources["authentication transport"] = "assumption"
+    sources["authorization model"] = "assumption"
     assert validate_decision_sources(content, {"decision_sources": sources}) == [
-        "user-owned architecture decision requires an explicit answer: authentication transport"
+        "user-owned architecture decision requires an explicit answer: authorization model"
     ]
 
 

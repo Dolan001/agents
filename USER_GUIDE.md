@@ -120,9 +120,13 @@ $generate-prd --requirements <path> [--output <path>] [--answer <QNNN=answer>]..
 | `--answer` | `QUESTION_ID=answer` | none | Answer one active clarification. Repeat for every answer in the current batch. |
 | `--adapter` | `codex` | `codex` | Execution adapter. |
 
-The command stops with `NEEDS_INPUT` when material decisions are missing and resumes using repeated
-`--answer` flags. Actual credentials are blocked; use variable names and placeholders only. Skip
-this command when a validated `PRD.md` already exists.
+The command stops with `NEEDS_INPUT` only when user-owned product, access, privacy, legal, budget, or
+release decisions are missing. In Codex chat, questions are short and nontechnical, include simple
+choices and a recommended answer, and can be answered naturally. Reply `use the recommended defaults`
+to accept every displayed recommendation; Codex maps the response to the internal `--answer` flags.
+Reversible implementation details are recorded as architect assumptions instead of being asked.
+Actual credentials are blocked; use variable names and placeholders only. Skip this command when a
+validated `PRD.md` already exists.
 
 The generated capability matrix always records `RAG: Required` or `RAG: Not required`. When RAG is
 required, intake also resolves source formats and retention, source ACLs, ingestion/versioning,
@@ -131,11 +135,11 @@ latency, security, and cost gates. `$start-build` activates `rag` automatically;
 framework flag and no separate RAG application command.
 
 It also records `Web scraping: Required` or `Web scraping: Not required`. When required, intake asks
-only for missing website scope, target fields, access/authentication ownership, navigation complexity,
-schedule and limits, PostgreSQL identity/update rules, and sanitized evidence policy. `$start-build`
-then loads `webscraping` only for requirements, relevant backend/integration work, and independent
-testing. It never creates a separate scraper application or loads scraping guidance for unrelated
-features.
+only for missing authorized websites/page areas, information to collect, login ownership, and desired
+freshness. The architect supplies conservative navigation, limits, retry, storage, selector, and test
+defaults. `$start-build` then loads `webscraping` only for requirements, relevant backend/integration
+work, and independent testing. It never creates a separate scraper application or loads scraping
+guidance for unrelated features.
 
 Generated site adapters store approved selector routes as versioned YAML: URL/page state, window,
 nested iframe chain, open shadow-root chain, reveal actions, primary ID/semantic/CSS/XPath selector,
