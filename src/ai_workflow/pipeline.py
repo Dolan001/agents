@@ -9,6 +9,8 @@ from typing import Any
 from .io import read_json
 from .model import PHASES
 
+NODE_CACHE_VERSION = 2
+
 
 def workflow_root() -> Path:
     return Path(__file__).resolve().parents[2]
@@ -179,7 +181,7 @@ def ready_phases(completed: set[str], running: set[str], root: Path | None = Non
 def node_cache_key(root: Path, identity: str, inputs: list[str]) -> str:
     """Hash a node identity and its complete declared file inputs."""
     project = root.resolve()
-    digest = hashlib.sha256(identity.encode())
+    digest = hashlib.sha256(f"v{NODE_CACHE_VERSION}:{identity}".encode())
     for relative in sorted(set(inputs)):
         candidate = (project / relative).resolve()
         if candidate != project and project not in candidate.parents:

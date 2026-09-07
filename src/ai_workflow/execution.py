@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
@@ -99,8 +101,31 @@ def _artifact_ok(path: Path, verification: str) -> bool:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return False
+    if verification == "evidence-schema":
+        if not isinstance(payload, (dict, list)):
+            return False
+        base_evidence_fields = {
+            "feature_id",
+            "requirement_ids",
+            "changed_files",
+            "checks",
+            "reviews",
+        }
+        if isinstance(payload, dict) and base_evidence_fields <= set(payload):
+            schema = read_json(workflow_root() / "base" / "schemas" / "evidence.schema.json")
+            return isinstance(schema, dict) and not list(
+                Draft202012Validator(schema).iter_errors(payload)
+            )
+        return True
     if verification == "verified-true":
-        return isinstance(payload, dict) and payload.get("verified") is True
+        if not isinstance(payload, dict) or payload.get("verified") is not True:
+            return False
+        if {"feature_id", "requirement_ids", "changed_files", "checks", "reviews"} <= set(payload):
+            schema = read_json(workflow_root() / "base" / "schemas" / "evidence.schema.json")
+            return isinstance(schema, dict) and not list(
+                Draft202012Validator(schema).iter_errors(payload)
+            )
+        return True
     if verification == "no-unresolved-critical":
         return isinstance(payload, dict) and not payload.get("unresolved_critical", True)
     return isinstance(payload, (dict, list))
@@ -748,6 +773,7 @@ def _build_context_bundle(
     state: dict[str, Any],
     feature: dict[str, Any] | None,
     retry_context: str | None,
+    task_contract: dict[str, Any] | None = None,
 ) -> Path:
     config = read_json(workflow_root() / "config" / "pipeline.json")
     context = config["execution"]["context"]
@@ -768,13 +794,18 @@ def _build_context_bundle(
         relative = prd_assumption.removeprefix("PRD source: ")
         if _inside(project, relative).is_file():
             candidates.add(relative)
+    contract = task_contract or _complete_task_contract(
+        project, identity, phase, inputs, state, feature
+    )
     anchors = []
-    if feature:
+    if contract:
         anchors = [
             str(value)
             for key in ("task_id", "feature_id", "requirement_ids")
             for value in (
-                feature.get(key, []) if isinstance(feature.get(key), list) else [feature.get(key)]
+                contract.get(key, [])
+                if isinstance(contract.get(key), list)
+                else [contract.get(key)]
             )
             if value
         ]
@@ -818,10 +849,10 @@ def _build_context_bundle(
     write_json(
         target,
         {
-            "version": 1,
+            "version": 2,
             "identity": identity,
             "phase": phase,
-            "task_contract": feature,
+            "task_contract": contract,
             "requirement_anchors": anchors,
             "selected_files": selected,
             "selected_characters": characters,
@@ -837,6 +868,196 @@ def _build_context_bundle(
     return target
 
 
+def _safe_strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return list(dict.fromkeys(item for item in value if isinstance(item, str) and item))
+
+
+def _complete_task_contract(
+    project: Path,
+    identity: str,
+    phase: str,
+    inputs: list[str],
+    state: dict[str, Any],
+    seed: dict[str, Any] | None,
+    *,
+    agent: str | None = None,
+    required_output: str | None = None,
+    verification: str | None = None,
+) -> dict[str, Any]:
+    """Create one schema-valid READY contract for phase, feature, design, or token work."""
+    del state
+    source = dict(seed or {})
+    slug = re.sub(r"[^a-z0-9]+", "-", identity.lower()).strip("-") or "workflow-task"
+    task_id = source.get("task_id")
+    if not isinstance(task_id, str) or not re.fullmatch(r"TASK-[A-Z0-9-]+", task_id):
+        task_id = f"TASK-{slug.upper()}"
+    feature_id = source.get("feature_id")
+    if not isinstance(feature_id, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", feature_id):
+        feature_id = slug
+    requirement_ids = [
+        value
+        for value in _safe_strings(source.get("requirement_ids"))
+        if re.fullmatch(r"[A-Z]+-[0-9]{3}", value)
+    ]
+    if not requirement_ids:
+        requirements = read_json(project / "docs" / "generated" / "requirements.json", {})
+        raw = requirements.get("requirements", []) if isinstance(requirements, dict) else []
+        requirement_ids = list(
+            dict.fromkeys(
+                str(item["requirement_id"])
+                for item in raw
+                if isinstance(item, dict)
+                and re.fullmatch(r"[A-Z]+-[0-9]{3}", str(item.get("requirement_id", "")))
+            )
+        )
+    if not requirement_ids:
+        requirement_ids = ["WF-001"]
+    manifest = read_json(workflow_root() / "pipeline" / "manifests" / f"{phase}.json", {})
+    scope = manifest.get("scope", {}) if isinstance(manifest, dict) else {}
+    allowed_paths = _safe_strings(source.get("allowed_paths"))
+    if not allowed_paths and isinstance(scope, dict):
+        allowed_paths = _safe_strings(scope.get("allowed_paths"))
+    expected_outputs = _safe_strings(source.get("expected_outputs"))
+    if required_output:
+        expected_outputs = [required_output]
+    if not expected_outputs:
+        expected_outputs = [f"Complete controlled work for {identity}"]
+    if not allowed_paths:
+        allowed_paths = [required_output] if required_output else [".ai/**"]
+    context = read_json(workflow_root() / "config" / "pipeline.json")["execution"]["context"]
+    feature_scoped = seed is not None
+    contract: dict[str, Any] = {
+        "task_id": task_id,
+        "feature_id": feature_id,
+        "agent": agent or str(source.get("agent") or "workflow-agent"),
+        "requirement_ids": requirement_ids,
+        "description": str(
+            source.get("description") or f"Execute controlled workflow node {identity}."
+        ),
+        "inputs": list(dict.fromkeys(inputs)),
+        "expected_outputs": expected_outputs,
+        "allowed_paths": allowed_paths,
+        "forbidden_paths": _safe_strings(source.get("forbidden_paths"))
+        or [".agents/**", ".git/**"],
+        "dependencies": _safe_strings(source.get("dependencies")),
+        "acceptance_criteria": _safe_strings(source.get("acceptance_criteria"))
+        or [
+            f"Produce {expected_outputs[0]} and satisfy {verification or 'the declared contract'}."
+        ],
+        "required_tests": _safe_strings(source.get("required_tests"))
+        or [verification or "focused validation"],
+        "security_review_required": bool(source.get("security_review_required", False)),
+        "performance_review_required": bool(source.get("performance_review_required", False)),
+        "retry_policy": {"maximum_attempts": 3},
+        "completion_evidence": _safe_strings(source.get("completion_evidence")) or expected_outputs,
+        "priority": int(source.get("priority", 1)),
+        "context_budget": {
+            "maximum_files": int(
+                context["maximum_files_per_feature"]
+                if feature_scoped
+                else context["maximum_files_per_task"]
+            ),
+            "maximum_characters": int(
+                context["maximum_characters_per_feature"]
+                if feature_scoped
+                else context["maximum_characters_per_task"]
+            ),
+        },
+        "status": "READY",
+    }
+    schema = read_json(workflow_root() / "base" / "schemas" / "task-contract.schema.json")
+    failures = sorted(
+        Draft202012Validator(schema).iter_errors(contract), key=lambda error: list(error.path)
+    )
+    if failures:
+        details = [
+            f"{'/'.join(map(str, failure.path)) or '<root>'}: {failure.message}"
+            for failure in failures[:8]
+        ]
+        raise RuntimeError(f"generated task contract is invalid: {details}")
+    return contract
+
+
+def _lease_prefix(pattern: str) -> str:
+    return pattern.split("*", 1)[0].rstrip("/")
+
+
+def _leases_overlap(left: str, right: str) -> bool:
+    left_path, right_path = left.removeprefix("./"), right.removeprefix("./")
+    left_prefix, right_prefix = _lease_prefix(left_path), _lease_prefix(right_path)
+    return (
+        fnmatch.fnmatch(left_prefix, right_path)
+        or fnmatch.fnmatch(right_prefix, left_path)
+        or left_prefix.startswith(f"{right_prefix}/")
+        or right_prefix.startswith(f"{left_prefix}/")
+        or left_prefix == right_prefix
+    )
+
+
+def _acquire_path_lease(project: Path, contract: dict[str, Any]) -> None:
+    paths = contract["allowed_paths"]
+    unsafe = any(
+        PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts for path in paths
+    )
+    if unsafe:
+        raise RuntimeError("task contract contains an unsafe lease path")
+    target = project / ".ai" / "path-leases.json"
+    data = read_json(target, {"version": 1, "leases": []})
+    now = datetime.now(UTC)
+    active = []
+    for lease in data.get("leases", []) if isinstance(data, dict) else []:
+        if not isinstance(lease, dict) or lease.get("status") != "active":
+            continue
+        expires = datetime.fromisoformat(str(lease["expires_at"]).replace("Z", "+00:00"))
+        if expires <= now or lease.get("task_id") == contract["task_id"]:
+            continue
+        if any(
+            _leases_overlap(left, right)
+            for left in paths
+            for right in lease.get("paths", [])
+            if isinstance(right, str)
+        ):
+            raise RuntimeError(
+                f"path lease conflicts with {lease.get('task_id')} ({lease.get('agent')})"
+            )
+        active.append(lease)
+    expires_at = now + timedelta(hours=2)
+    active.append(
+        {
+            "agent": contract["agent"],
+            "task_id": contract["task_id"],
+            "paths": paths,
+            "status": "active",
+            "acquired_at": now.isoformat().replace("+00:00", "Z"),
+            "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+        }
+    )
+    payload = {"version": 1, "leases": active}
+    schema = read_json(workflow_root() / "base" / "schemas" / "path-lease.schema.json")
+    if list(Draft202012Validator(schema).iter_errors(payload)):
+        raise RuntimeError("generated path lease is invalid")
+    write_json(target, payload)
+
+
+def _release_path_lease(project: Path, task_id: str) -> None:
+    target = project / ".ai" / "path-leases.json"
+    data = read_json(target, {"version": 1, "leases": []})
+    leases = data.get("leases", []) if isinstance(data, dict) else []
+    write_json(
+        target,
+        {
+            "version": 1,
+            "leases": [
+                lease
+                for lease in leases
+                if isinstance(lease, dict) and lease.get("task_id") != task_id
+            ],
+        },
+    )
+
+
 def _prompt(
     project: Path,
     phase: str,
@@ -845,7 +1066,7 @@ def _prompt(
     feature: dict[str, Any] | None,
     inputs: list[str],
     retry_context: str | None = None,
-) -> str:
+) -> tuple[str, dict[str, Any]]:
     root = workflow_root()
     agent = _agent_path(root, node["agent"], state["frameworks"])
     pack = _selected_pack(root, phase, state["frameworks"])
@@ -863,6 +1084,20 @@ def _prompt(
         capabilities=state.get("capabilities", {}),
     )
     skills = "\n".join(f"- {path}" for path in resolved_skills)
+    output = node["required_output"].format(
+        feature_id=feature["feature_id"] if feature else "phase"
+    )
+    contract = _complete_task_contract(
+        project,
+        f"{phase}/{node['id']}/{feature['feature_id'] if feature else 'phase'}",
+        phase,
+        inputs,
+        state,
+        feature,
+        agent=node["agent"],
+        required_output=output,
+        verification=node["verification"],
+    )
     context_bundle = _build_context_bundle(
         project,
         f"{phase}/{node['id']}/{feature['feature_id'] if feature else 'phase'}",
@@ -871,6 +1106,7 @@ def _prompt(
         state,
         feature,
         retry_context,
+        contract,
     )
     controls = "\n".join(
         f"- {path}"
@@ -923,7 +1159,7 @@ def _prompt(
         if node["id"].startswith("verify-") and node["id"].endswith("-design")
         else "Implementation nodes must not mark independent verification artifacts true."
     )
-    return f"""You are executing one controlled node of a production workflow.
+    prompt = f"""You are executing one controlled node of a production workflow.
 
 Project root: {project}
 Phase/node: {phase}/{node["id"]}
@@ -957,10 +1193,16 @@ Do not stage, commit, push, merge, deploy, or change Git branches; delivery is o
 the workflow's verified Git boundary.
 Do not claim verification when a required command did not run or failed.
 The complete task contract is embedded once in the bounded context bundle; do not search for or
-reload a second copy. During testing, reuse a current passing
+reload a second copy. It has already passed the workflow's JSON Schema validation and is READY.
+The workflow acquires its path lease before invoking you and releases it after you return. Do not
+import, install, or probe for `jsonschema`; write the requested artifact and let the orchestrator
+perform schema validation. A node checkpoint status of VERIFIED means its artifact contract was
+accepted; it does not mean an implementation agent independently verified its own evidence.
+During testing, reuse a current passing
 `artifacts/tests/command-results.json` as the shared full-suite proof and run only focused checks
 needed for this feature. Never rerun the complete matrix once per feature.
 """
+    return prompt, contract
 
 
 def _record_failure(
@@ -1215,14 +1457,20 @@ def execute_phase(
             result: dict[str, Any] = {}
             for attempt in range(maximum_retries + 1):
                 retry_context = failure_reasons[-1] if failure_reasons else None
-                prompt = _prompt(project, phase, node, state, feature, inputs, retry_context)
+                prompt, contract = _prompt(
+                    project, phase, node, state, feature, inputs, retry_context
+                )
                 suffix = "" if attempt == 0 else f"--retry-{attempt}"
                 prompt_path = (
                     project / ".ai" / "prompts" / f"{identity.replace('/', '--')}{suffix}.md"
                 )
                 prompt_path.parent.mkdir(parents=True, exist_ok=True)
                 prompt_path.write_text(prompt, encoding="utf-8")
-                result = _run_adapter(project, adapter, prompt)
+                _acquire_path_lease(project, contract)
+                try:
+                    result = _run_adapter(project, adapter, prompt)
+                finally:
+                    _release_path_lease(project, contract["task_id"])
                 log_path = project / ".ai" / "logs" / f"{identity.replace('/', '--')}{suffix}.json"
                 write_json(log_path, result)
                 if result["returncode"] != 0:

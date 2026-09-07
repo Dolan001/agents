@@ -10,7 +10,13 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .execution import _build_context_bundle, _concise_adapter_failure, _run_adapter
+from .execution import (
+    _acquire_path_lease,
+    _build_context_bundle,
+    _concise_adapter_failure,
+    _release_path_lease,
+    _run_adapter,
+)
 from .git import baseline, run_git
 from .io import read_json, write_json
 from .issues import resolve_build_issues, try_track_build_issue
@@ -166,6 +172,7 @@ def _token_context_bundle(
     prior_failure: str | None,
 ) -> Path:
     area = str(token["area"])
+    token_id = str(token["id"])
     inputs = [
         relative
         for relative in _worktree_snapshot(project)
@@ -179,14 +186,34 @@ def _token_context_bundle(
         inputs.append(plan_path.relative_to(project).as_posix())
     return _build_context_bundle(
         project,
-        f"token/{token['id']}/{stage}",
+        f"token/{token_id}/{stage}",
         "token",
         sorted(set(inputs)),
         {"assumptions": []},
         {
-            "task_id": token["id"],
-            "feature_id": token["id"],
-            "requirement_ids": [token["id"], token["title"]],
+            "task_id": f"TASK-{token_id}-{stage}".upper(),
+            "feature_id": token_id.lower(),
+            "requirement_ids": ["WF-001"],
+            "agent": "token-resolver",
+            "description": f"{stage.title()} the scoped {token_id} work token.",
+            "expected_outputs": [
+                plan_path.relative_to(project).as_posix()
+                if stage == "diagnosis"
+                else f".ai/token-runs/{token_id}/evidence.json"
+            ],
+            "allowed_paths": (
+                [f".ai/token-runs/{token_id}/**"]
+                if stage == "diagnosis"
+                else [
+                    f"apps/{area}/**",
+                    "tests/**",
+                    "docs/api/**",
+                    f".ai/token-runs/{token_id}/**",
+                ]
+            ),
+            "forbidden_paths": [".agents/**", ".git/**", str(token["path"])],
+            "acceptance_criteria": [str(token["title"])],
+            "required_tests": ["Focused and affected checks for the approved token plan."],
         },
         prior_failure,
     )
@@ -507,9 +534,16 @@ the issue, identify the likely cause, and prepare the smallest implementation an
 verification plan. Do not modify application files, tests, token files, Git state,
 branches, commits, remotes, or deployment. Write only the required JSON plan under
 .ai with: summary, diagnosis, steps, files, checks, and risks. Every list item must be
-a non-empty string. Do not implement the plan.
+a non-empty string. The bundled task contract is already schema-valid and its path
+lease is active. Do not import, install, or probe for `jsonschema`; the orchestrator
+validates artifacts and releases the lease. Do not implement the plan.
 """
-        result = _run_adapter(project, adapter, prompt)
+        contract = read_json(context_bundle)["task_contract"]
+        _acquire_path_lease(project, contract)
+        try:
+            result = _run_adapter(project, adapter, prompt)
+        finally:
+            _release_path_lease(project, contract["task_id"])
         if result["returncode"] == 0:
             try:
                 if _worktree_snapshot(project) != snapshot:
@@ -839,9 +873,17 @@ under .ai.
 Write JSON evidence with exactly these required fields: verified (true only when all
 required checks passed), summary (non-empty string), changed_paths (every observed
 project-relative changed file), checks (non-empty objects with name and passed=true),
-and scope_expansions (list). Do not claim success without this evidence.
+and scope_expansions (list). The bundled task contract is already schema-valid and
+its path lease is active. Do not import, install, or probe for `jsonschema`; the
+orchestrator validates artifacts and releases the lease. Do not claim success
+without this evidence.
 """
-        result = _run_adapter(project, adapter, prompt)
+        contract = read_json(context_bundle)["task_contract"]
+        _acquire_path_lease(project, contract)
+        try:
+            result = _run_adapter(project, adapter, prompt)
+        finally:
+            _release_path_lease(project, contract["task_id"])
         if result["returncode"] == 0:
             try:
                 after = _worktree_snapshot(project)

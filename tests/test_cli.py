@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from PIL import Image
 
 from ai_workflow.capabilities import detect_prd_capabilities
@@ -1218,8 +1219,23 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
         assert bundle_match
         bundle = json.loads(Path(bundle_match.group(1)).read_text())
+        assert bundle["version"] == 2
         assert len(bundle["selected_files"]) <= 12
         assert bundle["selected_characters"] <= 60000
+        contract = bundle["task_contract"]
+        assert contract["status"] == "READY"
+        schema = json.loads(
+            (
+                Path(__file__).resolve().parents[1] / "base/schemas/task-contract.schema.json"
+            ).read_text()
+        )
+        Draft202012Validator(schema).validate(contract)
+        leases = json.loads((project / ".ai/path-leases.json").read_text())["leases"]
+        assert len(leases) == 1
+        assert leases[0]["task_id"] == contract["task_id"]
+        assert leases[0]["paths"] == contract["allowed_paths"]
+        assert "`jsonschema`" in prompt
+        assert "orchestrator" in prompt
         selected = {item["path"] for item in bundle["selected_files"]}
         assert f"{area}/TKN001/TOKEN.md" in selected
         assert bundle["prior_failure"] is None
@@ -2253,8 +2269,23 @@ def test_agent_node_retries_with_failure_context(
         bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
         assert bundle_match
         bundle = json.loads(Path(bundle_match.group(1)).read_text())
+        assert bundle["version"] == 2
         assert len(bundle["selected_files"]) <= 12
         assert bundle["selected_characters"] <= 60000
+        contract = bundle["task_contract"]
+        assert contract["status"] == "READY"
+        schema = json.loads(
+            (
+                Path(__file__).resolve().parents[1] / "base/schemas/task-contract.schema.json"
+            ).read_text()
+        )
+        Draft202012Validator(schema).validate(contract)
+        leases = json.loads((project / ".ai/path-leases.json").read_text())["leases"]
+        assert len(leases) == 1
+        assert leases[0]["task_id"] == contract["task_id"]
+        assert leases[0]["paths"] == contract["allowed_paths"]
+        assert "`jsonschema`" in prompt
+        assert "orchestrator" in prompt
         if attempts == 1:
             assert "recover-failure/SKILL.md" not in prompt
             assert bundle["prior_failure"] is None
@@ -2284,6 +2315,7 @@ def test_agent_node_retries_with_failure_context(
     assert tracked["total_occurrences"] == 1
     assert tracked["unresolved"] == 0
     assert tracked["resolved"] == 1
+    assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
 
 
 def test_agent_node_does_not_retry_quota_or_environment_failure(
