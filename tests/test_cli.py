@@ -2246,6 +2246,84 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
     assert not (tmp_path / "README.md").exists()
 
 
+def test_html_verification_routes_findings_through_bounded_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Collections\n\n- COL-001 User can select multiple collections.\n"
+    )
+    calls: list[str] = []
+    repaired = False
+
+    def repairing_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal repaired
+        node = re.search(r"Phase/node: [a-z-]+/([a-z-]+)", prompt).group(1)  # type: ignore[union-attr]
+        calls.append(node)
+        if node == "verify-html-baseline":
+            bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
+            assert bundle_match
+            verifier_bundle = json.loads(Path(bundle_match.group(1)).read_text())
+            selected = {item["path"] for item in verifier_bundle["selected_files"]}
+            assert "PRD.md" not in selected
+            assert "HTML/design-specification.md" in selected
+            assert ".ai/evidence/design/baseline.json" in selected
+        if node == "verify-html-baseline" and not repaired:
+            output = re.search(r"Required output: (.+)", prompt).group(1)  # type: ignore[union-attr]
+            evidence = project / output
+            evidence.parent.mkdir(parents=True, exist_ok=True)
+            evidence.write_text(
+                json.dumps(
+                    {
+                        "verified": False,
+                        "findings": [
+                            {
+                                "path": "HTML/approved/index.html",
+                                "message": "Multiple-collection selection is missing.",
+                            }
+                        ],
+                    }
+                )
+            )
+            return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+        if node == "repair-html-baseline":
+            assert ".ai/evidence/design/verification.json" in prompt
+            bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
+            assert bundle_match
+            bundle = json.loads(Path(bundle_match.group(1)).read_text())
+            selected = {item["path"] for item in bundle["selected_files"]}
+            assert ".ai/evidence/design/verification.json" in selected
+            assert "HTML/approved/index.html" in selected
+            repaired = True
+        return _fake_agent(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", repairing_agent)
+    assert (
+        main(
+            [
+                "start-generatehtml",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 0
+    )
+    relevant = [node for node in calls if node in {"verify-html-baseline", "repair-html-baseline"}]
+    assert relevant == [
+        "verify-html-baseline",
+        "repair-html-baseline",
+        "verify-html-baseline",
+    ]
+    assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
+    issues = issue_summary(tmp_path)
+    assert issues["total_occurrences"] == 1
+    assert issues["resolved"] == 1
+    assert issues["unresolved"] == 0
+
+
 def test_codex_skills_are_directly_discoverable_from_agents_submodule() -> None:
     root = Path(__file__).resolve().parents[1]
     catalog = json.loads((root / "skills" / "catalog.json").read_text())

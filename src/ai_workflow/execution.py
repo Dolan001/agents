@@ -131,6 +131,46 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     return isinstance(payload, (dict, list))
 
 
+def _repair_input_files(
+    project: Path,
+    inputs: list[str],
+    failed_output: str,
+    repair_output: str,
+) -> list[str]:
+    """Add exact verifier-referenced artifacts without broadening the context budget."""
+    selected = set(inputs)
+    for relative in (failed_output, repair_output, "HTML/design-specification.md"):
+        if _inside(project, relative).is_file():
+            selected.add(relative)
+    evidence = read_json(_inside(project, failed_output), {})
+
+    def include(relative: str) -> None:
+        if len(relative) > 500 or "\n" in relative:
+            return
+        try:
+            candidate = _inside(project, relative)
+            exists = candidate.is_file()
+        except (OSError, RuntimeError):
+            return
+        if exists:
+            selected.add(relative)
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str):
+                    include(key)
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif isinstance(value, str):
+            include(value)
+
+    collect(evidence)
+    return sorted(selected)
+
+
 def _required_exists(project: Path, pattern: str) -> bool:
     if pattern.endswith("/**"):
         directory = _inside(project, pattern[:-3])
@@ -751,6 +791,37 @@ def _node_input_files(
         test_matrix = project / "artifacts" / "tests" / "command-results.json"
         if phase == "testing" and test_matrix.is_file():
             files.add(test_matrix.relative_to(project).as_posix())
+    if phase == "design" and node in {
+        "establish-html-baseline",
+        "repair-html-baseline",
+        "verify-html-baseline",
+    }:
+        output = (
+            ".ai/evidence/design/verification.json"
+            if node == "verify-html-baseline"
+            else ".ai/evidence/design/baseline.json"
+        )
+        design_paths = (
+            project / "HTML" / "design-specification.md",
+            project / "HTML" / "baseline-manifest.json",
+            project / "HTML" / "build_baseline.py",
+            project / "HTML" / "check_baseline.py",
+            project / ".ai" / "evidence" / "design" / "baseline.json",
+            project / ".ai" / "evidence" / "design" / "baseline-checks.json",
+            project / ".ai" / "evidence" / "design" / "verification.json",
+        )
+        files.update(
+            path.relative_to(project).as_posix()
+            for path in design_paths
+            if path.is_file() and path.relative_to(project).as_posix() != output
+        )
+        generated = project / "HTML" / "generated"
+        if generated.is_dir():
+            files.update(
+                path.relative_to(project).as_posix()
+                for path in generated.rglob("*")
+                if _context_file_allowed(project, path)
+            )
     if phase in {"frontend", "mobile"} and node.startswith(("sync-", "verify-")):
         roots = [project / "apps" / phase]
         if node.startswith("verify-"):
@@ -790,7 +861,10 @@ def _build_context_bundle(
         (value for value in state.get("assumptions", []) if value.startswith("PRD source: ")),
         None,
     )
-    if phase in {"bootstrap", "requirements", "design"} and isinstance(prd_assumption, str):
+    needs_full_prd = phase in {"bootstrap", "requirements"} or (
+        phase == "design" and "create-design-specification" in identity
+    )
+    if needs_full_prd and isinstance(prd_assumption, str):
         relative = prd_assumption.removeprefix("PRD source: ")
         if _inside(project, relative).is_file():
             candidates.add(relative)
@@ -827,7 +901,7 @@ def _build_context_bundle(
             else 1
             if relative.endswith(("requirements.json", "contract-plan.json"))
             else 2
-            if relative.startswith(("docs/api/", "HTML/approved/"))
+            if relative.startswith(("docs/api/", "HTML/approved/", "HTML/generated/"))
             else 3
             if relative.startswith(("apps/", "packages/", "tests/"))
             else 4
@@ -1454,9 +1528,110 @@ def execute_phase(
             failure_reasons: list[str] = []
             tracked_issues: list[str] = []
             nonretryable_class: str | None = None
+            needs_repair = False
             result: dict[str, Any] = {}
             for attempt in range(maximum_retries + 1):
                 retry_context = failure_reasons[-1] if failure_reasons else None
+                if attempt and needs_repair and isinstance(node.get("repair"), dict):
+                    repair_node = node["repair"]
+                    repair_output = repair_node["required_output"].format(feature_id=feature_id)
+                    repair_inputs = _repair_input_files(
+                        project,
+                        _node_input_files(project, phase, repair_node["id"], feature),
+                        output,
+                        repair_output,
+                    )
+                    repair_prompt, repair_contract = _prompt(
+                        project,
+                        phase,
+                        repair_node,
+                        state,
+                        feature,
+                        repair_inputs,
+                        (
+                            f"Independent verification failed. Read {output} as findings, "
+                            "repair each actionable implementation or evidence gap, rerun the "
+                            "focused baseline checks, and leave independent verification false "
+                            "for the verifier."
+                        ),
+                    )
+                    repair_suffix = f"--repair-{attempt}"
+                    repair_prompt_path = (
+                        project
+                        / ".ai"
+                        / "prompts"
+                        / f"{identity.replace('/', '--')}{repair_suffix}.md"
+                    )
+                    repair_prompt_path.parent.mkdir(parents=True, exist_ok=True)
+                    repair_prompt_path.write_text(repair_prompt, encoding="utf-8")
+                    _acquire_path_lease(project, repair_contract)
+                    try:
+                        repair_result = _run_adapter(project, adapter, repair_prompt)
+                    finally:
+                        _release_path_lease(project, repair_contract["task_id"])
+                    repair_log = (
+                        project
+                        / ".ai"
+                        / "logs"
+                        / f"{identity.replace('/', '--')}{repair_suffix}.json"
+                    )
+                    write_json(repair_log, repair_result)
+                    repair_path = _inside(project, repair_output)
+                    if repair_result["returncode"] != 0:
+                        concise, retryable = _concise_adapter_failure(repair_result)
+                        failure_reasons.append(
+                            f"repair adapter exited with code {repair_result['returncode']}: "
+                            f"{concise}"
+                        )
+                        tracked = try_track_build_issue(
+                            project,
+                            source="agent-node",
+                            message=failure_reasons[-1],
+                            command=identity,
+                            phase=phase,
+                            node=repair_node["id"],
+                            feature=feature_id if feature else None,
+                            attempt=attempt + 1,
+                            retryable=retryable,
+                            context={
+                                "log": repair_log.relative_to(project).as_posix(),
+                                "output": repair_output,
+                            },
+                        )
+                        if tracked:
+                            tracked_issues.append(tracked)
+                        if not retryable:
+                            nonretryable_class = concise
+                            break
+                        continue
+                    if not _artifact_ok(repair_path, repair_node["verification"]):
+                        failure_reasons.append(
+                            f"repair output failed {repair_node['verification']}: {repair_output}"
+                        )
+                        tracked = try_track_build_issue(
+                            project,
+                            source="agent-artifact",
+                            message=failure_reasons[-1],
+                            command=identity,
+                            phase=phase,
+                            node=repair_node["id"],
+                            feature=feature_id if feature else None,
+                            attempt=attempt + 1,
+                            retryable=True,
+                            context={
+                                "output": repair_output,
+                                "verification": repair_node["verification"],
+                            },
+                        )
+                        if tracked:
+                            tracked_issues.append(tracked)
+                        continue
+                    needs_repair = False
+                inputs = [
+                    path
+                    for path in _node_input_files(project, phase, node["id"], feature)
+                    if path != output
+                ]
                 prompt, contract = _prompt(
                     project, phase, node, state, feature, inputs, retry_context
                 )
@@ -1514,6 +1689,7 @@ def execute_phase(
                     )
                     if tracked:
                         tracked_issues.append(tracked)
+                    needs_repair = True
                     continue
                 break
             if failure_reasons:
@@ -1539,6 +1715,12 @@ def execute_phase(
                     tracked_issues,
                     "A later bounded agent attempt produced the required verified artifact.",
                 )
+            inputs = [
+                path
+                for path in _node_input_files(project, phase, node["id"], feature)
+                if path != output
+            ]
+            cache_key = node_cache_key(project, identity, inputs)
             node_state[identity] = {
                 "status": "VERIFIED",
                 "output": output,

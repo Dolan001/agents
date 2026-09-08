@@ -142,6 +142,15 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
                     raise RuntimeError(
                         f"agentic node lacks an artifact contract: {phase}/{node['id']}"
                     )
+                repair = node.get("repair")
+                if repair is not None and (
+                    not isinstance(repair, dict)
+                    or not all(isinstance(repair.get(key), str) for key in ("id", *artifact_keys))
+                    or repair.get("id") == node["id"]
+                ):
+                    raise RuntimeError(
+                        f"agentic node has an invalid repair contract: {phase}/{node['id']}"
+                    )
             elif node.get("type") != "deterministic":
                 raise RuntimeError(f"unknown node type: {phase}/{node['id']}")
 
