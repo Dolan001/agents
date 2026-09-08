@@ -17,6 +17,7 @@ from .deployment import deployment_status, execute_operation
 from .design import classify_design_inputs, ingest_design_inputs
 from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
+from .documents import prepare_project_documents, validate_document_set
 from .execution import evaluate_phase_gate, execute_phase, phase_checkpoint_current
 from .frameworks import resolve_frameworks
 from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
@@ -89,9 +90,29 @@ def discover_prd(project: Path, value: str | None) -> Path:
     return require_prd(project, str(candidates[0]))
 
 
+def _require_current_document_set(project: Path) -> None:
+    manifest = project / ".ai" / "project-documents" / "manifest.json"
+    supplementary = any(
+        (project / name).is_file() or (project / "docs" / name).is_file()
+        for name in ("TRD.md", "UI_UX_SPEC.md", "BACKEND_SPEC.md", "DELIVERY_SPEC.md")
+    )
+    if supplementary and not manifest.is_file():
+        raise RuntimeError(
+            "project specification drafts require $prepare-project-docs before building"
+        )
+    if manifest.is_file():
+        failures = validate_document_set(project)
+        if failures:
+            raise RuntimeError(
+                "project documents changed or are inconsistent; rerun "
+                f"$prepare-project-docs ({'; '.join(failures)})"
+            )
+
+
 def initialize(args: argparse.Namespace, mode: str) -> int:
     project = resolved_project(args.project)
     initialize_issue_tracker(project)
+    _require_current_document_set(project)
     prd = require_prd(project, args.prd)
     ingested_design = ingest_design_inputs(
         project,
@@ -373,9 +394,9 @@ def command_one_shot(args: argparse.Namespace) -> int:
     for phase in PHASES[1:]:
         if phase in completed:
             frameworks = StateStore(project).load()["frameworks"]
-            optional_skipped = phase in {"frontend", "mobile", "deployment"} and frameworks[
-                phase
-            ] == "unknown"
+            optional_skipped = (
+                phase in {"frontend", "mobile", "deployment"} and frameworks[phase] == "unknown"
+            )
             if optional_skipped or phase_checkpoint_current(project, phase, queue["tasks"]):
                 continue
             phase_index = PHASES.index(phase)
@@ -503,11 +524,7 @@ def _recorded_prd(project: Path, state: dict[str, Any] | None = None) -> Path:
     current = state or StateStore(project).load()
     assumptions = current.get("assumptions", [])
     source = next(
-        (
-            item
-            for item in assumptions
-            if isinstance(item, str) and item.startswith("PRD source: ")
-        ),
+        (item for item in assumptions if isinstance(item, str) and item.startswith("PRD source: ")),
         None,
     )
     if source is None:
@@ -572,6 +589,7 @@ def _reconcile_state_packs(project: Path, *, include_deployment: bool) -> dict[s
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     initialize_issue_tracker(project)
+    _require_current_document_set(project)
     target = args.until
     defer_deployment = args.command in {"start-build", "resume-build"}
     if defer_deployment and args.deployment != "unknown":
@@ -613,8 +631,7 @@ def command_start(args: argparse.Namespace) -> int:
     _require_frameworks(target, StateStore(project).load()["frameworks"])
     if selection["missing_selected_packs"]:
         raise RuntimeError(
-            "selected behavior packs are missing: "
-            f"{', '.join(selection['missing_selected_packs'])}"
+            f"selected behavior packs are missing: {', '.join(selection['missing_selected_packs'])}"
         )
     validate_control_plane()
 
@@ -632,9 +649,9 @@ def command_start(args: argparse.Namespace) -> int:
             continue
         if phase in completed:
             frameworks = StateStore(project).load()["frameworks"]
-            optional_skipped = phase in {"frontend", "mobile", "deployment"} and frameworks[
-                phase
-            ] == "unknown"
+            optional_skipped = (
+                phase in {"frontend", "mobile", "deployment"} and frameworks[phase] == "unknown"
+            )
             if optional_skipped or phase_checkpoint_current(project, phase, queue["tasks"]):
                 if phase == terminal_phase:
                     break
@@ -723,9 +740,7 @@ def command_test(args: argparse.Namespace) -> int:
             for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
             if isinstance(configured, dict) and configured.get(group)
         ]
-        commands = {
-            group: configured[group] for group in groups if isinstance(configured, dict)
-        }
+        commands = {group: configured[group] for group in groups if isinstance(configured, dict)}
     else:
         groups = [scope]
         commands = configured.get(scope, []) if isinstance(configured, dict) else []
@@ -875,6 +890,33 @@ def command_generate_prd(args: argparse.Namespace) -> int:
     )
     if code == 0 and payload.get("status") == "READY":
         prd = require_prd(project, str(payload["output"]))
+        frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
+        selection = reconcile_selected_packs(
+            project,
+            prd,
+            frameworks,
+            detect_prd_capabilities(prd),
+            include_deployment=False,
+        )
+        payload["pack_selection"] = {
+            "manifest": ".ai/selected-packs.json",
+            "selected": [item["name"] for item in selection["selected_packs"]],
+        }
+    print_json(payload)
+    return code
+
+
+def command_prepare_project_documents(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    code, payload = prepare_project_documents(
+        project,
+        args.requirements,
+        args.answer,
+        args.adapter,
+    )
+    if code == 0 and payload.get("status") == "READY":
+        prd_entry = next(item for item in payload["documents"] if item["name"] == "PRD.md")
+        prd = require_prd(project, prd_entry["path"])
         frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
         selection = reconcile_selected_packs(
             project,
@@ -1131,6 +1173,12 @@ def parser() -> argparse.ArgumentParser:
     prd.add_argument("--answer", action="append", default=[])
     prd.add_argument("--adapter", choices=["codex"], default="codex")
     prd.set_defaults(handler=command_generate_prd)
+    documents = commands.add_parser("prepare-project-docs")
+    add_project(documents)
+    documents.add_argument("--requirements")
+    documents.add_argument("--answer", action="append", default=[])
+    documents.add_argument("--adapter", choices=["codex"], default="codex")
+    documents.set_defaults(handler=command_prepare_project_documents)
     token = commands.add_parser("resolve-token")
     add_project(token)
     token.add_argument("--token", required=True)
@@ -1204,6 +1252,12 @@ def main(arguments: list[str] | None = None) -> int:
                 args.command == "generate-prd"
                 and isinstance(intake, dict)
                 and intake.get("status") == "needs_input"
+            )
+            document_intake = read_json(project / ".ai" / "project-documents" / "state.json", {})
+            expected_clarification = expected_clarification or (
+                args.command == "prepare-project-docs"
+                and isinstance(document_intake, dict)
+                and document_intake.get("status") == "needs_input"
             )
             if project.is_dir() and not expected_clarification:
                 try_track_build_issue(

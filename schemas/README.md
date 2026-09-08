@@ -14,6 +14,12 @@ accept safe defaults without designing implementation internals. A ready assessm
 provide decision provenance for the generated architecture matrix; each source is restricted to
 `requirements`, `answer`, `workflow-invariant`, or `assumption`.
 
+`project-documents-intake.schema.json` validates the one-to-five-question audit or
+ready decision for the complete PRD/TRD/UI/backend/delivery set, including preserved
+decisions and material changes. `project-documents-manifest.schema.json` binds the
+five validated canonical documents to their project-relative paths and hashes so
+later build commands fail closed when a user edits or removes one.
+
 `selected-packs.schema.json` validates both requirements-only base bootstrap and PRD-ready pack
 selection evidence. The dependency-free bootstrap performs the matching structural validation on
 every manifest read and write, before the full Python dependency set is necessarily available.

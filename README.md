@@ -83,14 +83,16 @@ must:
    ```
 
 4. Read the selector output. With requirements only, it initializes `base` and directs the user to
-   `$generate-prd`; PRD completion immediately initializes the exact framework/capability packs. If
+   `$prepare-project-docs`; document completion immediately initializes the exact
+   framework/capability packs. If
    a PRD reports missing framework choices, ask only for those choices and rerun `select-packs`.
 5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `base`, and every selected
    behavior repository. Unselected submodule directories must remain uninitialized.
 6. Make no application changes, commits, pushes, or remote branches during setup.
 7. Tell the user to reopen Codex so skill discovery refreshes.
 
-After reopening Codex, use `$generate-prd --requirements REQUIREMENTS.md` first when no PRD exists;
+After reopening Codex, use `$prepare-project-docs --requirements REQUIREMENTS.md` to generate or
+complete the full project document set;
 otherwise the only command needed is:
 
 ```text
@@ -125,12 +127,13 @@ If only informal requirements are available, the selector initializes `base` wit
 PRD. Reopen Codex, then invoke:
 
 ```text
-$generate-prd --requirements REQUIREMENTS.md
+$prepare-project-docs --requirements REQUIREMENTS.md
 ```
 
-The generator sanitizes credential material, asks only for blocking decisions, validates the exact
-build contract, writes `PRD.md`, and immediately initializes its selected packs. Then invoke
-`$start-build` normally.
+The preparer sanitizes credential material, asks only for blocking decisions in ordinary language,
+validates all five project documents together, and immediately initializes the selected packs.
+Then invoke `$start-build` normally. `$generate-prd` remains available only when a PRD-only
+compatibility flow is specifically wanted.
 
 Keep exactly one of those files, or pass an explicit `--prd` path. Then reopen Codex
 so it discovers `.agents/skills`, and type this in Codex chat:
@@ -179,14 +182,17 @@ The PRD is required and must be non-empty. It should describe product scope, use
 features, acceptance criteria, business rules, data, integrations, security needs, and
 non-functional requirements.
 
-If the user does not yet have a PRD, `$generate-prd --requirements <requirements-path>` provides an optional
-pre-workflow intake. It stores only sanitized input and answers under `.ai/prd-intake/`, batches at
-most three questions when practical and never more than five, and writes the final PRD only after
-deterministic build-readiness validation. Questions use ordinary product language, simple choices,
-and a recommended answer; the user can reply naturally or say `use the recommended defaults`.
-Codex handles the internal `QNNN=answer` mapping. Actual passwords, tokens, private keys, connection
-credentials, or access-key values block generation; replace them with variable names or obvious
-placeholders and rotate exposed values.
+`$prepare-project-docs` accepts requirements, any subset of user-written canonical drafts, or both.
+It audits `PRD.md`, `TRD.md`, `UI_UX_SPEC.md`, `BACKEND_SPEC.md`, and `DELIVERY_SPEC.md` together,
+generates missing files, preserves compatible explicit decisions, and updates every affected file
+only after the complete candidate set validates. It asks one to five plain-language questions per
+round only for missing user-owned outcomes; large projects may use multiple rounds. Technical detail
+is completed through visible architect assumptions. Sanitized sources, answers, change provenance,
+and a hash-bound readiness manifest live under `.ai/project-documents/`. Later build commands reject
+missing, changed, or inconsistent validated documents. Actual passwords, tokens, private keys,
+connection credentials, or access-key values block generation; replace them with variable names or
+obvious placeholders and rotate exposed values. `$generate-prd` remains available for PRD-only
+compatibility and directs users to complete the remaining specifications afterward.
 
 The generator does not use one generic architecture paragraph. It loads the monorepo profile plus
 only the selected DRF or FastAPI backend profile, React or Next.js web profile, Flutter mobile
@@ -277,6 +283,7 @@ Use a narrower command when only part of the lifecycle is required:
 
 | Codex skill | Runs missing prerequisites through | Creates monorepo? |
 |---|---|---:|
+| `$prepare-project-docs` | Five validated, mutually consistent specifications | No |
 | `$generate-prd` | Validated `PRD.md`; stops before build initialization | No |
 | `$start-design` | Design specification | No |
 | `$start-generatehtml` | Approved static HTML | No |
@@ -725,6 +732,7 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai status --project . --json
 
 # Execute stage commands
+./.agents/bin/ai prepare-project-docs --project . --requirements REQUIREMENTS.md --adapter codex
 ./.agents/bin/ai generate-prd --project . --requirements REQUIREMENTS.md --output PRD.md --adapter codex
 ./.agents/bin/ai start-design --project . --adapter codex
 ./.agents/bin/ai start-generatehtml --project . --adapter codex

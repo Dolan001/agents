@@ -7,6 +7,11 @@ These entrypoints execute work; they are not explanatory prompt templates.
 2. The target is the current project and the workflow is mounted at `.agents`.
 3. Auto-discover exactly one PRD at `docs/PRD.md`, `PRD.md`, `docs/prd.md`, or
    `prd.md`; otherwise ask for `--prd`.
+   If any `TRD.md`, `UI_UX_SPEC.md`, `BACKEND_SPEC.md`, or `DELIVERY_SPEC.md` draft
+   exists, require the complete hash-validated document set produced by
+   `$prepare-project-docs`. If its manifest is missing, stale, or inconsistent, stop
+   and direct the user to that command. A legacy project containing only a PRD remains
+   supported.
 4. A fresh target requires `--github-user` so initialization creates a protected
    `ai/<github-user>/<feature>` branch. Resolve it from explicit user context when
    available; otherwise ask for it.

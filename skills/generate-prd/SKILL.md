@@ -29,6 +29,7 @@ behavior, privacy, legal obligations, or cost.
 
 On `READY`, confirm the command also reconciled `.ai/selected-packs.json` and initialized every
 framework/capability pack selected by the PRD. Report `PRD.md`, its explicit framework selections,
-recorded assumptions, selected packs, and the exact next command `$start-build --prd PRD.md`. Do not
-start the build unless the user separately requests it. Durable sanitized intake state lives under
+recorded assumptions, selected packs, and the exact next command `$prepare-project-docs
+--requirements <path>` so the technical, UI/UX, backend/data, and delivery specifications are
+completed before design. Do not start later work unless the user separately requests it. Durable sanitized intake state lives under
 `.ai/prd-intake/`; do not copy the original raw requirements or credential values there.

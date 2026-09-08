@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project document intake assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status", "questions", "assumptions", "preserved_decisions", "changes",
+    "decision_sources"
+  ],
+  "properties": {
+    "status": {"enum": ["needs_input", "ready"]},
+    "questions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "question", "reason", "choices", "recommended_answer"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^Q[0-9]{3}$"},
+          "question": {"type": "string", "minLength": 5, "maxLength": 240},
+          "reason": {"type": "string", "minLength": 3, "maxLength": 180},
+          "choices": {
+            "type": "array", "minItems": 2, "maxItems": 4, "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "recommended_answer": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array", "items": {"type": "string", "minLength": 3}
+    },
+    "preserved_decisions": {
+      "type": "array", "items": {"type": "string", "minLength": 3}
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["document", "summary", "source"],
+        "properties": {
+          "document": {
+            "enum": ["PRD.md", "TRD.md", "UI_UX_SPEC.md", "BACKEND_SPEC.md", "DELIVERY_SPEC.md"]
+          },
+          "summary": {"type": "string", "minLength": 3},
+          "source": {"enum": ["requirements", "answer", "existing-document", "workflow-invariant", "assumption"]}
+        }
+      }
+    },
+    "decision_sources": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9 _/-]+$"},
+      "additionalProperties": {
+        "enum": ["requirements", "answer", "existing-document", "workflow-invariant", "assumption"]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ready"}}},
+      "then": {"properties": {"questions": {"maxItems": 0}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "needs_input"}}},
+      "then": {"properties": {"questions": {"minItems": 1}}}
+    }
+  ]
+}

@@ -822,7 +822,7 @@ def generate_prd(
             "assumptions": prior_state.get("assumptions", []),
             "decision_sources": prior_state.get("decision_sources", {}),
             "cached": True,
-            "next": f"$start-build --prd {output.relative_to(project)}",
+            "next": f"$prepare-project-docs --requirements {requirements.relative_to(project)}",
         }
     if not answers and same_source and prior_state.get("status") == "needs_input":
         return 2, {
@@ -835,11 +835,7 @@ def generate_prd(
         }
     if same_source and isinstance(prior, list):
         sanitized_answers.extend(item for item in prior if isinstance(item, str))
-    prior_questions = (
-        prior_state.get("questions", [])
-        if same_source
-        else []
-    )
+    prior_questions = prior_state.get("questions", []) if same_source else []
     _validate_answer_batch(answers, prior_questions)
     for answer in answers:
         value, detected = sanitize_text(answer)
@@ -939,7 +935,9 @@ def generate_prd(
                 "output": output.relative_to(project).as_posix(),
                 "assumptions": assessment["assumptions"],
                 "decision_sources": assessment["decision_sources"],
-                "next": f"$start-build --prd {output.relative_to(project)}",
+                "next": (
+                    f"$prepare-project-docs --requirements {requirements.relative_to(project)}"
+                ),
             }
         tracked = try_track_build_issue(
             project,

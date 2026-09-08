@@ -3,7 +3,7 @@
   "prerequisites": ["requirements"],
   "agents": ["design-interpreter", "html-quality-agent", "accessibility-agent"],
   "rules": ["rules/common.md", "rules/phases/design.md"],
-  "inputs": ["docs/generated/requirements.json", ".ai/design-inputs.json", "HTML/source/**"],
+  "inputs": ["docs/generated/requirements.json", "UI_UX_SPEC.md", "docs/UI_UX_SPEC.md", ".ai/design-inputs.json", "HTML/source/**"],
   "outputs": ["HTML/design-specification.md", "HTML/approved/**", ".ai/evidence/design/**"],
   "scope": {"application_writes": false, "allowed_paths": ["HTML/**", ".ai/evidence/design/**"]},
   "gate": "gates/contracts/design.json"

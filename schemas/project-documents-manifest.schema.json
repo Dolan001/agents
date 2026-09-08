@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Validated project document set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "status", "requirements", "documents", "generated_at"],
+  "properties": {
+    "version": {"const": 1},
+    "status": {"const": "READY"},
+    "requirements": {"type": ["string", "null"]},
+    "documents": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "path", "sha256"],
+        "properties": {
+          "name": {"enum": ["PRD.md", "TRD.md", "UI_UX_SPEC.md", "BACKEND_SPEC.md", "DELIVERY_SPEC.md"]},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "generated_at": {"type": "string", "format": "date-time"}
+  }
+}

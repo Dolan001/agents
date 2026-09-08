@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Project Docs"
+  short_description: "Generate and reconcile the complete project document set"
+  default_prompt: "Use $prepare-project-docs to audit my requirements and project documents, ask simple missing questions, and complete the validated document set."

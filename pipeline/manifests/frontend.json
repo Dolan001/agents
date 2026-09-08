@@ -3,7 +3,7 @@
   "prerequisites": ["design"],
   "agents": ["solution-architect", "selected-frontend-agent", "design-fidelity-resolver", "selected-frontend-verifier"],
   "rules": ["rules/common.md", "rules/phases/frontend.md"],
-  "inputs": ["HTML/approved/**", "docs/generated/requirements.json"],
+  "inputs": ["HTML/approved/**", "docs/generated/requirements.json", "TRD.md", "docs/TRD.md", "UI_UX_SPEC.md", "docs/UI_UX_SPEC.md"],
   "outputs": ["root monorepo control files and directories", "apps/frontend/**", ".ai/test-commands.json", ".ai/evidence/design-fidelity/frontend/**", ".ai/evidence/features/**"],
   "scope": {"allowed_paths": ["README.md", ".gitignore", ".env.example", "compose.yaml", "Makefile", "apps/**", "packages/**", "tests/**", "docs/**", ".ai/**"]},
   "gate": "gates/contracts/frontend.json"

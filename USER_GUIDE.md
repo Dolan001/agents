@@ -14,15 +14,15 @@ setup-workflow "https://github.com/Dolan001/agents.git"
 
 This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the
 repository as `.agents`, and runs the deterministic pack selector. With only requirements it
-initializes `base`, asks the user to reopen Codex, and points to `$generate-prd`. With a PRD it asks
-only for missing framework choices and initializes the selected packs.
+initializes `base`, asks the user to reopen Codex, and points to `$prepare-project-docs`. With
+existing drafts it audits all of them together before selecting the required packs.
 
 The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
 selects `nextjs`; Flutter selects `flutter`; and the backend selects exactly one of `drf` or
 `fastapi`. `rag` and `webscraping` are selected only by explicit PRD requirements. `aws` is loaded
 only by an explicit AWS deployment workflow. Selection evidence is stored in
-`.ai/selected-packs.json`. Successful PRD generation reconciles immediately, and build, token, and
-design-sync commands reconcile again before using project guidance.
+`.ai/selected-packs.json`. Successful project-document preparation reconciles immediately, and
+build, token, and design-sync commands reconcile again before using project guidance.
 
 ## Invocation model
 
@@ -42,11 +42,12 @@ need to be written. Direct CLI commands support `-h` or `--help`.
 
 ## Recommended command order
 
-With an existing PRD, most users need only:
+With existing requirements or any project-document drafts, use:
 
 ```text
 setup-workflow "<workflow-git-url>"
     -> reopen Codex
+    -> $prepare-project-docs
     -> $start-build
 ```
 
@@ -55,14 +56,14 @@ With requirements only, use:
 ```text
 setup-workflow "<workflow-git-url>"
     -> reopen Codex
-    -> $generate-prd --requirements REQUIREMENTS.md
+    -> $prepare-project-docs --requirements REQUIREMENTS.md
     -> $start-build
 ```
 
 For deliberate stage-by-stage execution, use:
 
 ```text
-$generate-prd                 # only when PRD.md does not already exist
+$prepare-project-docs         # generates missing and completes user-written documents
     -> $start-design
     -> $start-generatehtml
     -> $start-frontend and/or $start-mobile
@@ -82,6 +83,7 @@ explicitly authorized live AWS work.
 
 | Skill | Purpose | Normal stopping point or effect |
 |---|---|---|
+| `$prepare-project-docs` | Generate/audit all project specifications | Five consistent READY documents |
 | `$generate-prd` | Convert requirements into a validated PRD | Ready `PRD.md` |
 | `$start-design` | Create the design specification | Design specification |
 | `$start-generatehtml` | Generate and approve static HTML | Approved HTML |
@@ -102,7 +104,34 @@ explicitly authorized live AWS work.
 | `$deploy-production` | Promote the staging digest to AWS production | Verified production evidence |
 | `$rollback-deployment` | Restore a named AWS environment | Verified rollback evidence |
 
-## PRD generation
+## Project document preparation
+
+### `$prepare-project-docs`
+
+```text
+$prepare-project-docs [--requirements <path>] [--answer <QNNN=answer>]...
+./.agents/bin/ai prepare-project-docs --project . [--requirements <path>] \
+  --adapter codex [--answer <QNNN=answer>]...
+```
+
+| Flag | Value | Default | Meaning |
+|---|---|---|---|
+| `--project` | project directory | `.` | Target project root. |
+| `--requirements` | in-project path | auto-discovered | Optional requirements source. |
+| `--answer` | `QUESTION_ID=answer` | none | Answer every question in the active batch. Repeat once per answer. |
+| `--adapter` | `codex` | `codex` | Execution adapter. |
+
+The command discovers and audits `PRD.md`, `TRD.md`, `UI_UX_SPEC.md`,
+`BACKEND_SPEC.md`, and `DELIVERY_SPEC.md` at the project root or under `docs/`.
+Missing documents are generated. User-written documents are preserved until all
+required answers are available, then every affected document is updated together.
+Questions always use ordinary product language and arrive in batches of one to five;
+large products may need multiple rounds. Technical implementation details are written
+by the architect as visible assumptions. A hash-bound manifest under
+`.ai/project-documents/` makes later build commands stop if any validated document is
+changed or removed. Credential values block processing.
+
+## PRD-only generation
 
 ### `$generate-prd`
 
@@ -120,7 +149,8 @@ $generate-prd --requirements <path> [--output <path>] [--answer <QNNN=answer>]..
 | `--answer` | `QUESTION_ID=answer` | none | Answer one active clarification. Repeat for every answer in the current batch. |
 | `--adapter` | `codex` | `codex` | Execution adapter. |
 
-The command stops with `NEEDS_INPUT` only when user-owned product, access, privacy, legal, budget, or
+This compatibility command creates only `PRD.md`; continue with
+`$prepare-project-docs --requirements <path>` before design. It stops with `NEEDS_INPUT` only when user-owned product, access, privacy, legal, budget, or
 release decisions are missing. In Codex chat, questions are short and nontechnical, include simple
 choices and a recommended answer, and can be answered naturally. Reply `use the recommended defaults`
 to accept every displayed recommendation; Codex maps the response to the internal `--answer` flags.

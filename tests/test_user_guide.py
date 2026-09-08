@@ -34,7 +34,7 @@ def test_user_guide_covers_catalog_and_cli_flags_in_workflow_order() -> None:
         assert flags <= set(re.findall(r"--[a-z][a-z-]*", document))
 
     ordered = [
-        "$generate-prd",
+        "$prepare-project-docs",
         "$start-design",
         "$start-generatehtml",
         "$start-frontend",
@@ -51,7 +51,7 @@ def test_user_guide_covers_catalog_and_cli_flags_in_workflow_order() -> None:
     positions = [order_section.index(name) for name in ordered]
     assert positions == sorted(positions)
     table_section = document.split("## All available skills", 1)[1].split(
-        "## PRD generation", 1
+        "## Project document preparation", 1
     )[0]
     table_names = re.findall(r"\| `\$([a-z-]+)` \|", table_section)
     assert table_names == catalog_names

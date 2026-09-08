@@ -488,7 +488,10 @@ def select_from_inputs(args: argparse.Namespace) -> dict[str, Any]:
         return {
             "status": "needs-prd",
             "missing_choices": [],
-            "next": f"$generate-prd --requirements {requirements.relative_to(project).as_posix()}",
+            "next": (
+                "$prepare-project-docs --requirements "
+                f"{requirements.relative_to(project).as_posix()}"
+            ),
             "selection": selection,
         }
     deployment_requested = args.deployment == "aws"

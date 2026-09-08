@@ -314,7 +314,7 @@ def test_requirements_only_bootstrap_selects_base_and_records_source(tmp_path: P
     assert [item["name"] for item in manifest["selected_packs"]] == ["base"]
 
 
-def test_lightweight_requirements_only_setup_is_ready_for_prd_generation(
+def test_lightweight_requirements_only_setup_is_ready_for_document_preparation(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "REQUIREMENTS.md").write_text("Build a task manager.\n")
@@ -323,7 +323,7 @@ def test_lightweight_requirements_only_setup_is_ready_for_prd_generation(
 
     output = json.loads(capsys.readouterr().out)
     assert output["status"] == "needs-prd"
-    assert output["next"] == "$generate-prd --requirements REQUIREMENTS.md"
+    assert output["next"] == "$prepare-project-docs --requirements REQUIREMENTS.md"
     assert [item["name"] for item in output["selection"]["selected_packs"]] == ["base"]
 
 

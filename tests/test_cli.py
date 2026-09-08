@@ -18,6 +18,7 @@ from ai_workflow.design_fidelity import (
     validate_design_fidelity_evidence,
 )
 from ai_workflow.discovery import detect
+from ai_workflow.documents import DOCUMENTS, validate_document_set
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.issues import issue_summary, track_build_issue
@@ -417,6 +418,23 @@ def _generated_decision_sources(prd: str) -> dict[str, str]:
     return {key: "requirements" for key in decisions}
 
 
+def _valid_supplemental_document(name: str) -> str:
+    title, headings = DOCUMENTS[name]
+    coverage = (
+        "Source: PRD.md. Covers FR-001, BR-001, and NFR-001. The React client uses loading, "
+        "empty, success, validation, unauthorized, forbidden, error, and retry states across "
+        "mobile, tablet, desktop, and 200% zoom with WCAG 2.2 AA behavior. The FastAPI backend "
+        "uses PostgreSQL, Alembic migration controls, constraints, indexes, service transactions, "
+        "authorization, query optimization, measured queries, OpenAPI, and /api/v1. The monorepo "
+        "records security and observability. Deployment is not requested and remains deferred."
+    )
+    sections = []
+    for heading in headings:
+        content = "Status: READY" if heading == "Document Status" else coverage
+        sections.append(f"## {heading}\n\n{content}")
+    return f"# {title}\n\n" + "\n\n".join(sections) + "\n"
+
+
 def test_prd_validator_accepts_complete_webscraping_contract(tmp_path: Path) -> None:
     content = _valid_generated_prd()
     content = content.replace("Background jobs: Not required", "Background jobs: Required")
@@ -664,6 +682,168 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     assert ready["status"] == "ready"
     assert main(command) == 0
     assert calls == 3
+
+
+def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text(
+        "Build a customer account website and API. Preserve my product decisions.\n"
+    )
+    (tmp_path / "TRD.md").write_text(
+        "# My draft\n\nCustomers must remain isolated from one another.\n"
+    )
+    calls = 0
+
+    def fake_document_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal calls
+        del project, adapter
+        calls += 1
+        assessment_match = re.search(r"Required assessment: (.+)", prompt)
+        candidates_match = re.search(r"Required candidates: (.+)", prompt)
+        answers_match = re.search(r"Sanitized durable answers: (.+)", prompt)
+        source_map_match = re.search(r"Sanitized source map: (.+)", prompt)
+        assert assessment_match and candidates_match and answers_match and source_map_match
+        assert "plain everyday\nlanguage" in prompt
+        assert "one to five" in prompt.replace("\n", " ")
+        assert "Do not import, install, or probe for jsonschema" in prompt
+        source_map = json.loads(Path(source_map_match.group(1)).read_text())
+        assert {item["document"] for item in source_map["sources"]} == {
+            "REQUIREMENTS.md",
+            "TRD.md",
+        }
+        assessment = Path(assessment_match.group(1))
+        candidates = {
+            name: Path(path) for name, path in json.loads(candidates_match.group(1)).items()
+        }
+        answers = json.loads(Path(answers_match.group(1)).read_text())
+        if not answers:
+            questions = [
+                {
+                    "id": f"Q{number:03d}",
+                    "question": f"Which outcome should apply for decision {number}?",
+                    "reason": "The product owner must choose this behavior.",
+                    "choices": ["Recommended behavior", "Alternative behavior"],
+                    "recommended_answer": "Recommended behavior",
+                }
+                for number in range(1, 6)
+            ]
+            assessment.write_text(
+                json.dumps(
+                    {
+                        "status": "needs_input",
+                        "questions": questions,
+                        "assumptions": ["Use production-safe technical defaults."],
+                        "preserved_decisions": ["Customers remain isolated."],
+                        "changes": [],
+                        "decision_sources": {"Customer isolation": "existing-document"},
+                    }
+                )
+            )
+        else:
+            assessment.write_text(
+                json.dumps(
+                    {
+                        "status": "ready",
+                        "questions": [],
+                        "assumptions": ["Use production-safe technical defaults."],
+                        "preserved_decisions": ["Customers remain isolated."],
+                        "changes": [
+                            {
+                                "document": name,
+                                "summary": "Completed the validated document contract.",
+                                "source": "requirements",
+                            }
+                            for name in DOCUMENTS
+                        ],
+                        "decision_sources": {
+                            "Customer isolation": "existing-document",
+                            "Release behavior": "answer",
+                        },
+                    }
+                )
+            )
+            candidates["PRD.md"].write_text(_valid_generated_prd())
+            for name in DOCUMENTS.keys() - {"PRD.md"}:
+                candidates[name].write_text(_valid_supplemental_document(name))
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.documents._run_adapter", fake_document_agent)
+    command = [
+        "prepare-project-docs",
+        "--project",
+        str(tmp_path),
+        "--requirements",
+        "REQUIREMENTS.md",
+    ]
+    assert main(command) == 2
+    intake = json.loads((tmp_path / ".ai/project-documents/state.json").read_text())
+    assert len(intake["questions"]) == 5
+    assert (tmp_path / "TRD.md").read_text().startswith("# My draft")
+    assert not (tmp_path / "PRD.md").exists()
+    assert main(command) == 2
+    assert calls == 1
+    answers = [
+        value
+        for number in range(1, 6)
+        for value in ("--answer", f"Q{number:03d}=Recommended behavior")
+    ]
+    assert main([*command, *answers]) == 0
+    assert calls == 2
+    assert validate_document_set(tmp_path) == []
+    assert all((tmp_path / name).is_file() for name in DOCUMENTS)
+    ready = json.loads((tmp_path / ".ai/project-documents/state.json").read_text())
+    assert ready["status"] == "ready"
+    assert ready["preserved_decisions"] == ["Customers remain isolated."]
+    assert main(command) == 0
+    assert calls == 2
+
+    (tmp_path / "TRD.md").write_text(
+        (tmp_path / "TRD.md").read_text() + "\nA user changed this validated document.\n"
+    )
+    assert (
+        main(
+            [
+                "start-design",
+                "--project",
+                str(tmp_path),
+                "--prd",
+                "PRD.md",
+                "--github-user",
+                "test-user",
+                "--frontend",
+                "react",
+                "--backend",
+                "fastapi",
+            ]
+        )
+        == 1
+    )
+
+
+def test_prepare_project_docs_blocks_secrets_in_user_written_drafts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    credential = "real-secret-value-that-must-not-survive"
+    (tmp_path / "PRD.md").write_text("# Draft\n")
+    (tmp_path / "TRD.md").write_text(f"API_TOKEN={credential}\n")
+    called = False
+
+    def forbidden_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal called
+        del project, adapter, prompt
+        called = True
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.documents._run_adapter", forbidden_agent)
+    assert main(["prepare-project-docs", "--project", str(tmp_path)]) == 2
+    assert called is False
+    durable = "\n".join(
+        path.read_text()
+        for path in (tmp_path / ".ai/project-documents").rglob("*")
+        if path.is_file()
+    )
+    assert credential not in durable
 
 
 def test_generate_prd_blocks_and_redacts_supplied_credentials(
