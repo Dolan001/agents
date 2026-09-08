@@ -16,7 +16,7 @@ from .frameworks import detect_prd_frameworks
 from .io import read_json, write_json
 from .model import utc_now
 from .pipeline import workflow_root
-from .prd import architecture_decisions, sanitize_text, validate_prd
+from .prd import architecture_decisions, sanitize_text, validate_decision_sources, validate_prd
 
 DOCUMENT_CONTRACT_VERSION = 1
 DOCUMENTS: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -583,6 +583,12 @@ def prepare_project_documents(
                 "resume": "$prepare-project-docs",
             }
         failures = validate_document_candidates(candidates)
+        if candidates["PRD.md"].is_file():
+            failures.extend(
+                validate_decision_sources(
+                    candidates["PRD.md"].read_text(encoding="utf-8"), assessment
+                )
+            )
         if not failures:
             for name, target in targets.items():
                 target.parent.mkdir(parents=True, exist_ok=True)

@@ -741,6 +741,9 @@ def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
                 )
             )
         else:
+            generated = _valid_generated_prd()
+            decision_sources = _generated_decision_sources(generated)
+            decision_sources["authorization model"] = "answer"
             assessment.write_text(
                 json.dumps(
                     {
@@ -756,14 +759,11 @@ def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
                             }
                             for name in DOCUMENTS
                         ],
-                        "decision_sources": {
-                            "Customer isolation": "existing-document",
-                            "Release behavior": "answer",
-                        },
+                        "decision_sources": decision_sources,
                     }
                 )
             )
-            candidates["PRD.md"].write_text(_valid_generated_prd())
+            candidates["PRD.md"].write_text(generated)
             for name in DOCUMENTS.keys() - {"PRD.md"}:
                 candidates[name].write_text(_valid_supplemental_document(name))
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
