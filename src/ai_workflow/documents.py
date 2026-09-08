@@ -358,6 +358,13 @@ def _validate_answers(answers: list[str], questions: list[Any]) -> None:
         raise RuntimeError("answers must match every question in the active batch exactly")
 
 
+def _repair_targets(failures: list[str] | None) -> list[str]:
+    if not failures:
+        return []
+    affected = sorted(name for name in DOCUMENTS if any(name in failure for failure in failures))
+    return affected or list(DOCUMENTS)
+
+
 def _prompt(
     project: Path,
     source_map: Path,
@@ -368,11 +375,16 @@ def _prompt(
     failures: list[str] | None,
 ) -> str:
     root = workflow_root()
-    repair = (
-        "\nRepair these deterministic cross-document failures:\n- " + "\n- ".join(failures)
-        if failures
-        else ""
-    )
+    affected = _repair_targets(failures)
+    repair = ""
+    if failures:
+        repair = (
+            "\nRepair these deterministic cross-document failures:\n- "
+            + "\n- ".join(failures)
+            + "\nRepair only these candidate files: "
+            + ", ".join(affected)
+            + ". Preserve every other candidate byte-for-byte."
+        )
     candidate_map = json.dumps(
         {name: str(path) for name, path in candidates.items()}, sort_keys=True
     )
@@ -401,10 +413,12 @@ technical implementation details that the architect can write using visible assu
 Do not import, install, or probe for jsonschema; write the requested artifacts and let the
 orchestrator perform schema and cross-document validation.
 
-When ready, write all five complete candidates and a ready assessment with no questions. Follow the
-exact titles, headings, stable PRD identifiers, traceability, supported stack profiles, PostgreSQL
-and monorepo workflow. Keep unrequested deployment explicitly deferred. Write credential names,
-owners, environments, and destinations only—never values.
+When ready, ensure all five complete candidates exist and write a ready assessment with no
+questions. On an initial pass, write every candidate. On a repair pass, modify only the explicitly
+named repair targets and retain the other candidates exactly. Follow the exact titles, headings,
+stable PRD identifiers, traceability, supported stack profiles, PostgreSQL and monorepo workflow.
+Keep unrequested deployment explicitly deferred. Write credential names, owners, environments, and
+destinations only—never values.
 """
 
 
@@ -541,9 +555,16 @@ def prepare_project_documents(
     failures: list[str] | None = None
     for attempt in range(2):
         assessment_path.unlink(missing_ok=True)
-        for candidate in candidates.values():
-            candidate.unlink(missing_ok=True)
+        if attempt == 0:
+            for candidate in candidates.values():
+                candidate.unlink(missing_ok=True)
         write_json(state_path, {**common, "status": "assessing", "questions": questions})
+        repair_targets = set(_repair_targets(failures))
+        preserved_hashes = {
+            name: _sha256(candidate)
+            for name, candidate in candidates.items()
+            if repair_targets and name not in repair_targets and candidate.is_file()
+        }
         result = _run_adapter(
             project,
             adapter,
@@ -561,6 +582,17 @@ def prepare_project_documents(
             raise RuntimeError(
                 f"project document agent failed: {result['stderr_tail'] or result['stdout_tail']}"
             )
+        changed_preserved = [
+            name
+            for name, digest in preserved_hashes.items()
+            if not candidates[name].is_file() or _sha256(candidates[name]) != digest
+        ]
+        if changed_preserved:
+            failures = [
+                "repair changed candidate files outside its target set: "
+                + ", ".join(changed_preserved)
+            ]
+            continue
         try:
             assessment = _assessment(assessment_path)
         except RuntimeError as error:
@@ -589,6 +621,10 @@ def prepare_project_documents(
                     candidates["PRD.md"].read_text(encoding="utf-8"), assessment
                 )
             )
+        write_json(
+            root / "validation.json",
+            {"passed": not failures, "attempt": attempt + 1, "failures": failures},
+        )
         if not failures:
             for name, target in targets.items():
                 target.parent.mkdir(parents=True, exist_ok=True)

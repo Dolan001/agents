@@ -3,7 +3,7 @@
   "prerequisites": ["deployment"],
   "agents": ["release-readiness-agent", "git-release-agent"],
   "rules": ["rules/common.md", "rules/phases/delivery.md"],
-  "inputs": ["DELIVERY_SPEC.md", "docs/DELIVERY_SPEC.md", ".ai/evidence/**", ".ai/issues/**", "artifacts/tests/**", "artifacts/security/**"],
+  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "UI_UX_SPEC.md", "docs/UI_UX_SPEC.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "DELIVERY_SPEC.md", "docs/DELIVERY_SPEC.md", "docs/generated/requirements.json", "docs/api/**", ".ai/evidence/**", ".ai/issues/**", "artifacts/tests/**", "artifacts/security/**"],
   "outputs": ["artifacts/final/**"],
   "scope": {"application_writes": false, "remote_push_requires_explicit_execute": true},
   "gate": "gates/contracts/delivery.json"

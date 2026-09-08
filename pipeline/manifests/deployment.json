@@ -3,7 +3,7 @@
   "prerequisites": ["testing"],
   "agents": ["aws-platform-architect", "aws-infrastructure-implementer", "aws-independent-verifier"],
   "rules": ["rules/common.md", "rules/phases/deployment.md"],
-  "inputs": ["docs/generated/**", "docs/api/**", "apps/**", "packages/**", ".ai/evidence/**", "artifacts/tests/**", "artifacts/security/**"],
+  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "DELIVERY_SPEC.md", "docs/DELIVERY_SPEC.md", "docs/generated/**", "docs/api/**", "apps/**", "packages/**", ".ai/evidence/**", "artifacts/tests/**", "artifacts/security/**"],
   "outputs": ["infra/**", ".github/workflows/**", "ops/**", "docs/deployment/**", ".ai/evidence/deployment/**"],
   "scope": {
     "application_writes": false,

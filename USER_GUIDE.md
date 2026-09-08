@@ -222,7 +222,9 @@ $start-design [shared start flags]
 ```
 
 Runs missing bootstrap and requirements work, creates `HTML/design-specification.md`, and stops
-before approved HTML or application source.
+before approved HTML or application source. API contracts are first reconciled from the PRD, TRD,
+and backend/data specification. Design then receives the PRD, TRD, UI/UX specification, normalized
+requirements, and those API contracts.
 
 ### `$start-generatehtml`
 

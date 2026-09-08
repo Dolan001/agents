@@ -19,6 +19,7 @@ from ai_workflow.design_fidelity import (
 )
 from ai_workflow.discovery import detect
 from ai_workflow.documents import DOCUMENTS, validate_document_set
+from ai_workflow.execution import _build_context_bundle, _node_input_files
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.issues import issue_summary, track_build_issue
@@ -435,6 +436,116 @@ def _valid_supplemental_document(name: str) -> str:
     return f"# {title}\n\n" + "\n\n".join(sections) + "\n"
 
 
+def test_phase_and_feature_contexts_retain_required_project_documents(tmp_path: Path) -> None:
+    for name in DOCUMENTS:
+        (tmp_path / name).write_text(f"# {name}\n\nACC-001 contract.\n")
+    (tmp_path / "PRD.md").write_text("# PRD\n\nACC-001 " + "product outcome " * 6000)
+    (tmp_path / "docs/generated").mkdir(parents=True)
+    (tmp_path / "docs/generated/requirements.json").write_text(
+        json.dumps({"requirements": [{"requirement_id": "ACC-001"}]})
+    )
+    (tmp_path / "docs/api").mkdir()
+    (tmp_path / "docs/api/contract-plan.json").write_text(
+        json.dumps({"requirement_id": "ACC-001", "path": "/api/v1/accounts"})
+    )
+    (tmp_path / ".ai/discovery").mkdir(parents=True)
+    (tmp_path / ".ai/discovery/repository-map.json").write_text("{}")
+
+    expectations = {
+        "requirements": {"PRD.md", "TRD.md", "BACKEND_SPEC.md"},
+        "design": {
+            "PRD.md",
+            "TRD.md",
+            "UI_UX_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "frontend": {
+            "PRD.md",
+            "TRD.md",
+            "UI_UX_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "mobile": {
+            "PRD.md",
+            "TRD.md",
+            "UI_UX_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "backend": {
+            "PRD.md",
+            "TRD.md",
+            "BACKEND_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "integration": {
+            "PRD.md",
+            "TRD.md",
+            "UI_UX_SPEC.md",
+            "BACKEND_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "testing": {
+            "PRD.md",
+            "TRD.md",
+            "UI_UX_SPEC.md",
+            "BACKEND_SPEC.md",
+            "DELIVERY_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "deployment": {
+            "PRD.md",
+            "TRD.md",
+            "BACKEND_SPEC.md",
+            "DELIVERY_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+        "delivery": {
+            "PRD.md",
+            "TRD.md",
+            "UI_UX_SPEC.md",
+            "BACKEND_SPEC.md",
+            "DELIVERY_SPEC.md",
+            "docs/generated/requirements.json",
+            "docs/api/contract-plan.json",
+        },
+    }
+    feature = {
+        "feature_id": "accounts",
+        "requirement_ids": ["ACC-001"],
+        "inputs": ["docs/api/contract-plan.json"],
+        "allowed_paths": ["apps/**", "tests/**"],
+    }
+    fanout_phases = {"frontend", "mobile", "backend", "integration", "testing"}
+    for phase, expected in expectations.items():
+        phase_inputs = set(_node_input_files(tmp_path, phase, "test-node"))
+        assert expected <= phase_inputs
+        if phase in fanout_phases:
+            feature_inputs = set(_node_input_files(tmp_path, phase, "test-node", feature))
+            assert expected <= feature_inputs
+
+    design_inputs = _node_input_files(tmp_path, "design", "create-design-specification")
+    bundle_path = _build_context_bundle(
+        tmp_path,
+        "design/create-design-specification/phase",
+        "design",
+        design_inputs,
+        {"assumptions": ["PRD source: PRD.md"]},
+        None,
+        None,
+    )
+    bundle = json.loads(bundle_path.read_text())
+    required = {item["path"] for item in bundle["required_reference_files"]}
+    assert expectations["design"] <= required
+    assert "PRD.md" in bundle["omitted_paths"]
+
+
 def test_prd_validator_accepts_complete_webscraping_contract(tmp_path: Path) -> None:
     content = _valid_generated_prd()
     content = content.replace("Background jobs: Not required", "Background jobs: Required")
@@ -685,7 +796,9 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
 
 
 def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     (tmp_path / "REQUIREMENTS.md").write_text(
         "Build a customer account website and API. Preserve my product decisions.\n"
@@ -819,6 +932,9 @@ def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
         )
         == 1
     )
+    capsys.readouterr()
+    assert main(["build", "--project", str(tmp_path), "--execute", "--adapter", "codex"]) == 1
+    assert "$prepare-project-docs" in capsys.readouterr().err
 
 
 def test_prepare_project_docs_blocks_secrets_in_user_written_drafts(
@@ -844,6 +960,75 @@ def test_prepare_project_docs_blocks_secrets_in_user_written_drafts(
         if path.is_file()
     )
     assert credential not in durable
+
+
+def test_prepare_project_docs_repairs_only_the_failed_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text("Build an account website and API.\n")
+    calls = 0
+    preserved: dict[str, str] = {}
+
+    def repair_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal calls
+        del project, adapter
+        calls += 1
+        assessment_match = re.search(r"Required assessment: (.+)", prompt)
+        candidates_match = re.search(r"Required candidates: (.+)", prompt)
+        assert assessment_match and candidates_match
+        assessment = Path(assessment_match.group(1))
+        candidates = {
+            name: Path(path) for name, path in json.loads(candidates_match.group(1)).items()
+        }
+        generated = _valid_generated_prd()
+        assessment.write_text(
+            json.dumps(
+                {
+                    "status": "ready",
+                    "questions": [],
+                    "assumptions": [],
+                    "preserved_decisions": [],
+                    "changes": [],
+                    "decision_sources": _generated_decision_sources(generated),
+                }
+            )
+        )
+        if calls == 1:
+            candidates["PRD.md"].write_text(generated)
+            for name in DOCUMENTS.keys() - {"PRD.md"}:
+                candidates[name].write_text(_valid_supplemental_document(name))
+            candidates["TRD.md"].write_text("# Invalid TRD\n")
+            preserved.update(
+                {
+                    name: path.read_text()
+                    for name, path in candidates.items()
+                    if name != "TRD.md"
+                }
+            )
+        else:
+            assert "Repair only these candidate files: TRD.md" in prompt
+            assert all(
+                candidates[name].read_text() == content for name, content in preserved.items()
+            )
+            candidates["TRD.md"].write_text(_valid_supplemental_document("TRD.md"))
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.documents._run_adapter", repair_agent)
+    assert (
+        main(
+            [
+                "prepare-project-docs",
+                "--project",
+                str(tmp_path),
+                "--requirements",
+                "REQUIREMENTS.md",
+            ]
+        )
+        == 0
+    )
+    assert calls == 2
+    validation = json.loads((tmp_path / ".ai/project-documents/validation.json").read_text())
+    assert validation == {"attempt": 2, "failures": [], "passed": True}
 
 
 def test_generate_prd_blocks_and_redacts_supplied_credentials(
@@ -2444,7 +2629,11 @@ def test_html_verification_routes_findings_through_bounded_repair(
             assert bundle_match
             verifier_bundle = json.loads(Path(bundle_match.group(1)).read_text())
             selected = {item["path"] for item in verifier_bundle["selected_files"]}
-            assert "PRD.md" not in selected
+            assert "PRD.md" in selected
+            required = {
+                item["path"] for item in verifier_bundle["required_reference_files"]
+            }
+            assert "PRD.md" in required
             assert "HTML/design-specification.md" in selected
             assert ".ai/evidence/design/baseline.json" in selected
         if node == "verify-html-baseline" and not repaired:

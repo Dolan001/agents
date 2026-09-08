@@ -3,7 +3,7 @@
   "prerequisites": ["bootstrap"],
   "agents": ["requirements-reconciliation-agent", "solution-architect", "api-contract-manager", "dependency-planner"],
   "rules": ["rules/common.md", "rules/phases/requirements.md", "rules/target-monorepo.md"],
-  "inputs": ["docs/PRD.md", ".ai/discovery/repository-map.json"],
+  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", ".ai/discovery/repository-map.json"],
   "outputs": ["docs/generated/requirements.json", "docs/api/contract-plan.json", ".ai/task-queue.json"],
   "scope": {
     "application_writes": false,

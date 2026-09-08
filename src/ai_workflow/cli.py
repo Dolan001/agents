@@ -212,6 +212,7 @@ def command_inspect(args: argparse.Namespace) -> int:
 
 def command_reconcile(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     state = StateStore(project).load()
     prd_assumption = next(
         (item for item in state.get("assumptions", []) if item.startswith("PRD source: ")), None
@@ -241,6 +242,7 @@ def command_reconcile(args: argparse.Namespace) -> int:
 
 def command_plan(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     state_store = StateStore(project)
     state = state_store.load()
     source = read_json(project / "docs" / "generated" / "requirements.json")
@@ -299,6 +301,7 @@ def command_plan(args: argparse.Namespace) -> int:
 
 def command_build(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     if _state_has_recorded_prd(project):
         _reconcile_state_packs(project, include_deployment=False)
     state_store = StateStore(project)
@@ -350,6 +353,7 @@ def command_build(args: argparse.Namespace) -> int:
 def command_one_shot(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     initialize_issue_tracker(project)
+    _require_current_document_set(project)
     if args.deployment != "unknown":
         raise RuntimeError(
             "one-shot does not run deployment; use start-deployment --deployment aws separately"
@@ -935,6 +939,7 @@ def command_prepare_project_documents(args: argparse.Namespace) -> int:
 
 def command_resolve_token(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     if _state_has_recorded_prd(project):
         _reconcile_state_packs(project, include_deployment=False)
     print_json(
@@ -952,6 +957,7 @@ def command_resolve_token(args: argparse.Namespace) -> int:
 
 def command_sync_design(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     if _state_has_recorded_prd(project):
         _reconcile_state_packs(project, include_deployment=False)
     else:

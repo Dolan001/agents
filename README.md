@@ -335,7 +335,8 @@ The requirements phase converts the PRD into executable delivery contracts:
   requirements for each task.
 
 Application implementation is still prohibited. The requirements gate must pass before
-design work starts.
+design work starts. Contract generation reconciles the PRD with `TRD.md` and
+`BACKEND_SPEC.md`; a mismatch fails instead of silently choosing one document.
 
 ### 8. Produce and approve HTML
 
@@ -349,9 +350,12 @@ supplied HTML → screenshots/design evidence → PRD only
 - With screenshots but no HTML, agents generate HTML from visual evidence plus PRD.
 - With neither, agents generate HTML from the PRD and design specification.
 
-The route is recorded in `.ai/design-inputs.json`. The design phase produces
-`HTML/design-specification.md`, approved static HTML under `HTML/approved/`, and design
-evidence. Accessibility and HTML-quality checks must pass before frontend work.
+The route is recorded in `.ai/design-inputs.json`. The design phase uses the PRD,
+`TRD.md`, `UI_UX_SPEC.md`, normalized requirements, and generated API contracts so
+screens, permissions, fields, states, validation, errors, pagination, jobs, and realtime
+behavior agree before HTML generation. It produces `HTML/design-specification.md`, approved
+static HTML under `HTML/approved/`, and design evidence. Accessibility and HTML-quality checks
+must pass before frontend work.
 
 `$start-design` intentionally stops after `HTML/design-specification.md`.
 `$start-generatehtml` completes the design gate and stops before application code.
@@ -366,6 +370,10 @@ agents:
 - preserve requirements, responsive behavior, accessibility, and design intent;
 - define project-owned frontend test commands; and
 - produce feature and structure evidence.
+
+Each web feature retains the PRD, TRD, UI/UX specification, normalized requirements,
+API contracts, and approved design as required references; feature scoping cannot replace
+those contracts.
 
 The generated `apps/frontend` structure must match the selected behavior pack's exact
 project-structure contract before the frontend gate passes. If web is not selected,
@@ -389,6 +397,9 @@ and iOS. It creates feature-first boundaries, validated environments, navigation
 localization, adaptive design, typed networking, secure storage, lifecycle and offline
 behavior, and unit/widget/golden/integration test foundations.
 
+Each mobile feature retains the PRD, TRD, UI/UX specification, normalized requirements,
+API contracts, and approved design as required references.
+
 The gate validates the exact Flutter structure contract, Android and iOS platform
 directories, accessibility and responsive evidence, Flutter analysis/tests, and
 truthful platform release readiness. Unavailable iOS tooling must be reported as
@@ -411,6 +422,9 @@ FastAPI guidance. It uses reconciled requirements and observed web/mobile data n
 - run focused backend verification; and
 - validate required paths, one dependency-lock strategy, activated domain capabilities, and
   executable source policies against the selected framework contract.
+
+Each backend feature receives the PRD, TRD, backend/data specification, normalized
+requirements, and API contracts. Integration retains both client and backend specifications.
 
 The backend gate blocks progression when required behavior, evidence, or structure is
 missing. Its final phase decision belongs to the selected DRF or FastAPI independent
@@ -502,6 +516,10 @@ integration, and end-to-end lanes. Independent agents verify:
 
 Results are stored under `artifacts/tests/`, `artifacts/security/`, and
 `.ai/evidence/features/`. A task is marked verified only when its final evidence passes.
+
+Testing reconciles all five canonical documents with normalized requirements and API contracts.
+Deployment receives PRD, TRD, backend/data, and delivery specifications; final delivery receives
+all five documents plus contract and verification evidence.
 
 ### 14. Generate and verify optional AWS deployment assets
 
@@ -682,12 +700,16 @@ failed artifact and resume after correcting the actual cause.
 - `build-context-bundle` creates an auditable manifest capped at 12 files and 60,000
   characters for phase work and 10 files/45,000 characters for feature work,
   prioritizing requirement anchors, contracts, affected code, and tests while excluding
-  dependencies, caches, build output, and duplicated PRD payloads.
+  dependencies, caches, and build output. PRD and phase-relevant specification/API files remain
+  hash-bound `required_reference_files` even when their full contents exceed that budget; agents
+  inspect only relevant headings and requirement IDs.
 - Context manifests store paths, hashes, priorities, and sizes instead of duplicating
   project source in orchestration prompts.
 - Agents use search and exact-range reads and must record necessary context expansion.
 - `recover-failure` is loaded only after a real failure, never on the normal path.
 - Verified-node caching and durable checkpoints prevent unchanged work from repeating.
+- Document candidate repair preserves passing files and regenerates only validation-affected
+  candidates; the orchestrator rejects repairs outside the declared target set.
 - Inputs, PRD text, HTML, screenshots, and token contents are treated as untrusted data.
 - Agent adapters and project commands receive fixed argument arrays; user content is
   never evaluated as shell text.

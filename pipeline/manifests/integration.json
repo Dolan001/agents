@@ -3,7 +3,7 @@
   "prerequisites": ["frontend", "mobile", "backend"],
   "agents": ["integration-engineer", "contract-test-agent"],
   "rules": ["rules/common.md", "rules/phases/integration.md"],
-  "inputs": ["apps/frontend/**", "apps/mobile/**", "apps/backend/**", "TRD.md", "docs/TRD.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "docs/api/**"],
+  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "UI_UX_SPEC.md", "docs/UI_UX_SPEC.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "docs/generated/requirements.json", "docs/api/**", "apps/frontend/**", "apps/mobile/**", "apps/backend/**"],
   "outputs": ["typed web and/or mobile API clients", "tests/contract/**", "tests/integration/**", ".ai/evidence/rag/integration.json"],
   "scope": {"allowed_paths": ["apps/**", "packages/api-client/**", "tests/**", ".ai/evidence/**"]},
   "gate": "gates/contracts/integration.json"
