@@ -710,6 +710,7 @@ def command_start(args: argparse.Namespace) -> int:
 
 def command_verify(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     state = StateStore(project).load()
     evidence_root = project / ".ai" / "evidence" / "features"
     feature_paths = (
@@ -735,6 +736,7 @@ def command_verify(args: argparse.Namespace) -> int:
 
 def command_test(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     manifest = read_json(project / ".ai" / "test-commands.json", {"commands": {}})
     scope = "all" if args.all else args.scope
     configured = manifest.get("commands", {}) if isinstance(manifest, dict) else {}
@@ -766,6 +768,7 @@ def command_test(args: argparse.Namespace) -> int:
 
 def command_review(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     report = inventory(project)
     findings = report["risks"]
     write_json(
@@ -828,6 +831,7 @@ def command_resume(args: argparse.Namespace) -> int:
 
 def command_push(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    _require_current_document_set(project)
     git = baseline(project)
     branch = git["branch"] if isinstance(git["branch"], str) else None
     if branch is None:
@@ -1017,6 +1021,9 @@ def command_deployment_status(args: argparse.Namespace) -> int:
 
 def command_deployment_operation(args: argparse.Namespace) -> int:
     operation = "rollback" if args.command == "rollback-deployment" else "deploy"
+    project = resolved_project(args.project)
+    if operation != "rollback":
+        _require_current_document_set(project)
     environment = (
         args.environment if operation == "rollback" else args.command.removeprefix("deploy-")
     )
@@ -1025,7 +1032,7 @@ def command_deployment_operation(args: argparse.Namespace) -> int:
     )
     print_json(
         execute_operation(
-            resolved_project(args.project), environment, operation, args.execute, approved
+            project, environment, operation, args.execute, approved
         )
     )
     return 0
