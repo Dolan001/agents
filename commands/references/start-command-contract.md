@@ -31,9 +31,8 @@ These entrypoints execute work; they are not explanatory prompt templates.
 8. Preserve durable `.ai` checkpoints. On failure, stop and report the failing phase,
    evidence, and exact recovery command. Never claim a stage completed unless its gate
    passed. If evidence says `retryable_without_new_evidence: false`, do not invoke an
-   agent repair or repeat the verifier. For a generated HTML draft awaiting explicit
-   product-owner review, show `HTML/generated/index.html`; after the user approves it,
-   the exact recovery command is `$start-generatehtml --approve-html`.
+   agent repair or repeat the verifier. HTML approval belongs to the independent
+   verifier and finishes within the same invocation; no user HTML review is required.
 9. Report the requested stopping point and the next optional command after success.
 10. `start-build`, `resume-build`, and legacy `one-shot` always defer deployment, even when the PRD
     declares AWS. AWS preparation begins only with `$start-deployment --deployment aws`. Generation

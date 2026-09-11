@@ -14,7 +14,7 @@ from typing import Any
 from .capabilities import detect_prd_capabilities
 from .commands import run_command_groups
 from .deployment import deployment_status, execute_operation
-from .design import approve_generated_html, classify_design_inputs, ingest_design_inputs
+from .design import classify_design_inputs, ingest_design_inputs
 from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
 from .documents import prepare_project_documents, validate_document_set
@@ -629,8 +629,6 @@ def command_start(args: argparse.Namespace) -> int:
         _defer_deployment_selection(project)
 
     html_approval = None
-    if getattr(args, "approve_html", False):
-        html_approval = approve_generated_html(project)
 
     selection = _reconcile_state_packs(
         project,
@@ -1074,7 +1072,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument(
         "--approve-html",
         action="store_true",
-        help="Approve the exact source-checked HTML/generated draft after reviewing its preview",
+        help="Deprecated compatibility flag; HTML verification now approves automatically",
     )
     command.set_defaults(handler=command_start, until=until)
 

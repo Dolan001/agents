@@ -2698,6 +2698,41 @@ def test_html_verification_routes_findings_through_bounded_repair(
     assert issues["unresolved"] == 0
 
 
+def test_html_generation_approves_in_one_invocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 View account.\n")
+    verifications = []
+
+    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        if "Phase/node: design/establish-html-baseline" in prompt:
+            draft = project / "HTML/generated/index.html"
+            draft.parent.mkdir(parents=True, exist_ok=True)
+            draft.write_text("<!doctype html><title>Account</title>")
+            checks = project / ".ai/evidence/design/source-checks.json"
+            checks.parent.mkdir(parents=True, exist_ok=True)
+            checks.write_text(json.dumps({
+                "status": "passed", "exit_code": 0,
+                "output_hashes": {
+                    "HTML/generated/index.html": hashlib.sha256(draft.read_bytes()).hexdigest()
+                },
+            }))
+            (checks.parent / "baseline.json").write_text(json.dumps({"phase": "design"}))
+            return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+        if "Phase/node: design/verify-html-baseline" in prompt:
+            assert not (project / "HTML/approved").exists()
+            verifications.append(True)
+        return _fake_agent(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
+    assert main([
+        "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
+    ]) == 0
+    assert len(verifications) == 1
+    assert (tmp_path / "HTML/approved/index.html").is_file()
+    assert validate_html_approval(tmp_path)["approval_method"] == "independent HTML verification"
+
+
 def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None:
     generated = tmp_path / "HTML" / "generated"
     generated.mkdir(parents=True)
@@ -2717,6 +2752,9 @@ def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None
         )
     )
 
+    with pytest.raises(RuntimeError, match="passing independent verification"):
+        approve_generated_html(tmp_path)
+    (evidence / "verification.json").write_text(json.dumps({"verified": True}))
     result = approve_generated_html(tmp_path)
     assert result["approved"] is True
     assert result["browser_evidence_claimed"] is False

@@ -16,7 +16,7 @@ from typing import Any
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
-from .design import classify_design_inputs, validate_html_approval
+from .design import approve_generated_html, classify_design_inputs, validate_html_approval
 from .design_fidelity import validate_design_fidelity_evidence
 from .discovery import inventory, save_inventory
 from .git import commit_verified_feature
@@ -1304,6 +1304,19 @@ def _prompt(
         if node["id"].startswith("verify-") and node["id"].endswith("-design")
         else "Implementation nodes must not mark independent verification artifacts true."
     )
+    if node["id"] == "verify-html-baseline":
+        role_boundary = (
+            "Independently review the generated HTML against the project specifications. "
+            "The independent verifier owns design approval; no user HTML review is required. "
+            "Legacy generated documents requesting product-owner HTML approval are superseded "
+            "by this workflow policy. Preserve all substantive product and accessibility criteria. "
+            "Write verified:true only after the applicable checks pass. The orchestrator then "
+            "promotes HTML/generated to HTML/approved; missing promotion is not a failure. "
+            "Record passing source checks with exit_code:0 and SHA-256 output_hashes for every "
+            "HTML/generated file in .ai/evidence/design/source-checks.json. "
+            "PRD-only static fallback may defer unavailable browser checks explicitly; supplied "
+            "visual sources still require rendered comparison. Never claim omitted checks ran."
+        )
     prompt = f"""You are executing one controlled node of a production workflow.
 
 Project root: {project}
@@ -1799,6 +1812,12 @@ def execute_phase(
                     tracked_issues,
                     "A later bounded agent attempt produced the required verified artifact.",
                 )
+            if (
+                phase == "design"
+                and node["id"] == "verify-html-baseline"
+                and (project / "HTML/generated").is_dir()
+            ):
+                approve_generated_html(project)
             inputs = [
                 path
                 for path in _node_input_files(project, phase, node["id"], feature)

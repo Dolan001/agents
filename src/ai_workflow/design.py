@@ -123,7 +123,10 @@ def classify_design_inputs(project: Path) -> dict[str, Any]:
 
 
 def approve_generated_html(project: Path) -> dict[str, Any]:
-    """Bind explicit owner approval to the exact source-checked HTML draft."""
+    """Promote a source-checked draft only after independent verification succeeds."""
+    verification = read_json(project / ".ai/evidence/design/verification.json", {})
+    if not isinstance(verification, dict) or verification.get("verified") is not True:
+        raise RuntimeError("HTML requires passing independent verification before approval")
     generated = project / "HTML" / "generated"
     if not generated.is_dir():
         raise RuntimeError(
@@ -183,7 +186,7 @@ def approve_generated_html(project: Path) -> dict[str, Any]:
         "approved": True,
         "approved_at": utc_now(),
         "design_mode": mode or "unknown",
-        "approval_method": "explicit --approve-html invocation after preview review",
+        "approval_method": "independent HTML verification",
         "source_checks": checks_path.relative_to(project).as_posix(),
         "source_hashes": actual,
         "approved_hashes": _tree_hashes(approved, approved),
