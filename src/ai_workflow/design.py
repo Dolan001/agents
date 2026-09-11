@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from .io import write_json
+from .io import read_json, write_json
 from .model import utc_now
 
 HTML_SUFFIXES = {".html", ".htm"}
@@ -112,3 +112,81 @@ def classify_design_inputs(project: Path) -> dict[str, Any]:
     }
     write_json(project / ".ai" / "design-inputs.json", report)
     return report
+
+
+def approve_generated_html(project: Path) -> dict[str, Any]:
+    """Bind explicit owner approval to the exact source-checked HTML draft."""
+    generated = project / "HTML" / "generated"
+    if not generated.is_dir():
+        raise RuntimeError(
+            "HTML/generated is missing; run $start-generatehtml before approving HTML"
+        )
+    files = sorted(path for path in generated.rglob("*") if path.is_file())
+    if not files or not any(path.suffix.lower() in HTML_SUFFIXES for path in files):
+        raise RuntimeError(
+            "HTML/generated has no HTML draft; run $start-generatehtml before approving HTML"
+        )
+    if any(path.is_symlink() for path in generated.rglob("*")):
+        raise RuntimeError("HTML/generated contains a symlink and cannot be approved safely")
+
+    checks_path = project / ".ai" / "evidence" / "design" / "source-checks.json"
+    checks = read_json(checks_path, {})
+    expected = checks.get("output_hashes") if isinstance(checks, dict) else None
+    if (
+        not isinstance(checks, dict)
+        or checks.get("status") != "passed"
+        or checks.get("exit_code") != 0
+        or not isinstance(expected, dict)
+    ):
+        raise RuntimeError("current HTML source checks have not passed; rerun $start-generatehtml")
+
+    actual = {
+        path.relative_to(project).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in files
+    }
+    if expected != actual:
+        raise RuntimeError(
+            "HTML/generated changed after source checks; rerun $start-generatehtml before approval"
+        )
+
+    approved = project / "HTML" / "approved"
+    staging = project / "HTML" / ".approved-workflow-staging"
+    backup = project / "HTML" / ".approved-workflow-backup"
+    for workflow_path in (staging, backup):
+        if workflow_path.exists():
+            shutil.rmtree(workflow_path)
+    shutil.copytree(generated, staging)
+    replaced = approved.exists()
+    try:
+        if replaced:
+            approved.rename(backup)
+        staging.rename(approved)
+    except BaseException:
+        if backup.exists() and not approved.exists():
+            backup.rename(approved)
+        raise
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+        if backup.exists():
+            shutil.rmtree(backup)
+
+    routing = read_json(project / ".ai" / "design-inputs.json", {})
+    mode = routing.get("mode") if isinstance(routing, dict) else None
+    evidence = {
+        "version": 1,
+        "approved": True,
+        "approved_at": utc_now(),
+        "design_mode": mode or "unknown",
+        "approval_method": "explicit --approve-html invocation after preview review",
+        "source_checks": checks_path.relative_to(project).as_posix(),
+        "source_hashes": actual,
+        "approved_hashes": {
+            path.relative_to(approved).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(approved.rglob("*"))
+            if path.is_file()
+        },
+        "browser_evidence_claimed": False,
+    }
+    write_json(project / ".ai" / "evidence" / "design" / "owner-approval.json", evidence)
+    return evidence

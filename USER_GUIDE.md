@@ -201,6 +201,7 @@ not already shown; do not repeat the same flag.
 | `--commit-verified` | no value | off | Commit independently verified feature changes. Use only with explicit authorization. |
 | `--push` | no value | off | Push verified commits from the current workflow branch. Use only with explicit authorization. |
 | `--remaining` | no value | already enabled | Compatibility flag; commands already resume only remaining work. |
+| `--approve-html` | no value | off | After you review the generated preview, approve its exact source-checked files and resume. Never use this before review. |
 
 Frameworks explicitly declared in the PRD take precedence and do not need to be repeated. At least
 one client—React, Next.js, or Flutter—is required for backend and later complete-build stages.
@@ -235,6 +236,19 @@ $start-generatehtml [shared start flags]
 
 Runs missing design prerequisites, generates or validates approved static HTML, and stops before
 frontend or mobile implementation.
+
+For a PRD-only design, the first run can stop after source checks so you can review
+`HTML/generated/index.html`. If the preview is correct, continue with:
+
+```text
+$start-generatehtml --approve-html
+```
+
+The command verifies that the draft still has the exact hashes that passed source checks, records
+your explicit approval, promotes it to `HTML/approved/`, and resumes the independent gate once.
+When browser automation is unavailable, the workflow records that limitation and defers rendered
+accessibility and visual proof to frontend/mobile design synchronization. Supplied HTML,
+screenshots, and design files still require rendered comparison; this flag does not waive it.
 
 ### `$start-frontend`
 

@@ -138,6 +138,29 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     return isinstance(payload, (dict, list))
 
 
+def _artifact_external_blocker(path: Path) -> str | None:
+    """Return an evidence-supplied blocker that another identical attempt cannot resolve."""
+    if path.suffix != ".json" or not path.is_file():
+        return None
+    payload = read_json(path, {})
+    if not isinstance(payload, dict):
+        return None
+    recovery = payload.get("recovery")
+    if (
+        not isinstance(recovery, dict)
+        or recovery.get("retryable_without_new_evidence") is not False
+    ):
+        return None
+    reason = str(
+        recovery.get("reason")
+        or recovery.get("classification")
+        or payload.get("status")
+        or "new external evidence is required"
+    ).strip()
+    next_action = str(recovery.get("next_action") or "").strip()
+    return f"{reason}; next action: {next_action}" if next_action else reason
+
+
 def _repair_input_files(
     project: Path,
     inputs: list[str],
@@ -815,25 +838,43 @@ def _node_input_files(
             if node == "verify-html-baseline"
             else ".ai/evidence/design/baseline.json"
         )
-        design_paths = (
+        design_paths = [
             project / "HTML" / "design-specification.md",
             project / "HTML" / "baseline-manifest.json",
             project / "HTML" / "build_baseline.py",
             project / "HTML" / "check_baseline.py",
-            project / ".ai" / "evidence" / "design" / "baseline.json",
-            project / ".ai" / "evidence" / "design" / "baseline-checks.json",
-            project / ".ai" / "evidence" / "design" / "verification.json",
-        )
+        ]
+        if node in {"repair-html-baseline", "verify-html-baseline"}:
+            design_paths.extend(
+                [
+                    project / ".ai" / "evidence" / "design" / "baseline.json",
+                    project / ".ai" / "evidence" / "design" / "baseline-checks.json",
+                    project / ".ai" / "evidence" / "design" / "source-checks.json",
+                ]
+            )
+        if node == "repair-html-baseline":
+            design_paths.append(
+                project / ".ai" / "evidence" / "design" / "verification.json"
+            )
         files.update(
             path.relative_to(project).as_posix()
             for path in design_paths
             if path.is_file() and path.relative_to(project).as_posix() != output
         )
+        approval = project / ".ai" / "evidence" / "design" / "owner-approval.json"
+        if node == "verify-html-baseline" and approval.is_file():
+            files.add(approval.relative_to(project).as_posix())
+        approved = project / "HTML" / "approved"
         generated = project / "HTML" / "generated"
-        if generated.is_dir():
+        baseline_root = (
+            approved
+            if node == "verify-html-baseline" and approval.is_file()
+            else generated
+        )
+        if baseline_root.is_dir():
             files.update(
                 path.relative_to(project).as_posix()
-                for path in generated.rglob("*")
+                for path in baseline_root.rglob("*")
                 if _context_file_allowed(project, path)
             )
     if phase in {"frontend", "mobile"} and node.startswith(("sync-", "verify-")):
@@ -1705,9 +1746,11 @@ def execute_phase(
                         break
                     continue
                 if not _artifact_ok(output_path, node["verification"]):
-                    failure_reasons.append(
-                        f"required output failed {node['verification']}: {output}"
-                    )
+                    external_blocker = _artifact_external_blocker(output_path)
+                    message = f"required output failed {node['verification']}: {output}"
+                    if external_blocker:
+                        message = f"{message}; {external_blocker}"
+                    failure_reasons.append(message)
                     tracked = try_track_build_issue(
                         project,
                         source="agent-artifact",
@@ -1717,11 +1760,14 @@ def execute_phase(
                         node=node["id"],
                         feature=feature_id if feature else None,
                         attempt=attempt + 1,
-                        retryable=True,
+                        retryable=external_blocker is None,
                         context={"output": output, "verification": node["verification"]},
                     )
                     if tracked:
                         tracked_issues.append(tracked)
+                    if external_blocker:
+                        nonretryable_class = external_blocker
+                        break
                     needs_repair = True
                     continue
                 break
@@ -1740,9 +1786,12 @@ def execute_phase(
                     nonretryable_class,
                 )
                 if not resolved:
-                    raise RuntimeError(
-                        f"agent node exhausted retry budget: {identity}: {failure_reasons[-1]}"
+                    label = (
+                        "agent node stopped for required external evidence"
+                        if nonretryable_class
+                        else "agent node exhausted retry budget"
                     )
+                    raise RuntimeError(f"{label}: {identity}: {failure_reasons[-1]}")
                 resolve_build_issues(
                     project,
                     tracked_issues,

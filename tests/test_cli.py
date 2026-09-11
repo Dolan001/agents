@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import sys
@@ -11,7 +12,7 @@ from ai_workflow.capabilities import detect_prd_capabilities
 from ai_workflow.cli import main
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
-from ai_workflow.design import classify_design_inputs
+from ai_workflow.design import approve_generated_html, classify_design_inputs
 from ai_workflow.design_fidelity import (
     approved_baseline,
     validate_design_fidelity_comparison,
@@ -2691,6 +2692,84 @@ def test_html_verification_routes_findings_through_bounded_repair(
     assert issues["total_occurrences"] == 1
     assert issues["resolved"] == 1
     assert issues["unresolved"] == 0
+
+
+def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None:
+    generated = tmp_path / "HTML" / "generated"
+    generated.mkdir(parents=True)
+    index = generated / "index.html"
+    index.write_text("<!doctype html><title>Reviewed draft</title>")
+    digest = hashlib.sha256(index.read_bytes()).hexdigest()
+    evidence = tmp_path / ".ai" / "evidence" / "design"
+    evidence.mkdir(parents=True)
+    (tmp_path / ".ai" / "design-inputs.json").write_text(json.dumps({"mode": "prd_only"}))
+    (evidence / "source-checks.json").write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "exit_code": 0,
+                "output_hashes": {"HTML/generated/index.html": digest},
+            }
+        )
+    )
+
+    result = approve_generated_html(tmp_path)
+    assert result["approved"] is True
+    assert result["browser_evidence_claimed"] is False
+    assert (tmp_path / "HTML" / "approved" / "index.html").read_text() == index.read_text()
+
+    index.write_text("<!doctype html><title>Changed after checks</title>")
+    with pytest.raises(RuntimeError, match="changed after source checks"):
+        approve_generated_html(tmp_path)
+
+
+def test_nonretryable_verifier_evidence_stops_without_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    calls: list[str] = []
+
+    def blocked_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        node = re.search(r"Phase/node: [a-z-]+/([a-z-]+)", prompt).group(1)  # type: ignore[union-attr]
+        calls.append(node)
+        if node != "verify-html-baseline":
+            return _fake_agent(project, adapter, prompt)
+        output = re.search(r"Required output: (.+)", prompt).group(1)  # type: ignore[union-attr]
+        path = project / output
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "verified": False,
+                    "status": "blocked",
+                    "recovery": {
+                        "classification": "approval/dependency",
+                        "retryable_without_new_evidence": False,
+                        "next_action": "$start-generatehtml --approve-html",
+                    },
+                }
+            )
+        )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", blocked_agent)
+    assert (
+        main(
+            [
+                "start-generatehtml",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 1
+    )
+    relevant = [node for node in calls if node in {"verify-html-baseline", "repair-html-baseline"}]
+    assert relevant == ["verify-html-baseline"]
+    assert "$start-generatehtml --approve-html" in capsys.readouterr().err
 
 
 def test_codex_skills_are_directly_discoverable_from_agents_submodule() -> None:

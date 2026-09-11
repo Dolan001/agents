@@ -14,7 +14,7 @@ from typing import Any
 from .capabilities import detect_prd_capabilities
 from .commands import run_command_groups
 from .deployment import deployment_status, execute_operation
-from .design import classify_design_inputs, ingest_design_inputs
+from .design import approve_generated_html, classify_design_inputs, ingest_design_inputs
 from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
 from .documents import prepare_project_documents, validate_document_set
@@ -628,6 +628,10 @@ def command_start(args: argparse.Namespace) -> int:
     if defer_deployment:
         _defer_deployment_selection(project)
 
+    html_approval = None
+    if getattr(args, "approve_html", False):
+        html_approval = approve_generated_html(project)
+
     selection = _reconcile_state_packs(
         project,
         include_deployment=target == "deployment" and not defer_deployment,
@@ -704,7 +708,14 @@ def command_start(args: argparse.Namespace) -> int:
         if phase == terminal_phase:
             break
     status = "complete" if target == "delivery" else "stopped-at-requested-stage"
-    print_json({"status": status, "requested_stage": target, "results": results})
+    print_json(
+        {
+            "status": status,
+            "requested_stage": target,
+            "results": results,
+            "html_approval": html_approval,
+        }
+    )
     return 0
 
 
@@ -1060,6 +1071,11 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
     command.add_argument("--remaining", action="store_true", default=True)
+    command.add_argument(
+        "--approve-html",
+        action="store_true",
+        help="Approve the exact source-checked HTML/generated draft after reviewing its preview",
+    )
     command.set_defaults(handler=command_start, until=until)
 
 
