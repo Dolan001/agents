@@ -15,6 +15,14 @@ SCREENSHOT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 DESIGN_SUFFIXES = {".fig", ".svg", ".pdf"}
 
 
+def _tree_hashes(project: Path, root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(project).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
 def _validate_content(path: Path, expected: set[str]) -> None:
     if path.stat().st_size == 0:
         raise RuntimeError(f"design input is empty: {path}")
@@ -140,10 +148,7 @@ def approve_generated_html(project: Path) -> dict[str, Any]:
     ):
         raise RuntimeError("current HTML source checks have not passed; rerun $start-generatehtml")
 
-    actual = {
-        path.relative_to(project).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in files
-    }
+    actual = _tree_hashes(project, generated)
     if expected != actual:
         raise RuntimeError(
             "HTML/generated changed after source checks; rerun $start-generatehtml before approval"
@@ -181,12 +186,31 @@ def approve_generated_html(project: Path) -> dict[str, Any]:
         "approval_method": "explicit --approve-html invocation after preview review",
         "source_checks": checks_path.relative_to(project).as_posix(),
         "source_hashes": actual,
-        "approved_hashes": {
-            path.relative_to(approved).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in sorted(approved.rglob("*"))
-            if path.is_file()
-        },
+        "approved_hashes": _tree_hashes(approved, approved),
         "browser_evidence_claimed": False,
     }
-    write_json(project / ".ai" / "evidence" / "design" / "owner-approval.json", evidence)
-    return evidence
+    approval_path = project / ".ai" / "evidence" / "design" / "owner-approval.json"
+    write_json(approval_path, evidence)
+    return validate_html_approval(project)
+
+
+def validate_html_approval(project: Path) -> dict[str, Any]:
+    """Fail closed when approved HTML or its source-check binding is stale."""
+    approval_path = project / ".ai" / "evidence" / "design" / "owner-approval.json"
+    approval = read_json(approval_path, {})
+    checks = read_json(project / ".ai" / "evidence" / "design" / "source-checks.json", {})
+    if not isinstance(approval, dict) or approval.get("approved") is not True:
+        raise RuntimeError("HTML owner approval evidence is missing or invalid")
+    if not isinstance(checks, dict) or checks.get("status") != "passed":
+        raise RuntimeError("HTML owner approval references missing or failed source checks")
+    generated = project / "HTML" / "generated"
+    approved = project / "HTML" / "approved"
+    if not generated.is_dir() or not approved.is_dir():
+        raise RuntimeError("HTML owner approval requires generated and approved baselines")
+    if approval.get("source_hashes") != checks.get("output_hashes") or approval.get(
+        "source_hashes"
+    ) != _tree_hashes(project, generated):
+        raise RuntimeError("HTML owner approval is stale because the generated draft changed")
+    if approval.get("approved_hashes") != _tree_hashes(approved, approved):
+        raise RuntimeError("HTML owner approval is stale because the approved baseline changed")
+    return approval

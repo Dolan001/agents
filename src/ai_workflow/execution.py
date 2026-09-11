@@ -16,7 +16,7 @@ from typing import Any
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
-from .design import classify_design_inputs
+from .design import classify_design_inputs, validate_html_approval
 from .design_fidelity import validate_design_fidelity_evidence
 from .discovery import inventory, save_inventory
 from .git import commit_verified_feature
@@ -280,6 +280,8 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             "prd_only",
         }:
             raise RuntimeError("design phase lacks a valid deterministic input mode")
+        if (project / ".ai" / "evidence" / "design" / "owner-approval.json").is_file():
+            validate_html_approval(project)
     if phase in {"frontend", "mobile", "backend", "deployment"}:
         if phase in {"frontend", "mobile"}:
             validate_monorepo(project, workflow_root() / "config" / "target-monorepo.json")

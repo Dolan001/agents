@@ -12,7 +12,11 @@ from ai_workflow.capabilities import detect_prd_capabilities
 from ai_workflow.cli import main
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
-from ai_workflow.design import approve_generated_html, classify_design_inputs
+from ai_workflow.design import (
+    approve_generated_html,
+    classify_design_inputs,
+    validate_html_approval,
+)
 from ai_workflow.design_fidelity import (
     approved_baseline,
     validate_design_fidelity_comparison,
@@ -2721,6 +2725,12 @@ def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None
     index.write_text("<!doctype html><title>Changed after checks</title>")
     with pytest.raises(RuntimeError, match="changed after source checks"):
         approve_generated_html(tmp_path)
+
+    index.write_text("<!doctype html><title>Reviewed draft</title>")
+    approved = tmp_path / "HTML" / "approved" / "index.html"
+    approved.write_text("<!doctype html><title>Tampered approval</title>")
+    with pytest.raises(RuntimeError, match="approved baseline changed"):
+        validate_html_approval(tmp_path)
 
 
 def test_nonretryable_verifier_evidence_stops_without_repair(
