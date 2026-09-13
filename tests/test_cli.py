@@ -2763,6 +2763,36 @@ def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phase
     assert not _artifact_ok(path, "verified-true")
 
 
+def test_html_schema_error_retries_only_verifier_with_precise_feedback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 View account.\n")
+    calls = []
+
+    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        node = re.search(r"Phase/node: [a-z-]+/([a-z-]+)", prompt).group(1)
+        calls.append(node)
+        result = _fake_agent(project, adapter, prompt)
+        if node == "verify-html-baseline" and calls.count(node) == 1:
+            path = project / ".ai/evidence/design/verification.json"
+            path.write_text(json.dumps({
+                "feature_id": "design", "requirement_ids": ["ACC-001"],
+                "changed_files": [], "checks": [], "reviews": [], "verified": True,
+                "unsupported_field": True,
+            }))
+        elif node == "verify-html-baseline":
+            assert "unsupported_field" in prompt
+            assert "Evidence format correction only" in prompt
+        return result
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
+    assert main([
+        "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
+    ]) == 0
+    assert calls.count("verify-html-baseline") == 2
+    assert "repair-html-baseline" not in calls
+
+
 def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None:
     generated = tmp_path / "HTML" / "generated"
     generated.mkdir(parents=True)

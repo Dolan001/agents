@@ -138,6 +138,23 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     return isinstance(payload, (dict, list))
 
 
+def _evidence_format_errors(path: Path) -> list[str]:
+    if path.suffix != ".json" or not path.is_file():
+        return []
+    try:
+        payload = read_json(path)
+    except json.JSONDecodeError as error:
+        return [f"Invalid JSON: {error}"]
+    if not isinstance(payload, dict) or not {
+        "feature_id", "requirement_ids", "changed_files", "checks", "reviews"
+    } <= set(payload):
+        return []
+    return [
+        f"{'.'.join(map(str, error.absolute_path)) or '$'}: {error.message}"
+        for error in Draft202012Validator(_evidence_schema(path)).iter_errors(payload)
+    ][:8]
+
+
 def _evidence_schema(path: Path) -> dict[str, Any]:
     if path.parts[-4:-1] == (".ai", "evidence", "design"):
         return read_json(workflow_root() / "schemas/html-evidence.schema.json")
@@ -1340,6 +1357,10 @@ def _prompt(
             "PRD-only static fallback may defer unavailable browser checks explicitly; supplied "
             "visual sources still require rendered comparison. Never claim omitted checks ran."
         )
+        role_boundary += (
+            "\nReturn evidence matching this exact JSON Schema (do not add undeclared fields):\n"
+            + json.dumps(read_json(root / "schemas/html-evidence.schema.json"))
+        )
     prompt = f"""You are executing one controlled node of a production workflow.
 
 Project root: {project}
@@ -1783,8 +1804,17 @@ def execute_phase(
                         break
                     continue
                 if not _artifact_ok(output_path, node["verification"]):
-                    external_blocker = _artifact_external_blocker(output_path)
+                    format_errors = _evidence_format_errors(output_path)
+                    external_blocker = (
+                        None if format_errors else _artifact_external_blocker(output_path)
+                    )
                     message = f"required output failed {node['verification']}: {output}"
+                    if format_errors:
+                        message += (
+                            "; Evidence format correction only. Preserve HTML and test results; "
+                            "correct the verification JSON to its schema: "
+                            + "; ".join(format_errors)
+                        )
                     if external_blocker:
                         message = f"{message}; {external_blocker}"
                     failure_reasons.append(message)
@@ -1805,7 +1835,7 @@ def execute_phase(
                     if external_blocker:
                         nonretryable_class = external_blocker
                         break
-                    needs_repair = True
+                    needs_repair = not format_errors
                     continue
                 break
             if failure_reasons:
