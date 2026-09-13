@@ -156,8 +156,7 @@ def _artifact_external_blocker(path: Path) -> str | None:
         findings = payload.get("findings", [])
         if isinstance(findings, list) and any(
             isinstance(finding, dict)
-            and isinstance(finding.get("repair"), str)
-            and finding["repair"].strip()
+            and finding.get("status", "open") not in {"resolved", "closed", "passed"}
             for finding in findings
         ):
             return None
@@ -1820,7 +1819,13 @@ def execute_phase(
                         if nonretryable_class
                         else "agent node exhausted retry budget"
                     )
-                    raise RuntimeError(f"{label}: {identity}: {failure_reasons[-1]}")
+                    recovery_command = (
+                        "$start-generatehtml" if phase == "design" else "$resume-build"
+                    )
+                    raise RuntimeError(
+                        f"{label}: {identity}: {failure_reasons[-1]}. "
+                        f"After resolving the reported blocker, rerun: {recovery_command}"
+                    )
                 resolve_build_issues(
                     project,
                     tracked_issues,
