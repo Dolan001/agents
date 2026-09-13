@@ -2763,6 +2763,36 @@ def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phase
     assert not _artifact_ok(path, "verified-true")
 
 
+@pytest.mark.parametrize("phase", ["frontend", "mobile", "backend"])
+def test_required_evidence_is_aligned_with_contract_and_lease(tmp_path: Path, phase: str) -> None:
+    from ai_workflow.execution import _acquire_path_lease, _complete_task_contract
+
+    output = f".ai/evidence/features/api-contracts/{phase}.json"
+    seed = {
+        "feature_id": "api-contracts", "requirement_ids": ["API-001"],
+        "allowed_paths": [
+            "packages/api-client/**", ".ai/evidence/features/api-contracts/implementation.json"
+        ],
+        "completion_evidence": [".ai/evidence/features/api-contracts/implementation.json"],
+    }
+    contract = _complete_task_contract(
+        tmp_path, f"{phase}/implement/api-contracts", phase, [], {}, seed,
+        required_output=output, verification="evidence-schema",
+    )
+    assert contract["expected_outputs"] == contract["completion_evidence"] == [output]
+    assert output in contract["allowed_paths"]
+    assert ".ai/**" not in contract["allowed_paths"]
+    _acquire_path_lease(tmp_path, contract)
+    leases = json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"]
+    assert output in leases[0]["paths"]
+    seed["forbidden_paths"] = [output]
+    with pytest.raises(RuntimeError, match="conflicts with forbidden"):
+        _complete_task_contract(
+            tmp_path, f"{phase}/implement/api-contracts", phase, [], {}, seed,
+            required_output=output,
+        )
+
+
 def test_html_schema_error_retries_only_verifier_with_precise_feedback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

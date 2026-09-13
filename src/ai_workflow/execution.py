@@ -1111,6 +1111,18 @@ def _complete_task_contract(
         expected_outputs = [f"Complete controlled work for {identity}"]
     if not allowed_paths:
         allowed_paths = [required_output] if required_output else [".ai/**"]
+    forbidden_paths = _safe_strings(source.get("forbidden_paths")) or [".agents/**", ".git/**"]
+    if required_output:
+        _inside(project, required_output)
+        if any(fnmatch.fnmatchcase(required_output, path) for path in forbidden_paths):
+            raise RuntimeError(f"required output conflicts with forbidden paths: {required_output}")
+        if not any(fnmatch.fnmatchcase(required_output, path) for path in allowed_paths):
+            if (
+                not required_output.startswith(".ai/evidence/")
+                and required_output != ".ai/task-queue.json"
+            ):
+                raise RuntimeError(f"required output is outside task scope: {required_output}")
+            allowed_paths = [*allowed_paths, required_output]
     context = read_json(workflow_root() / "config" / "pipeline.json")["execution"]["context"]
     feature_scoped = seed is not None
     contract: dict[str, Any] = {
@@ -1124,8 +1136,7 @@ def _complete_task_contract(
         "inputs": list(dict.fromkeys(inputs)),
         "expected_outputs": expected_outputs,
         "allowed_paths": allowed_paths,
-        "forbidden_paths": _safe_strings(source.get("forbidden_paths"))
-        or [".agents/**", ".git/**"],
+        "forbidden_paths": forbidden_paths,
         "dependencies": _safe_strings(source.get("dependencies")),
         "acceptance_criteria": _safe_strings(source.get("acceptance_criteria"))
         or [
@@ -1136,7 +1147,10 @@ def _complete_task_contract(
         "security_review_required": bool(source.get("security_review_required", False)),
         "performance_review_required": bool(source.get("performance_review_required", False)),
         "retry_policy": {"maximum_attempts": 3},
-        "completion_evidence": _safe_strings(source.get("completion_evidence")) or expected_outputs,
+        "completion_evidence": (
+            [required_output] if required_output
+            else _safe_strings(source.get("completion_evidence")) or expected_outputs
+        ),
         "priority": int(source.get("priority", 1)),
         "context_budget": {
             "maximum_files": int(
