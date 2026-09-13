@@ -2616,8 +2616,9 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
     assert not (tmp_path / "README.md").exists()
 
 
+@pytest.mark.parametrize("contradictory_recovery", [False, True])
 def test_html_verification_routes_findings_through_bounded_repair(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contradictory_recovery: bool
 ) -> None:
     (tmp_path / "PRD.md").write_text(
         "# Collections\n\n- COL-001 User can select multiple collections.\n"
@@ -2653,8 +2654,13 @@ def test_html_verification_routes_findings_through_bounded_repair(
                             {
                                 "path": "HTML/approved/index.html",
                                 "message": "Multiple-collection selection is missing.",
+                                "repair": "Add multiple owned-collection selection controls.",
                             }
                         ],
+                        "recovery": {
+                            "classification": "actionable_baseline_findings",
+                            "retryable_without_new_evidence": not contradictory_recovery,
+                        },
                     }
                 )
             )

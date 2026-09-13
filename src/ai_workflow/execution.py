@@ -142,10 +142,25 @@ def _artifact_external_blocker(path: Path) -> str | None:
     """Return an evidence-supplied blocker that another identical attempt cannot resolve."""
     if path.suffix != ".json" or not path.is_file():
         return None
-    payload = read_json(path, {})
+    try:
+        payload = read_json(path, {})
+    except json.JSONDecodeError:
+        return None
     if not isinstance(payload, dict):
         return None
     recovery = payload.get("recovery")
+    if (
+        isinstance(recovery, dict)
+        and recovery.get("classification") == "actionable_baseline_findings"
+    ):
+        findings = payload.get("findings", [])
+        if isinstance(findings, list) and any(
+            isinstance(finding, dict)
+            and isinstance(finding.get("repair"), str)
+            and finding["repair"].strip()
+            for finding in findings
+        ):
+            return None
     if (
         not isinstance(recovery, dict)
         or recovery.get("retryable_without_new_evidence") is not False
@@ -1519,7 +1534,6 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
         if not (project / "docs" / "generated" / "requirements.json").is_file():
             raise RuntimeError("run ai reconcile before the requirements phase")
     elif action == "inventory_design_assets":
-        save_inventory(project, inventory(project))
         classify_design_inputs(project)
     elif action == "resolve_selected_framework_pack":
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])

@@ -118,6 +118,11 @@ def classify_design_inputs(project: Path) -> dict[str, Any]:
         "precedence": ["html", "screenshots_or_design", "prd"],
         "classified_at": utc_now(),
     }
+    previous = read_json(project / ".ai" / "design-inputs.json", {})
+    if isinstance(previous, dict) and all(
+        previous.get(key) == value for key, value in report.items() if key != "classified_at"
+    ):
+        return previous
     write_json(project / ".ai" / "design-inputs.json", report)
     return report
 
