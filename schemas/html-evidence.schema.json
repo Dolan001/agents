@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["feature_id", "requirement_ids", "changed_files", "checks", "reviews", "verified"],
+  "additionalProperties": false,
+  "properties": {
+    "feature_id": {"type": "string"},
+    "requirement_ids": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]+-[0-9]{3}$"}},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "checks": {"type": "array", "items": {"type": "object", "required": ["name", "status"], "properties": {"name": {"type": "string"}, "status": {"enum": ["passed", "failed", "omitted", "deferred", "not_run"]}}}},
+    "reviews": {"type": "array", "items": {"type": "object"}},
+    "verified": {"type": "boolean"},
+    "approved": {"type": "boolean"},
+    "findings": {"type": "array", "items": {"type": "object"}},
+    "output_hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+    "recovery": {"type": "object", "properties": {"retryable_without_new_evidence": {"type": "boolean"}, "classification": {"type": "string"}, "next_action": {"type": "string"}}}
+  }
+}

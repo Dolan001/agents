@@ -119,7 +119,7 @@ def _artifact_ok(path: Path, verification: str) -> bool:
             "reviews",
         }
         if isinstance(payload, dict) and base_evidence_fields <= set(payload):
-            schema = read_json(workflow_root() / "base" / "schemas" / "evidence.schema.json")
+            schema = _evidence_schema(path)
             return isinstance(schema, dict) and not list(
                 Draft202012Validator(schema).iter_errors(payload)
             )
@@ -128,7 +128,7 @@ def _artifact_ok(path: Path, verification: str) -> bool:
         if not isinstance(payload, dict) or payload.get("verified") is not True:
             return False
         if {"feature_id", "requirement_ids", "changed_files", "checks", "reviews"} <= set(payload):
-            schema = read_json(workflow_root() / "base" / "schemas" / "evidence.schema.json")
+            schema = _evidence_schema(path)
             return isinstance(schema, dict) and not list(
                 Draft202012Validator(schema).iter_errors(payload)
             )
@@ -136,6 +136,12 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     if verification == "no-unresolved-critical":
         return isinstance(payload, dict) and not payload.get("unresolved_critical", True)
     return isinstance(payload, (dict, list))
+
+
+def _evidence_schema(path: Path) -> dict[str, Any]:
+    if path.parts[-4:-1] == (".ai", "evidence", "design"):
+        return read_json(workflow_root() / "schemas/html-evidence.schema.json")
+    return read_json(workflow_root() / "base/schemas/evidence.schema.json")
 
 
 def _artifact_external_blocker(path: Path) -> str | None:
@@ -147,6 +153,9 @@ def _artifact_external_blocker(path: Path) -> str | None:
     except json.JSONDecodeError:
         return None
     if not isinstance(payload, dict):
+        return None
+    if payload.get("verified") is True:
+        # A schema failure requires evidence repair, not an external dependency.
         return None
     recovery = payload.get("recovery")
     if (

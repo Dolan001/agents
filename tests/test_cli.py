@@ -24,7 +24,7 @@ from ai_workflow.design_fidelity import (
 )
 from ai_workflow.discovery import detect
 from ai_workflow.documents import DOCUMENTS, validate_document_set
-from ai_workflow.execution import _build_context_bundle, _node_input_files
+from ai_workflow.execution import _artifact_ok, _build_context_bundle, _node_input_files
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.issues import issue_summary, track_build_issue
@@ -2739,6 +2739,28 @@ def test_html_generation_approves_in_one_invocation(
     assert len(verifications) == 1
     assert (tmp_path / "HTML/approved/index.html").is_file()
     assert validate_html_approval(tmp_path)["approval_method"] == "independent HTML verification"
+
+
+def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phases(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / ".ai/evidence/design/verification.json"
+    path.parent.mkdir(parents=True)
+    payload = {
+        "feature_id": "design", "requirement_ids": ["ACC-001"],
+        "changed_files": [], "checks": [{"name": "browser", "status": "deferred"}],
+        "reviews": [], "verified": True, "approved": True, "findings": [],
+        "output_hashes": {"HTML/generated/index.html": "a" * 64},
+        "recovery": {"classification": "browser_runtime_deferred_prd_only"},
+    }
+    path.write_text(json.dumps(payload))
+    assert _artifact_ok(path, "verified-true")
+    other = tmp_path / "backend.json"
+    other.write_text(json.dumps(payload))
+    assert not _artifact_ok(other, "verified-true")
+    payload["verified"] = False
+    path.write_text(json.dumps(payload))
+    assert not _artifact_ok(path, "verified-true")
 
 
 def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None:
