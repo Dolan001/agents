@@ -1874,8 +1874,8 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 10
-    assert report["nodes"] == 40
-    assert report["agentic_nodes"] == 28
+    assert report["nodes"] == 42
+    assert report["agentic_nodes"] == 30
     assert report["execution_groups"][3:6] == [["frontend"], ["mobile"], ["backend"]]
 
 
@@ -2124,6 +2124,25 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     path = project / output
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {"phase": phase, "node": node}
+    if node == "prepare-client-foundation":
+        app = project / "apps" / phase
+        app.mkdir(parents=True, exist_ok=True)
+        if phase == "frontend":
+            (app / "package.json").write_text(json.dumps({
+                "scripts": {"build": "true", "test": "true", "lint": "true"}
+            }))
+            (app / "index.tsx").write_text("export const App = () => null\n")
+        else:
+            (app / "lib").mkdir(exist_ok=True)
+            (app / "pubspec.yaml").write_text("name: pilot\n")
+            (app / "lib/main.dart").write_text("void main() {}\n")
+        client = project / "packages/api-client"
+        client.mkdir(parents=True, exist_ok=True)
+        (client / ("client.dart" if phase == "mobile" else "client.ts")).write_text("// fixture\n")
+        api = project / "docs/api/openapi.json"
+        api.parent.mkdir(parents=True, exist_ok=True)
+        api.write_text(json.dumps({"openapi": "3.1.0"}))
+        payload["checks"] = [{"name": "fixture-foundation", "status": "passed"}]
     if node.startswith("verify-") or "verification" in node or node == "security-review":
         payload["verified"] = True
     if node == "security-review":
@@ -2791,6 +2810,36 @@ def test_required_evidence_is_aligned_with_contract_and_lease(tmp_path: Path, ph
             tmp_path, f"{phase}/implement/api-contracts", phase, [], {}, seed,
             required_output=output,
         )
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_blocked_frontend_stops_before_next_feature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool,
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\nFrontend framework: React\nBackend framework: FastAPI\n"
+        "- ACC-001 View account.\n- ACC-002 Update account.\n"
+    )
+    implementation_calls = []
+
+    def blocked_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        if "Phase/node: frontend/implement-frontend-slices" not in prompt:
+            return _fake_agent(project, adapter, prompt)
+        implementation_calls.append(prompt)
+        path = project / re.search(r"Required output: (.+)", prompt).group(1)
+        path = Path(str(path).replace("{feature_id}", "acc-001"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        blocker = {"status": "BLOCKED", "blockers": [{"code": "MISSING_CLIENT"}]}
+        path.write_text(json.dumps({"reviews": [blocker]} if nested else blocker))
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", blocked_agent)
+    assert main([
+        "start-frontend", "--project", str(tmp_path), "--github-user", "test-user"
+    ]) == 1
+    assert len(implementation_calls) == 1
+    state = json.loads((tmp_path / ".ai/state.json").read_text())
+    assert "frontend" not in state["completed_phases"]
 
 
 def test_html_schema_error_retries_only_verifier_with_precise_feedback(

@@ -1,5 +1,11 @@
 # Mobile phase
 
+Create an executable Flutter foundation and typed client before feature slices.
+Use interim OpenAPI and fixtures until backend implementation, then reconcile backend
+OpenAPI and test live integration. Dispatch only mobile/shared-contract portions of
+the dependency plan; independent verifier records are not implementation tasks.
+Blocked evidence stops the phase and never satisfies a prerequisite.
+
 Load only the selected Flutter behavior pack and generate original application source
 under target `apps/mobile/`. Use approved design semantics and API contracts while
 adapting interactions to Android and iOS conventions. Require typed network boundaries,

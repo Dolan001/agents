@@ -34,6 +34,7 @@ from .structure import (
     validate_structure,
     validate_webscraping_evidence,
 )
+from .task_projection import phase_tasks
 
 _IGNORED_CONTEXT_PARTS = {
     ".agents",
@@ -108,6 +109,11 @@ def _artifact_ok(path: Path, verification: str) -> bool:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return False
+    if _implementation_blocker(payload):
+        return False
+    if path.name in {"frontend-foundation.json", "mobile-foundation.json"}:
+        if not _client_foundation_ready(path.parents[2], path.stem.split("-")[0], payload):
+            return False
     if verification == "evidence-schema":
         if not isinstance(payload, (dict, list)):
             return False
@@ -136,6 +142,46 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     if verification == "no-unresolved-critical":
         return isinstance(payload, dict) and not payload.get("unresolved_critical", True)
     return isinstance(payload, (dict, list))
+
+
+def _client_foundation_ready(project: Path, phase: str, payload: Any) -> bool:
+    app = project / "apps" / phase
+    if phase == "frontend":
+        package = read_json(app / "package.json", {})
+        scripts = package.get("scripts", {}) if isinstance(package, dict) else {}
+        if not all(scripts.get(name) for name in ("build", "test", "lint")):
+            return False
+        if not any(app.rglob("*.tsx")) and not any(app.rglob("*.jsx")):
+            return False
+    elif not (app / "pubspec.yaml").is_file() or not (app / "lib/main.dart").is_file():
+        return False
+    client = project / "packages/api-client"
+    suffix = "*.dart" if phase == "mobile" else "*.ts"
+    if not any(client.rglob(suffix)) or not (project / "docs/api/openapi.json").is_file():
+        return False
+    return isinstance(payload, dict) and any(
+        isinstance(check, dict) and check.get("status") == "passed"
+        for check in payload.get("checks", [])
+    )
+
+
+def _implementation_blocker(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    reviews = payload.get("reviews", [])
+    for item in [payload, *(reviews if isinstance(reviews, list) else [])]:
+        if not isinstance(item, dict):
+            continue
+        blockers = item.get("blockers")
+        if str(item.get("status", "")).upper() in {"BLOCKED", "FAILED", "NEEDS_INPUT"} or blockers:
+            message = "Implementation blocked: " + json.dumps(
+                blockers or item.get("reason") or item.get("status"), ensure_ascii=False
+            )[:2000]
+            recovery = payload.get("recovery", {})
+            if isinstance(recovery, dict) and recovery.get("next_action"):
+                message += "; next action: " + str(recovery["next_action"])
+            return message
+    return None
 
 
 def _evidence_format_errors(path: Path) -> list[str]:
@@ -173,7 +219,7 @@ def _artifact_external_blocker(path: Path) -> str | None:
         return None
     if payload.get("verified") is True:
         # A schema failure requires evidence repair, not an external dependency.
-        return None
+        return _implementation_blocker(payload)
     recovery = payload.get("recovery")
     if (
         isinstance(recovery, dict)
@@ -186,6 +232,9 @@ def _artifact_external_blocker(path: Path) -> str | None:
             for finding in findings
         ):
             return None
+    blocked = _implementation_blocker(payload)
+    if blocked:
+        return blocked
     if (
         not isinstance(recovery, dict)
         or recovery.get("retryable_without_new_evidence") is not False
@@ -274,6 +323,7 @@ def phase_checkpoint_current(
     selected_features: list[dict[str, Any]],
 ) -> bool:
     """Return whether every agent artifact still matches its declared, filtered inputs."""
+    selected_features = phase_tasks(selected_features, phase)
     blueprint = read_json(workflow_root() / "blueprints" / f"{phase}.json")
     checkpoints = read_json(project / ".ai" / "node-state.json", {"nodes": {}})
     nodes = checkpoints.get("nodes", {}) if isinstance(checkpoints, dict) else {}
@@ -574,7 +624,7 @@ def _skill_paths(
                 for path in available
                 if path.parent.name in {"verify-aws-deployment", "verify-aws-disaster-recovery"}
             ]
-        elif node == "scaffold-target-monorepo":
+        elif node in {"scaffold-target-monorepo", "prepare-client-foundation"}:
             selected_skills = [path for path in available if path.parent.name.startswith("create-")]
         elif node.startswith(("implement-", "sync-")):
             selected_skills = [
@@ -870,6 +920,13 @@ def _node_input_files(
         test_matrix = project / "artifacts" / "tests" / "command-results.json"
         if phase == "testing" and test_matrix.is_file():
             files.add(test_matrix.relative_to(project).as_posix())
+        if phase in {"frontend", "mobile", "backend"}:
+            foundation = project / f".ai/evidence/{phase}-foundation.json"
+            if foundation.is_file():
+                files.add(foundation.relative_to(project).as_posix())
+            for path in (project / "packages/api-client").rglob("*"):
+                if _context_file_allowed(project, path):
+                    files.add(path.relative_to(project).as_posix())
     if phase == "design" and node in {
         "establish-html-baseline",
         "repair-html-baseline",
@@ -1104,6 +1161,12 @@ def _complete_task_contract(
     allowed_paths = _safe_strings(source.get("allowed_paths"))
     if not allowed_paths and isinstance(scope, dict):
         allowed_paths = _safe_strings(scope.get("allowed_paths"))
+    if "/prepare-client-foundation/" in identity:
+        allowed_paths = [
+            f"apps/{phase}/**", "packages/api-client/**", "docs/api/**",
+            f"tests/{phase}/**", "tests/contracts/**", ".ai/test-commands.json",
+            f".ai/evidence/{phase}-foundation.json",
+        ]
     expected_outputs = _safe_strings(source.get("expected_outputs"))
     if required_output:
         expected_outputs = [required_output]
@@ -1375,6 +1438,31 @@ def _prompt(
             "\nReturn evidence matching this exact JSON Schema (do not add undeclared fields):\n"
             + json.dumps(read_json(root / "schemas/html-evidence.schema.json"))
         )
+    if phase in {"frontend", "mobile"}:
+        role_boundary += (
+            "\nThis client phase precedes backend implementation. Materialize an interim "
+            "OpenAPI contract and generated typed client from the approved contract plan/specs; "
+            "use explicit test fixtures behind replaceable adapters. Backend-generated OpenAPI "
+            "becomes authoritative during backend/integration, with drift checks against this "
+            "contract. Do not wait for backend serializers, live authentication or whole-product "
+            "verification tasks. Record those obligations as deferred integration checks. "
+            "Do not claim backend security or real API behavior has been verified. "
+            "The task's original acceptance criteria and required tests describe the whole "
+            "product: evaluate each for current-phase applicability, execute all applicable "
+            "client checks, and explicitly record backend migrations/service health and other "
+            "client-platform checks as deferred to their owning phases. Generate only this "
+            "phase's client language. Do not treat these future-phase obligations as blockers "
+            "or silently drop them from the final integration/testing requirements."
+        )
+    if node["id"] == "prepare-client-foundation":
+        role_boundary += (
+            f"\nCreate an executable {phase} application using the selected framework's create "
+            "skill, not README placeholders. Install/lock dependencies, configure routing, "
+            "styles, test/lint/build commands and generated API client/runtime boundaries. "
+            "Use existing contracts if present; preserve user product decisions and record the "
+            "interim contract provenance. Run focused foundation and contract checks, register "
+            "project commands in .ai/test-commands.json and write truthful foundation evidence."
+        )
     prompt = f"""You are executing one controlled node of a production workflow.
 
 Project root: {project}
@@ -1622,6 +1710,12 @@ def execute_phase(
 ) -> dict[str, Any]:
     if phase not in PHASES:
         raise RuntimeError(f"unknown phase: {phase}")
+    selected_features = phase_tasks(selected_features, phase)
+    if phase in {"frontend", "mobile", "backend"}:
+        write_json(project / f".ai/phase-plans/{phase}.json", {
+            "phase": phase, "tasks": selected_features,
+            "note": "Phase-scoped implementation; final integration verification remains required.",
+        })
     store = StateStore(project)
     state = store.load()
     blueprint = read_json(workflow_root() / "blueprints" / f"{phase}.json")
@@ -1819,9 +1913,11 @@ def execute_phase(
                     continue
                 if not _artifact_ok(output_path, node["verification"]):
                     format_errors = _evidence_format_errors(output_path)
-                    external_blocker = (
-                        None if format_errors else _artifact_external_blocker(output_path)
-                    )
+                    external_blocker = _artifact_external_blocker(output_path)
+                    if format_errors and not str(external_blocker or "").startswith(
+                        "Implementation blocked:"
+                    ):
+                        external_blocker = None
                     message = f"required output failed {node['verification']}: {output}"
                     if format_errors:
                         message += (

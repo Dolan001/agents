@@ -3,6 +3,7 @@
   "nodes": [
     {"id": "scaffold-target-monorepo", "type": "agentic", "agent": "solution-architect", "required_output": ".ai/evidence/monorepo-bootstrap.json", "verification": "evidence-schema"},
     {"id": "load-frontend-pack", "type": "deterministic", "action": "resolve_selected_framework_pack"},
+    {"id": "prepare-client-foundation", "type": "agentic", "agent": "selected-frontend-agent", "required_output": ".ai/evidence/frontend-foundation.json", "verification": "evidence-schema"},
     {"id": "implement-frontend-slices", "type": "agentic", "agent": "selected-frontend-agent", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/frontend.json", "verification": "evidence-schema"},
     {"id": "sync-frontend-design", "type": "agentic", "agent": "design-fidelity-resolver", "required_output": ".ai/evidence/design-fidelity/frontend/comparison.json", "verification": "evidence-schema"},
     {"id": "verify-frontend-design", "type": "agentic", "agent": "selected-frontend-verifier", "required_output": ".ai/evidence/design-fidelity/frontend/verification.json", "verification": "verified-true"},

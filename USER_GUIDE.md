@@ -255,6 +255,12 @@ $start-frontend --frontend <react|nextjs> [shared start flags]
 Builds the selected web frontend from approved HTML, runs pixel/semantic design synchronization and
 independent frontend verification, then stops before backend work.
 
+Before feature work, the workflow creates an executable framework foundation and a typed API
+client from an interim OpenAPI contract based on the specifications. Client tests use fixtures;
+backend-generated OpenAPI and live integration are checked in their later phases. The phase plan
+under `.ai/phase-plans/frontend.json` contains only relevant tasks in dependency order.
+Blocked implementation evidence stops the phase immediately and cannot satisfy a prerequisite.
+
 ### `$start-mobile`
 
 ```text
