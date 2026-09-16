@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from ai_workflow.execution import _artifact_ok, _client_foundation_ready
+from ai_workflow.execution import (
+    _acquire_path_lease,
+    _artifact_ok,
+    _client_foundation_ready,
+    _complete_task_contract,
+    _release_path_lease,
+)
 from ai_workflow.task_projection import phase_tasks
 
 
@@ -53,3 +59,28 @@ def test_readme_only_scaffold_is_not_an_executable_foundation(tmp_path: Path):
     assert not _client_foundation_ready(
         tmp_path, "frontend", {"checks": [{"status": "passed"}]}
     )
+
+
+def test_frontend_foundation_lease_protects_standalone_compose(tmp_path: Path):
+    contract = _complete_task_contract(
+        tmp_path, "frontend/prepare-client-foundation/phase", "frontend", [], {}, None,
+        required_output=".ai/evidence/frontend-foundation.json",
+    )
+    assert "compose.frontend.yaml" in contract["allowed_paths"]
+    assert "compose.yaml" not in contract["allowed_paths"]
+    _acquire_path_lease(tmp_path, contract)
+    competing = dict(contract, task_id="TASK-COMPOSE-EDIT", allowed_paths=["compose.frontend.yaml"])
+    with pytest.raises(RuntimeError, match="path lease conflicts"):
+        _acquire_path_lease(tmp_path, competing)
+    _release_path_lease(tmp_path, contract["task_id"])
+    _acquire_path_lease(tmp_path, competing)
+
+
+def test_mobile_foundation_does_not_lease_frontend_compose(tmp_path: Path):
+    contract = _complete_task_contract(
+        tmp_path, "mobile/prepare-client-foundation/phase", "mobile", [], {}, None,
+        required_output=".ai/evidence/mobile-foundation.json",
+    )
+    assert "compose.frontend.yaml" not in contract["allowed_paths"]
+    assert "apps/frontend/**" not in contract["allowed_paths"]
+    assert "apps/mobile/**" in contract["allowed_paths"]

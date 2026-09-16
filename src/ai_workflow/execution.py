@@ -1167,6 +1167,8 @@ def _complete_task_contract(
             f"tests/{phase}/**", "tests/contracts/**", ".ai/test-commands.json",
             f".ai/evidence/{phase}-foundation.json",
         ]
+        if phase == "frontend":
+            allowed_paths.append("compose.frontend.yaml")
     expected_outputs = _safe_strings(source.get("expected_outputs"))
     if required_output:
         expected_outputs = [required_output]
@@ -1463,6 +1465,18 @@ def _prompt(
             "interim contract provenance. Run focused foundation and contract checks, register "
             "project commands in .ai/test-commands.json and write truthful foundation evidence."
         )
+        if phase == "frontend":
+            role_boundary += (
+                "\nHonor the project's selected development runtime. When Docker is selected, "
+                "reuse or create compose.frontend.yaml before dependency installation; run "
+                "install, lockfile verification and focused checks in that environment. "
+                "Keep container node_modules separate from host dependencies. Register "
+                "commands as the grouped commands object consumed by the workflow runner, "
+                "not a flat list; preserve existing groups and defer unavailable later-phase "
+                "groups rather than inventing passing commands. Diagnose registry, peer "
+                "resolution and Docker disk failures separately; follow the selected create "
+                "skill's recovery guidance instead of repeating an unchanged install."
+            )
     prompt = f"""You are executing one controlled node of a production workflow.
 
 Project root: {project}

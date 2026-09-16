@@ -1,0 +1,51 @@
+{
+  "acceptance_criteria": [
+    "Frontend foundation may own compose.frontend.yaml without widening mobile scope.",
+    "React guidance uses isolated Docker dependencies, deterministic npm lockfiles and bounded peer-resolution diagnosis.",
+    "Focused tests and required workflow checks pass."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/execution.py",
+    "reactjs/skills/create-react-monorepo-frontend/**",
+    "reactjs/skills/verify-react-delivery/SKILL.md",
+    "reactjs/rules/project-structure.md",
+    "tests/test_task_projection.py",
+    ".ai/evidence/docker-frontend-recovery.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/docker-frontend-recovery.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Carry proven Docker frontend dependency recovery into workflow generation and task scope.",
+  "expected_outputs": [
+    ".ai/evidence/docker-frontend-recovery.json"
+  ],
+  "feature_id": "maintenance-docker-frontend-recovery",
+  "forbidden_paths": [
+    ".git/**",
+    "base/**",
+    "flutter/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "pytest",
+    "ruff",
+    "mypy"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-MAINTENANCE-DOCKER-FRONTEND-RECOVERY"
+}
