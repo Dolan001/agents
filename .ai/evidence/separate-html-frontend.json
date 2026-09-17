@@ -1,0 +1,21 @@
+{
+  "changes": [
+    "start-frontend requires current requirements/design checkpoints and hash-bound verified HTML",
+    "start-frontend executes only frontend phase",
+    "start-generatehtml remains independently callable; personal review optional",
+    "start-build retains complete prerequisite orchestration"
+  ],
+  "checks": {
+    "git_diff_check": "passed",
+    "isolated_complete_pack_suite": "179 passed in 49.13 seconds",
+    "ruff": "passed",
+    "start_frontend_skill_validation": "passed"
+  },
+  "passed": true,
+  "project_preflight": {
+    "reason": "create-design-specification input cache key is stale; HTML baseline and verifier checkpoints are current",
+    "status": "requires-html-refresh"
+  },
+  "publication": "local changes only",
+  "recorded_at": "2026-09-17T05:26:09.595966Z"
+}

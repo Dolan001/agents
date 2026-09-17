@@ -281,13 +281,13 @@ manifests, blueprints, agents, hooks, and gates are connected.
 
 Use a narrower command when only part of the lifecycle is required:
 
-| Codex skill | Runs missing prerequisites through | Creates monorepo? |
+| Codex skill | Scope / stopping point | Creates monorepo? |
 |---|---|---:|
 | `$prepare-project-docs` | Five validated, mutually consistent specifications | No |
 | `$generate-prd` | Validated `PRD.md`; stops before build initialization | No |
 | `$start-design` | Design specification | No |
 | `$start-generatehtml` | Approved static HTML | No |
-| `$start-frontend` | Frontend gate | Yes |
+| `$start-frontend` | Frontend only; requires current verified HTML | Yes |
 | `$start-mobile` | Flutter Android/iOS gate | Yes |
 | `$sync-design` | Approved HTML comparison, repair, and independent verification | No new monorepo |
 | `$start-backend` | Backend gate | Yes |
@@ -299,8 +299,14 @@ Use a narrower command when only part of the lifecycle is required:
 | `$resume-build` | Unchanged non-deployment checkpoints through delivery | As needed |
 | `$workflow-status` | Read-only status report | No change |
 
-Every start command runs missing prerequisites. For example, `$start-backend` does not
-skip requirements, design, or any selected client when they are incomplete.
+`$start-generatehtml` generates and independently verifies HTML, then stops. Review
+the HTML yourself if desired; personal review is optional. `$start-frontend` consumes
+that verified baseline and runs only frontend work. Missing or stale prerequisites
+produce a recovery command; frontend does not regenerate HTML automatically.
+
+`$start-build` runs the combined lifecycle. Other stage commands retain prerequisite
+orchestration; for example, `$start-backend` does not skip requirements, design, or
+any selected client when they are incomplete.
 
 `$sync-design` is also available after implementation. By default it repairs selected web/mobile
 targets; `--check-only` reports localized drift without application edits. Approved HTML remains
@@ -713,6 +719,32 @@ failed artifact and resume after correcting the actual cause.
 - Inputs, PRD text, HTML, screenshots, and token contents are treated as untrusted data.
 - Agent adapters and project commands receive fixed argument arrays; user content is
   never evaluated as shell text.
+
+## Docker and browser access from the Codex adapter
+
+The default `codex` adapter runs ephemeral children in `workspace-write`. A parent
+process's Docker authorization does not automatically authorize those children.
+For an authorized workflow that needs Docker, package downloads, or browser
+launches, explicitly select the approval-reviewed adapter:
+
+```bash
+codex exec --help # must list --approve-for-me
+./.agents/bin/ai start-frontend --project . --adapter codex-reviewed
+```
+
+`--approve-for-me` retains the workspace-write sandbox and routes escalation
+requests through automatic review. It cannot be combined with `--sandbox`.
+This adapter keeps the normal Codex session record because review may need to fork
+the session; it deliberately omits `--ephemeral`. It was exercised with Codex
+0.154.0-alpha.6.2. Older versions without this flag need a supported CLI version;
+do not replace it with unrestricted execution. See the
+[official auto-review documentation](https://learn.chatgpt.com/docs/sandboxing/auto-review).
+
+When launched inside another sandbox, the parent workflow also needs its normal
+tool approval for Docker checks. Review can deny a command; stop and report the
+denied action instead of bypassing it. Resume the same `start-frontend` command
+after the recorded blocker is repaired. If its HTML prerequisite is missing or stale,
+run `start-generatehtml` with the same adapter first.
 
 ## Existing or brownfield projects
 

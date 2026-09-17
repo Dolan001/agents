@@ -2812,6 +2812,24 @@ def test_required_evidence_is_aligned_with_contract_and_lease(tmp_path: Path, ph
         )
 
 
+def _fake_agent_with_html_checks(
+    project: Path, adapter: str, prompt: str,
+) -> dict[str, object]:
+    result = _fake_agent(project, adapter, prompt)
+    if "Phase/node: design/establish-html-baseline" in prompt:
+        draft = project / "HTML/generated/index.html"
+        draft.parent.mkdir(parents=True, exist_ok=True)
+        draft.write_text("<!doctype html><title>Account</title>")
+        checks = project / ".ai/evidence/design/source-checks.json"
+        checks.write_text(json.dumps({
+            "status": "passed", "exit_code": 0,
+            "output_hashes": {
+                "HTML/generated/index.html": hashlib.sha256(draft.read_bytes()).hexdigest()
+            },
+        }))
+    return result
+
+
 @pytest.mark.parametrize("nested", [False, True])
 def test_blocked_frontend_stops_before_next_feature(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool,
@@ -2824,7 +2842,7 @@ def test_blocked_frontend_stops_before_next_feature(
 
     def blocked_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         if "Phase/node: frontend/implement-frontend-slices" not in prompt:
-            return _fake_agent(project, adapter, prompt)
+            return _fake_agent_with_html_checks(project, adapter, prompt)
         implementation_calls.append(prompt)
         path = project / re.search(r"Required output: (.+)", prompt).group(1)
         path = Path(str(path).replace("{feature_id}", "acc-001"))
@@ -2835,11 +2853,49 @@ def test_blocked_frontend_stops_before_next_feature(
 
     monkeypatch.setattr("ai_workflow.execution._run_adapter", blocked_agent)
     assert main([
+        "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
+    ]) == 0
+    assert main([
         "start-frontend", "--project", str(tmp_path), "--github-user", "test-user"
     ]) == 1
     assert len(implementation_calls) == 1
     state = json.loads((tmp_path / ".ai/state.json").read_text())
     assert "frontend" not in state["completed_phases"]
+
+
+def test_frontend_requires_separate_html_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\nFrontend framework: React\nBackend framework: FastAPI\n"
+        "- ACC-001 View account.\n"
+    )
+    calls = []
+
+    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        calls.append(re.search(r"Phase/node: ([a-z-]+)/", prompt).group(1))
+        return _fake_agent_with_html_checks(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
+    frontend = ["start-frontend", "--project", str(tmp_path), "--adapter", "codex-reviewed"]
+    assert main(frontend) == 1
+    assert "start-generatehtml --project . --adapter codex-reviewed" in capsys.readouterr().err
+    assert not calls
+    assert not (tmp_path / "HTML").exists()
+
+    assert main([
+        "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
+    ]) == 0
+    calls.clear()
+    assert main(frontend) == 0
+    assert calls and set(calls) == {"frontend"}
+
+    approved = next((tmp_path / "HTML" / "approved").rglob("*.html"))
+    approved.write_text(approved.read_text() + "<!-- design changed -->")
+    calls.clear()
+    assert main(frontend) == 1
+    assert "start-generatehtml" in capsys.readouterr().err
+    assert not calls
 
 
 def test_html_schema_error_retries_only_verifier_with_precise_feedback(

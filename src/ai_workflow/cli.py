@@ -14,7 +14,7 @@ from typing import Any
 from .capabilities import detect_prd_capabilities
 from .commands import run_command_groups
 from .deployment import deployment_status, execute_operation
-from .design import classify_design_inputs, ingest_design_inputs
+from .design import classify_design_inputs, ingest_design_inputs, validate_html_approval
 from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
 from .documents import prepare_project_documents, validate_document_set
@@ -590,8 +590,34 @@ def _reconcile_state_packs(project: Path, *, include_deployment: bool) -> dict[s
     return selection
 
 
+def _require_frontend_baseline(project: Path, adapter: str) -> None:
+    recovery = f"./.agents/bin/ai start-generatehtml --project . --adapter {adapter}"
+    try:
+        state = StateStore(project).load()
+        queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+        tasks = queue.get("tasks", [])
+        for phase in ("requirements", "design"):
+            if phase not in state.get("completed_phases", []) or not phase_checkpoint_current(
+                project, phase, tasks
+            ):
+                raise RuntimeError(f"{phase} prerequisite is missing or stale")
+        validate_html_approval(project)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"start-frontend requires current verified HTML ({exc}). Run {recovery}, "
+            "optionally review the HTML, then run start-frontend again."
+        ) from exc
+
+
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    frontend_only = args.command == "start-frontend"
+    if frontend_only:
+        if args.html or args.screenshot:
+            raise RuntimeError(
+                "Pass HTML or screenshots to start-generatehtml before start-frontend"
+            )
+        _require_frontend_baseline(project, args.adapter)
     initialize_issue_tracker(project)
     _require_current_document_set(project)
     target = args.until
@@ -641,6 +667,10 @@ def command_start(args: argparse.Namespace) -> int:
         )
     validate_control_plane()
 
+    if frontend_only:
+        # Framework selections can change prerequisite inputs during resume.
+        _require_frontend_baseline(project, args.adapter)
+
     if not (project / "docs" / "generated" / "requirements.json").is_file():
         command_reconcile(args)
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
@@ -650,7 +680,7 @@ def command_start(args: argparse.Namespace) -> int:
     completed = set(StateStore(project).load().get("completed_phases", []))
     results = []
     terminal_phase = "design" if target in {"design-spec", "html"} else target
-    for phase in PHASES[1:]:
+    for phase in (("frontend",) if frontend_only else PHASES[1:]):
         if target == "mobile" and phase == "frontend" and phase not in completed:
             continue
         if phase in completed:
@@ -1065,7 +1095,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
     command.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
-    command.add_argument("--adapter", choices=["codex"], default="codex")
+    command.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
     command.add_argument("--remaining", action="store_true", default=True)
@@ -1110,7 +1140,7 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
     one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
     one_shot.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
-    one_shot.add_argument("--adapter", choices=["codex"], default="codex")
+    one_shot.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     one_shot.add_argument("--execute", action="store_true")
     one_shot.add_argument("--commit-verified", action="store_true")
     one_shot.add_argument("--push", action="store_true")
@@ -1148,7 +1178,7 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--feature")
     build.add_argument("--remaining", action="store_true")
     build.add_argument("--execute", action="store_true")
-    build.add_argument("--adapter", choices=["codex"], default="codex")
+    build.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     build.add_argument("--commit-verified", action="store_true")
     build.add_argument("--push", action="store_true")
     build.set_defaults(handler=command_build)
@@ -1198,18 +1228,18 @@ def parser() -> argparse.ArgumentParser:
     prd.add_argument("--requirements", required=True)
     prd.add_argument("--output", default="PRD.md")
     prd.add_argument("--answer", action="append", default=[])
-    prd.add_argument("--adapter", choices=["codex"], default="codex")
+    prd.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     prd.set_defaults(handler=command_generate_prd)
     documents = commands.add_parser("prepare-project-docs")
     add_project(documents)
     documents.add_argument("--requirements")
     documents.add_argument("--answer", action="append", default=[])
-    documents.add_argument("--adapter", choices=["codex"], default="codex")
+    documents.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     documents.set_defaults(handler=command_prepare_project_documents)
     token = commands.add_parser("resolve-token")
     add_project(token)
     token.add_argument("--token", required=True)
-    token.add_argument("--adapter", choices=["codex"], default="codex")
+    token.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     token.add_argument("--approve", action="store_true")
     token.add_argument("--github-user")
     token.add_argument("--remote", default="origin")
@@ -1217,7 +1247,7 @@ def parser() -> argparse.ArgumentParser:
     design_sync = commands.add_parser("sync-design")
     add_project(design_sync)
     design_sync.add_argument("--target", choices=["all", "frontend", "mobile"], default="all")
-    design_sync.add_argument("--adapter", choices=["codex"], default="codex")
+    design_sync.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
     design_sync.add_argument("--check-only", action="store_true")
     design_sync.add_argument("--allow-baseline-update", action="store_true")
     design_sync.set_defaults(handler=command_sync_design)

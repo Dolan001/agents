@@ -1,0 +1,50 @@
+{
+  "acceptance_criteria": [
+    "Default restricted adapter remains unchanged.",
+    "Reviewed adapter retains workspace sandbox and mediated escalation.",
+    "Real adapter can run Docker frontend verification."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "config/agent-adapters.json",
+    "README.md",
+    "commands/references/start-command-contract.md",
+    ".ai/evidence/reviewed-docker-adapter.json",
+    "src/ai_workflow/cli.py",
+    "tests/test_reviewed_adapter.py"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/reviewed-docker-adapter.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Add an explicitly selected approval-reviewed Codex adapter for Docker and browser prerequisites.",
+  "expected_outputs": [
+    ".ai/evidence/reviewed-docker-adapter.json"
+  ],
+  "feature_id": "maintenance-reviewed-docker-adapter",
+  "forbidden_paths": [
+    ".git/**",
+    "reactjs/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "adapter configuration validation",
+    "real adapter Docker frontend checks",
+    "pytest tests/test_reviewed_adapter.py"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-MAINTENANCE-REVIEWED-DOCKER-ADAPTER"
+}

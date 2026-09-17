@@ -1,0 +1,51 @@
+{
+  "acceptance_criteria": [
+    "start-frontend never executes HTML or requirements generation.",
+    "Missing or stale HTML stops with start-generatehtml recovery.",
+    "start-build retains prerequisite orchestration; user review remains optional."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/cli.py",
+    "tests/test_cli.py",
+    "tests/test_frontend_boundary.py",
+    "skills/start-frontend/SKILL.md",
+    "commands/references/start-command-contract.md",
+    "README.md",
+    ".ai/evidence/separate-html-frontend.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/separate-html-frontend.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Keep HTML generation separate from frontend-only implementation while allowing optional user review.",
+  "expected_outputs": [
+    ".ai/evidence/separate-html-frontend.json"
+  ],
+  "feature_id": "separate-html-frontend",
+  "forbidden_paths": [
+    ".git/**",
+    "reactjs/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "frontend boundary regressions",
+    "CLI regression suite",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-SEPARATE-HTML-FRONTEND"
+}
