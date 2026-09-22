@@ -1,0 +1,9 @@
+{
+  "behavior": "Identical canonical/interim OpenAPI copies hash as one design input; a changed canonical contract still invalidates all design nodes.",
+  "checks": {
+    "focused_tests": "12 passed",
+    "project_preflight": "existing verified HTML accepted without regeneration",
+    "ruff": "passed"
+  },
+  "passed": true
+}

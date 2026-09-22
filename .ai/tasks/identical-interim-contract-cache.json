@@ -1,0 +1,44 @@
+{
+  "acceptance_criteria": [
+    "Identical alias preserves design cache.",
+    "Different canonical contract invalidates design cache."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/execution.py",
+    "tests/test_task_projection.py",
+    ".ai/evidence/identical-interim-contract-cache.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/identical-interim-contract-cache.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Prevent a byte-identical canonical interim contract copy from invalidating approved design.",
+  "expected_outputs": [
+    ".ai/evidence/identical-interim-contract-cache.json"
+  ],
+  "feature_id": "identical-interim-contract-cache",
+  "forbidden_paths": [
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "pytest tests/test_task_projection.py",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-IDENTICAL-INTERIM-CONTRACT-CACHE"
+}

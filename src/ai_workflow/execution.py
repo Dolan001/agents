@@ -913,6 +913,15 @@ def _node_input_files(
     feature: dict[str, Any] | None = None,
 ) -> list[str]:
     files = set(_phase_input_files(project, phase))
+    if phase == "design":
+        canonical = project / "docs/api/openapi.json"
+        interim = project / "docs/api/openapi.interim.json"
+        if (
+            canonical.is_file() and interim.is_file()
+            and canonical.read_bytes() == interim.read_bytes()
+        ):
+            # Client foundation materializes this alias without changing the API.
+            files.discard("docs/api/openapi.json")
     if phase == "design" and node == "create-design-specification":
         # The baseline inventory records the specification's output hash. Including
         # it here makes baseline generation invalidate its own prerequisite.

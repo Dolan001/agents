@@ -107,3 +107,26 @@ def test_design_specification_ignores_downstream_inventory(tmp_path):
     assert key() == original
     asset.write_text('<svg>changed</svg>')
     assert key() != original
+
+
+@pytest.mark.parametrize('node', [
+    'create-design-specification', 'establish-html-baseline', 'verify-html-baseline',
+])
+def test_design_cache_ignores_only_identical_interim_alias(tmp_path, node):
+    from ai_workflow.execution import _node_input_files
+    from ai_workflow.pipeline import node_cache_key
+
+    api = tmp_path / 'docs/api'
+    api.mkdir(parents=True)
+    interim = api / 'openapi.interim.json'
+    interim.write_text('{"paths": {}}')
+
+    def key():
+        return node_cache_key(tmp_path, node, _node_input_files(tmp_path, 'design', node))
+
+    original = key()
+    canonical = api / 'openapi.json'
+    canonical.write_bytes(interim.read_bytes())
+    assert key() == original
+    canonical.write_text('{"paths": {"/new": {}}}')
+    assert key() != original
