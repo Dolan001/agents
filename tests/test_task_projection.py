@@ -84,3 +84,26 @@ def test_mobile_foundation_does_not_lease_frontend_compose(tmp_path: Path):
     assert "compose.frontend.yaml" not in contract["allowed_paths"]
     assert "apps/frontend/**" not in contract["allowed_paths"]
     assert "apps/mobile/**" in contract["allowed_paths"]
+
+
+def test_design_specification_ignores_downstream_inventory(tmp_path):
+    from ai_workflow.execution import _node_input_files
+    from ai_workflow.pipeline import node_cache_key
+
+    source = tmp_path / 'HTML/source'
+    source.mkdir(parents=True)
+    asset = source / 'design.svg'
+    asset.write_text('<svg>original</svg>')
+    inventory = source / 'inventory.json'
+    inventory.write_text('{"specification_hash": "old"}')
+    identity = 'design/create-design-specification/phase'
+
+    def key():
+        inputs = _node_input_files(tmp_path, 'design', 'create-design-specification')
+        return node_cache_key(tmp_path, identity, inputs)
+
+    original = key()
+    inventory.write_text('{"specification_hash": "new"}')
+    assert key() == original
+    asset.write_text('<svg>changed</svg>')
+    assert key() != original

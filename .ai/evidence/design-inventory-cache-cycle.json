@@ -1,0 +1,10 @@
+{
+  "broader_suite": "Old temporary snapshot no longer contains a complete workflow checkout; collection failed, no suite result claimed.",
+  "checks": {
+    "focused_tests": "9 passed",
+    "git_diff_check": "passed",
+    "ruff": "passed"
+  },
+  "passed": true,
+  "regression": "Generated inventory hash changes do not invalidate specification; supplied SVG changes do."
+}

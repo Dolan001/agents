@@ -1,0 +1,44 @@
+{
+  "acceptance_criteria": [
+    "Generated inventory changes do not invalidate design specification.",
+    "Actual supplied design assets still invalidate specification."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/execution.py",
+    "tests/test_task_projection.py",
+    ".ai/evidence/design-inventory-cache-cycle.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/design-inventory-cache-cycle.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Exclude generated source inventory from design specification inputs to prevent a downstream hash cycle.",
+  "expected_outputs": [
+    ".ai/evidence/design-inventory-cache-cycle.json"
+  ],
+  "feature_id": "design-inventory-cache-cycle",
+  "forbidden_paths": [
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "pytest tests/test_task_projection.py",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-DESIGN-INVENTORY-CACHE-CYCLE"
+}

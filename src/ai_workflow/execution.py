@@ -913,6 +913,10 @@ def _node_input_files(
     feature: dict[str, Any] | None = None,
 ) -> list[str]:
     files = set(_phase_input_files(project, phase))
+    if phase == "design" and node == "create-design-specification":
+        # The baseline inventory records the specification's output hash. Including
+        # it here makes baseline generation invalidate its own prerequisite.
+        files.discard("HTML/source/inventory.json")
     if feature:
         scoped = _feature_input_files(project, feature)
         if scoped:
