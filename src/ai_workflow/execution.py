@@ -17,7 +17,7 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
 from .design import approve_generated_html, classify_design_inputs, validate_html_approval
-from .design_fidelity import validate_design_fidelity_evidence
+from .design_fidelity import validate_design_fidelity_evidence, verified_baseline_update_current
 from .discovery import inventory, save_inventory
 from .git import commit_verified_feature
 from .io import append_jsonl, read_json, write_json
@@ -348,6 +348,11 @@ def phase_checkpoint_current(
                 or checkpoint.get("cache_key") != node_cache_key(project, identity, inputs)
                 or not _artifact_ok(_inside(project, output), node["verification"])
             ):
+                if (
+                    phase == "design" and node["id"] == "verify-html-baseline"
+                    and verified_baseline_update_current(project)
+                ):
+                    continue
                 return False
     return True
 
@@ -391,6 +396,7 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
                 project,
                 phase,
                 state["frameworks"][phase],
+                allow_baseline_update=verified_baseline_update_current(project),
             )
         if phase == "backend":
             validate_database_evidence(

@@ -1,0 +1,16 @@
+{
+  "checks": [
+    {
+      "command": "python -m pytest -q",
+      "exit_code": 0,
+      "passed": 195
+    },
+    {
+      "command": "ruff check src/ai_workflow/design_fidelity.py src/ai_workflow/execution.py tests/test_design_sync_handoff.py",
+      "exit_code": 0
+    }
+  ],
+  "status": "READY_FOR_VERIFICATION",
+  "summary": "Authorized independently verified baseline updates retain provenance and supersede stale HTML review checkpoints. Exact changed-path recording excludes build artifacts consistently.",
+  "task_id": "TASK-VERIFIED-BASELINE-SYNC-HANDOFF"
+}

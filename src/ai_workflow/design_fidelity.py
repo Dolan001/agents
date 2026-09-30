@@ -8,9 +8,9 @@ from typing import Any
 
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
-from .io import read_json
-from .model import StateStore
-from .pipeline import workflow_root
+from .io import read_json, write_json
+from .model import StateStore, utc_now
+from .pipeline import node_cache_key, workflow_root
 from .visual_diff import compare_pixels
 
 _IGNORED_PARTS = {
@@ -277,6 +277,74 @@ def _changed(before: dict[str, str], after: dict[str, str]) -> list[str]:
     )
 
 
+def _baseline_sync_key(project: Path) -> str:
+    from .execution import _node_input_files
+
+    inputs = [
+        path for path in _node_input_files(project, "design", "verify-html-baseline")
+        if path != ".ai/evidence/design/verification.json"
+    ]
+    return node_cache_key(project, "design/verify-html-baseline/phase", inputs)
+
+
+def record_verified_baseline_update(project: Path, target: str, framework: str) -> None:
+    """Record a superseding independent review after an authorized baseline repair."""
+    from .design import _tree_hashes, validate_html_approval
+
+    validate_design_fidelity_evidence(
+        project, target, framework, allow_baseline_update=True,
+    )
+    approval_path = project / ".ai/evidence/design/owner-approval.json"
+    approval = read_json(approval_path, {})
+    checks = read_json(project / ".ai/evidence/design/source-checks.json", {})
+    if (
+        approval.get("approved") is not True or checks.get("status") != "passed"
+        or approval.get("source_hashes") != checks.get("output_hashes")
+        or approval.get("source_hashes") != _tree_hashes(project, project / "HTML/generated")
+    ):
+        raise RuntimeError("original HTML source provenance changed during design sync")
+    verification_path = _evidence_paths(project, target)["verification"]
+    approval.update({
+        "approved_hashes": _tree_hashes(project / "HTML/approved", project / "HTML/approved"),
+        "approved_at": utc_now(),
+        "approval_method": (
+            "authorized baseline repair with independent design-fidelity verification"
+        ),
+        "superseding_verification": verification_path.relative_to(project).as_posix(),
+    })
+    write_json(approval_path, approval)
+    validate_html_approval(project)
+    write_json(project / ".ai/evidence/design/approved-baseline-sync.json", {
+        "target": target, "framework": framework, "cache_key": _baseline_sync_key(project),
+        "verification_sha256": hashlib.sha256(verification_path.read_bytes()).hexdigest(),
+        "recorded_at": utc_now(),
+    })
+
+
+def verified_baseline_update_current(project: Path) -> bool:
+    """Accept only a fresh, independently verified replacement for the HTML review."""
+    from .design import validate_html_approval
+
+    record = read_json(project / ".ai/evidence/design/approved-baseline-sync.json", {})
+    if not isinstance(record, dict) or record.get("cache_key") != _baseline_sync_key(project):
+        return False
+    target, framework = record.get("target"), record.get("framework")
+    supported = {("frontend", "react"), ("frontend", "nextjs"), ("mobile", "flutter")}
+    if (target, framework) not in supported:
+        return False
+    path = _evidence_paths(project, target)["verification"]
+    if not path.is_file() or record.get("verification_sha256") != hashlib.sha256(
+        path.read_bytes()
+    ).hexdigest():
+        return False
+    try:
+        validate_html_approval(project)
+        validate_design_fidelity_evidence(project, target, framework, allow_baseline_update=True)
+    except (RuntimeError, OSError, ValueError):
+        return False
+    return True
+
+
 def _resolver_contract(
     project: Path, target: str, state: dict[str, Any], inputs: list[str],
     *, check_only: bool, allow_baseline_update: bool,
@@ -423,8 +491,11 @@ settings. Use `./.agents/bin/ai compare-images` to generate the diff PNG and JSO
 author or edit those artifacts. Write the manifest, comparison, and plan before editing. In
 check-only mode, do not edit application, test, package, or approved HTML paths. In repair mode, fix
 meaningful drift and recapture affected cases; comparison must be aligned only after every pixel
-case passes and no blocker, major, or minor finding remains. Record exact changed paths excluding
-.ai. Do not stage, commit, push, change branches, or approve your own work.
+case passes and no blocker, major, or minor finding remains. Record only paths changed during this
+invocation, excluding any path containing these directory components:
+{', '.join(sorted(_IGNORED_PARTS))}.
+Include other generated files, such as test-results, if changed. Do not stage, commit, push,
+change branches, or approve your own work.
 """
     comparison: dict[str, Any] = {}
     changed: list[str] = []
@@ -454,7 +525,11 @@ case passes and no blocker, major, or minor finding remains. Record exact change
             raise RuntimeError(f"design repair changed paths outside {target} scope: {outside}")
         comparison = validate_design_fidelity_comparison(project, target, framework)
         if comparison.get("changed_paths") != changed:
-            raise RuntimeError("design comparison changed_paths do not match observed changes")
+            raise RuntimeError(
+                "design comparison changed_paths do not match observed changes: "
+                f"missing={sorted(set(changed) - set(comparison['changed_paths']))}, "
+                f"extra={sorted(set(comparison['changed_paths']) - set(changed))}"
+            )
         if check_only or comparison.get("aligned") is True:
             break
     if comparison.get("aligned") is not True:
@@ -520,6 +595,8 @@ push, or change branches.
         framework,
         allow_baseline_update=allow_baseline_update,
     )
+    if allow_baseline_update:
+        record_verified_baseline_update(project, target, framework)
     return {
         "target": target,
         "framework": framework,

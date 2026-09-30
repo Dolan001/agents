@@ -1,0 +1,46 @@
+{
+  "acceptance_criteria": [
+    "Only independently verified authorized baseline updates create a freshness record.",
+    "Changed sources or verification invalidate the record.",
+    "Original verification evidence remains preserved."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/design_fidelity.py",
+    "src/ai_workflow/execution.py",
+    "tests/test_design_sync_handoff.py",
+    ".ai/evidence/verified-baseline-sync-handoff.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/verified-baseline-sync-handoff.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Bind authorized independently verified baseline updates to design prerequisite freshness without regenerating approved HTML.",
+  "expected_outputs": [
+    ".ai/evidence/verified-baseline-sync-handoff.json"
+  ],
+  "feature_id": "verified-baseline-sync-handoff",
+  "forbidden_paths": [
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "focused handoff tests",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY",
+  "task_id": "TASK-VERIFIED-BASELINE-SYNC-HANDOFF"
+}
