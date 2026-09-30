@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageChops, UnidentifiedImageError
 
 MAX_CHANNEL_TOLERANCE = 8
 MAX_CHANGED_RATIO = 0.001
@@ -124,45 +124,28 @@ def compare_pixels(
     if compared_pixels <= 0:
         raise RuntimeError("pixel comparison has no unmasked pixels")
 
-    reference_bytes = memoryview(reference.tobytes())
-    actual_bytes = memoryview(actual.tobytes())
-    difference = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    difference_pixels = difference.load()
-    assert difference_pixels is not None
-    different_pixels = 0
-    maximum_delta = 0
-    total_delta = 0
-    minimum_x = width
-    minimum_y = height
-    maximum_x = -1
-    maximum_y = -1
-    for index in range(width * height):
-        x = index % width
-        y = index // width
-        if mask_map[index]:
-            difference_pixels[x, y] = (0, 96, 255, 160)
-            continue
-        offset = index * 4
-        deltas = tuple(
-            abs(reference_bytes[offset + channel] - actual_bytes[offset + channel])
-            for channel in range(4)
-        )
-        pixel_delta = max(deltas)
-        maximum_delta = max(maximum_delta, pixel_delta)
-        total_delta += sum(deltas)
-        if pixel_delta > channel_tolerance:
-            different_pixels += 1
-            minimum_x = min(minimum_x, x)
-            minimum_y = min(minimum_y, y)
-            maximum_x = max(maximum_x, x)
-            maximum_y = max(maximum_y, y)
-            difference_pixels[x, y] = (255, 0, 0, 255)
-    changed_ratio = different_pixels / compared_pixels
-    difference_bbox = (
-        None
-        if different_pixels == 0
-        else [minimum_x, minimum_y, maximum_x + 1, maximum_y + 1]
+    mask_image = Image.frombytes("L", (width, height), bytes(mask_map)).point(
+        lambda value: 255 if value else 0
     )
+    channels = ImageChops.difference(reference, actual).split()
+    unmasked_channels = []
+    total_delta = 0
+    for channel in channels:
+        channel.paste(0, mask=mask_image)
+        total_delta += sum(value * count for value, count in enumerate(channel.histogram()))
+        unmasked_channels.append(channel)
+    maximum_channel = unmasked_channels[0]
+    for channel in unmasked_channels[1:]:
+        maximum_channel = ImageChops.lighter(maximum_channel, channel)
+    maximum_delta = maximum_channel.getextrema()[1]
+    changed = maximum_channel.point(lambda value: 255 if value > channel_tolerance else 0)
+    different_pixels = changed.histogram()[255]
+    difference = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    difference.paste((0, 96, 255, 160), mask=mask_image)
+    difference.paste((255, 0, 0, 255), mask=changed)
+    changed_ratio = different_pixels / compared_pixels
+    bbox = changed.getbbox()
+    difference_bbox = list(bbox) if bbox else None
     difference_bytes = _diff_png(difference)
     if diff_path is not None:
         diff_path.parent.mkdir(parents=True, exist_ok=True)

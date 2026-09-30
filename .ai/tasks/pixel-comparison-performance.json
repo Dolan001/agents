@@ -1,0 +1,45 @@
+{
+  "acceptance_criteria": [
+    "Identical metrics and diff hashes for random, masked, alpha and threshold cases."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/visual_diff.py",
+    "tests/test_visual_diff_equivalence.py",
+    ".ai/evidence/pixel-comparison-performance.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/pixel-comparison-performance.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Replace slow Python pixel loop with equivalent Pillow image operations; preserve exact metrics and diff bytes.",
+  "expected_outputs": [
+    ".ai/evidence/pixel-comparison-performance.json"
+  ],
+  "feature_id": "pixel-comparison-performance",
+  "forbidden_paths": [
+    ".agents/**",
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "equivalence tests",
+    "full regression suite",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY",
+  "task_id": "TASK-PIXEL-COMPARISON-PERFORMANCE"
+}

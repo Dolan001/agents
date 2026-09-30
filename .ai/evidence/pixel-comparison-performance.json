@@ -1,0 +1,11 @@
+{
+  "checks": {
+    "existing_capture_metrics_and_diff_hashes_identical": 369,
+    "full_capture_validation_seconds": 57.56,
+    "pixel_tests_passed": 30,
+    "regression_tests_passed": 219,
+    "ruff": "passed"
+  },
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-PIXEL-COMPARISON-PERFORMANCE"
+}
