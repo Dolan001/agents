@@ -1,0 +1,9 @@
+{
+  "behavior": "Explicit approved-baseline update flag is reflected in the resolver contract and lease. Check-only forbids application mutations.",
+  "checks": {
+    "git_diff_check": "passed",
+    "ruff": "passed",
+    "scope_regressions": "6 passed"
+  },
+  "passed": true
+}

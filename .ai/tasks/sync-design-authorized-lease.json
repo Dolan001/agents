@@ -1,0 +1,45 @@
+{
+  "acceptance_criteria": [
+    "Baseline writes only leased with explicit flag.",
+    "Check-only leases evidence, not application files.",
+    "Resolver receives concrete comparison output contract."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/design_fidelity.py",
+    "tests/test_design_sync_contract.py",
+    ".ai/evidence/sync-design-authorized-lease.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/sync-design-authorized-lease.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Align sync-design resolver lease with check-only and explicit baseline-update flags.",
+  "expected_outputs": [
+    ".ai/evidence/sync-design-authorized-lease.json"
+  ],
+  "feature_id": "sync-design-authorized-lease",
+  "forbidden_paths": [
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "pytest tests/test_design_sync_contract.py",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-SYNC-DESIGN-AUTHORIZED-LEASE"
+}

@@ -277,6 +277,32 @@ def _changed(before: dict[str, str], after: dict[str, str]) -> list[str]:
     )
 
 
+def _resolver_contract(
+    project: Path, target: str, state: dict[str, Any], inputs: list[str],
+    *, check_only: bool, allow_baseline_update: bool,
+) -> dict[str, Any]:
+    from .execution import _complete_task_contract
+
+    evidence = f".ai/evidence/design-fidelity/{target}"
+    allowed = [f"{evidence}/**"]
+    forbidden = [".agents/**", ".git/**"]
+    if not check_only:
+        allowed.extend([
+            f"apps/{target}/**", "tests/**", "packages/ui/**", "packages/design-system/**",
+        ])
+    else:
+        forbidden.extend(["apps/**", "tests/**", "packages/**"])
+    if allow_baseline_update and not check_only:
+        allowed.append("HTML/approved/**")
+    else:
+        forbidden.append("HTML/approved/**")
+    return _complete_task_contract(
+        project, f"design-fidelity/{target}/resolver", target, inputs, state,
+        {"allowed_paths": allowed, "forbidden_paths": forbidden},
+        required_output=f"{evidence}/comparison.json",
+    )
+
+
 def _allowed_change(target: str, path: str, allow_baseline_update: bool) -> bool:
     roots = (
         ("apps/frontend/", "tests/", "packages/ui/", "packages/design-system/")
@@ -355,14 +381,20 @@ def _run_target(
     paths["root"].mkdir(parents=True, exist_ok=True)
     resolver, implementer, verifier, implement_skills, verify_skills = _resources(target, framework)
     skill = root / "skills" / "sync-design" / "SKILL.md"
+    inputs = _context_inputs(project, target)
+    resolver_contract = _resolver_contract(
+        project, target, state, inputs,
+        check_only=check_only, allow_baseline_update=allow_baseline_update,
+    )
     context = _build_context_bundle(
         project,
         f"design-fidelity/{target}/resolver",
         target,
-        _context_inputs(project, target),
+        inputs,
         state,
         None,
         None,
+        task_contract=resolver_contract,
     )
     before = _snapshot(project)
     mode = "check-only" if check_only else "repair"
