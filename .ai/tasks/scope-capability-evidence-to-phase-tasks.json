@@ -1,0 +1,44 @@
+{
+  "acceptance_criteria": [
+    "React public/account phase does not require Flutter-owned RAG evidence.",
+    "Legacy projects without a task queue remain fail-closed."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/execution.py",
+    "tests/test_capability_phase_scope.py",
+    ".ai/evidence/capability-phase-scope.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/capability-phase-scope.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Require RAG evidence only for phases with RAG-scoped tasks.",
+  "expected_outputs": [
+    ".ai/evidence/capability-phase-scope.json"
+  ],
+  "feature_id": "scope-capability-evidence-to-phase-tasks",
+  "forbidden_paths": [
+    ".agents/**",
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "focused validation"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY",
+  "task_id": "TASK-SCOPE-CAPABILITY-EVIDENCE-TO-PHASE-TASKS"
+}

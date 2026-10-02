@@ -1,0 +1,10 @@
+{
+  "checks": {
+    "application_semantic_gate": "passed",
+    "focused_tests": 2,
+    "ruff": "passed"
+  },
+  "status": "READY_FOR_VERIFICATION",
+  "summary": "RAG evidence is required only in phases whose projected tasks implement RAG; legacy taskless projects remain fail-closed.",
+  "task_id": "TASK-SCOPE-CAPABILITY-EVIDENCE-TO-PHASE-TASKS"
+}

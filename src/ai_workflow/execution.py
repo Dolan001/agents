@@ -317,6 +317,29 @@ def evaluate_phase_gate(project: Path, phase: str) -> dict[str, Any]:
     return result
 
 
+_RAG_SCOPE_TERMS = (
+    "rag", "retrieval", "semantic", "knowledge base", "knowledge-base",
+    "grounded answer", "citation", "embedding", "vector search",
+)
+
+
+def _phase_requires_capability_evidence(
+    project: Path, phase: str, terms: tuple[str, ...]
+) -> bool:
+    """Scope capability gates to the phase tasks that actually implement them."""
+    queue = read_json(project / ".ai" / "task-queue.json", {})
+    tasks = queue.get("tasks", []) if isinstance(queue, dict) else []
+    scoped = phase_tasks(tasks, phase) if isinstance(tasks, list) else []
+    if not scoped:
+        return True
+    def mentions(text: str, term: str) -> bool:
+        if term.isalnum():
+            return re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text) is not None
+        return term in text
+
+    return any(mentions(json.dumps(task).lower(), term) for task in scoped for term in terms)
+
+
 def phase_checkpoint_current(
     project: Path,
     phase: str,
@@ -414,12 +437,16 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
                 project,
                 workflow_root() / "schemas" / "deployment-readiness.schema.json",
             )
-    if state.get("capabilities", {}).get("rag") and phase in {
+    if (
+        state.get("capabilities", {}).get("rag")
+        and phase in {
         "frontend",
         "mobile",
         "backend",
         "integration",
-    }:
+        }
+        and _phase_requires_capability_evidence(project, phase, _RAG_SCOPE_TERMS)
+    ):
         if phase in {"frontend", "mobile"} and state["frameworks"][phase] == "unknown":
             return
         validate_rag_evidence(
