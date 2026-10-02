@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "task_id": "TASK-BACKEND-COMPOSE-RUNTIME",
+  "status": "READY_FOR_VERIFICATION",
+  "verified": true,
+  "checks": [
+    {"name": "ruff", "exit_code": 0},
+    {"name": "runtime-protocol-tests", "exit_code": 0, "result": "16 passed"},
+    {"name": "skill-validation", "exit_code": 0, "result": "3 skills valid"}
+  ],
+  "assertions": {
+    "single_compose_project": true,
+    "service_name_database_networking": true,
+    "no_host_postgresql_port_dependency": true,
+    "shared_runtime_for_complete_matrix": true
+  }
+}

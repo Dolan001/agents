@@ -1,0 +1,35 @@
+{
+  "task_id": "TASK-BACKEND-COMPOSE-RUNTIME",
+  "feature_id": "backend-compose-runtime",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-004"],
+  "description": "Make backend verification reuse one project-scoped Compose network without host PostgreSQL port forwarding.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/backend-compose-runtime.json"],
+  "allowed_paths": [
+    "rules/phases/backend.md",
+    "skills/start-backend/SKILL.md",
+    "drf/skills/implement-drf-vertical-slice/references/database-api-architecture.md",
+    "drf/skills/verify-django-delivery/SKILL.md",
+    "fastapi/skills/implement-fastapi-vertical-slice/references/database-api-architecture.md",
+    "fastapi/skills/verify-fastapi-delivery/SKILL.md",
+    "tests/test_task_projection.py",
+    ".ai/evidence/backend-compose-runtime.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Backend verification uses one stable Compose project and service-name networking.",
+    "PostgreSQL verification does not require a published host port.",
+    "Empty, prior-schema, live HTTP and persistence checks reuse the same healthy runtime.",
+    "DRF and FastAPI instructions enforce the same protocol."
+  ],
+  "required_tests": ["runtime protocol tests", "skill validation", "ruff"],
+  "security_review_required": false,
+  "performance_review_required": false,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 10, "maximum_characters": 30000},
+  "completion_evidence": [".ai/evidence/backend-compose-runtime.json"],
+  "status": "READY_FOR_VERIFICATION"
+}

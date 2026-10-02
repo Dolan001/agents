@@ -72,6 +72,21 @@ def test_nonfoundation_backend_slice_remains_narrow():
     assert projected[0]["allowed_paths"] == ["apps/backend/accounts/**", "compose.yaml"]
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "drf/skills/implement-drf-vertical-slice/references/database-api-architecture.md",
+        "fastapi/skills/implement-fastapi-vertical-slice/references/database-api-architecture.md",
+    ],
+)
+def test_backend_runtime_protocol_avoids_host_database_ports(relative: str):
+    content = (Path(__file__).resolve().parents[1] / relative).read_text()
+    assert "one uniquely named Compose project" in content
+    assert "Do not publish PostgreSQL to host port 5432" in content
+    assert "connect to `postgres:5432`" in content
+    assert "reuse it until every database" in content
+
+
 @pytest.mark.parametrize("dependency", ["TASK-A", "TASK-MISSING"])
 def test_bad_dependency_plan_fails_before_dispatch(dependency):
     with pytest.raises(RuntimeError, match="cyclic|unknown"):

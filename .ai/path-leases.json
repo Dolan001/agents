@@ -1,6 +1,23 @@
 {
   "leases": [
     {
+      "task_id": "TASK-BACKEND-COMPOSE-RUNTIME",
+      "agent": "workflow-agent",
+      "paths": [
+        "rules/phases/backend.md",
+        "skills/start-backend/SKILL.md",
+        "drf/skills/implement-drf-vertical-slice/references/database-api-architecture.md",
+        "drf/skills/verify-django-delivery/SKILL.md",
+        "fastapi/skills/implement-fastapi-vertical-slice/references/database-api-architecture.md",
+        "fastapi/skills/verify-fastapi-delivery/SKILL.md",
+        "tests/test_task_projection.py",
+        ".ai/evidence/backend-compose-runtime.json"
+      ],
+      "acquired_at": "2026-10-02T14:30:00Z",
+      "expires_at": "2026-10-02T16:30:00Z",
+      "status": "released"
+    },
+    {
       "task_id": "TASK-BACKEND-RUNTIME-ADAPTER",
       "agent": "workflow-agent",
       "paths": [
