@@ -1,6 +1,25 @@
 {
   "leases": [
     {
+      "task_id": "TASK-DOCKER-ONLY-BACKEND-SERVICES",
+      "agent": "workflow-agent",
+      "paths": [
+        "rules/phases/backend.md",
+        "skills/start-backend/SKILL.md",
+        "drf/skills/create-django-monorepo-backend/SKILL.md",
+        "drf/skills/implement-drf-vertical-slice/references/database-api-architecture.md",
+        "drf/rules/project-structure.md",
+        "fastapi/skills/create-fastapi-monorepo-backend/SKILL.md",
+        "fastapi/skills/implement-fastapi-vertical-slice/references/database-api-architecture.md",
+        "fastapi/rules/project-structure.md",
+        "tests/test_task_projection.py",
+        ".ai/evidence/docker-only-backend-services.json"
+      ],
+      "acquired_at": "2026-10-02T16:35:00Z",
+      "expires_at": "2026-10-02T18:35:00Z",
+      "status": "released"
+    },
+    {
       "task_id": "TASK-BACKEND-COMPOSE-RUNTIME",
       "agent": "workflow-agent",
       "paths": [

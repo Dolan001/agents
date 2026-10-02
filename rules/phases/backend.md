@@ -12,6 +12,12 @@ Run these checks in one uniquely named Compose project. Keep PostgreSQL private 
 network and address it by service name; never depend on host port 5432 or create a sequence of
 ad hoc containers with changing forwarded ports. Wait for the declared database health check once,
 then reuse that runtime for clean-database, prior-schema, live HTTP, persistence, and cleanup checks.
+Docker Compose is the sole runtime provider for PostgreSQL and, when activated by requirements,
+Redis, Celery workers, and Celery Beat. Never discover, install, start, or use host PostgreSQL,
+Redis, or globally installed Celery as a fallback. If an image is absent, pull its reviewed pinned
+version or build the locked backend image through Compose. Derive a normalized unique Compose
+project name from the target project and run, and use distinct normalized database names for each
+verification purpose. Keep PostgreSQL identifiers within 63 bytes and credentials out of names.
 Run the backend as a network service and make HTTP requests from a project-owned test container or
 runtime client on the same network. Do not substitute in-process clients for live HTTP.
 Validate dependency-lock alternatives, activated domain capability groups, and executable source
@@ -21,6 +27,8 @@ When a domain task activates the background-task capability, require Celery with
 PostgreSQL transactional outbox/job, framework worker configuration and discovery, task tests, and
 live broker/worker/enqueue/retry/idempotency/duplicate/outbox/failure evidence. Scheduled delivery is
 verified only when requirements activate it. FastAPI in-process tasks do not satisfy durable work.
+Run worker and Beat processes from the same locked backend image as separate Compose services;
+Redis is a version-pinned Compose service, not a host daemon.
 When realtime is activated, require the selected framework realtime skill and
 `.ai/evidence/realtime/backend.json`. PostgreSQL is authoritative; Redis is transient fan-out.
 Require secure authentication, per-command authorization, versioned events, cursor replay,

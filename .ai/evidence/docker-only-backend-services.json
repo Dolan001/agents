@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-DOCKER-ONLY-BACKEND-SERVICES",
+  "status": "passed",
+  "summary": "Shared backend instructions require Docker Compose for PostgreSQL, Redis, Celery workers, and Celery Beat, with unique project and database names and no host-service fallback.",
+  "checks": [
+    {
+      "name": "skill-validation",
+      "status": "passed",
+      "details": "start-backend and the DRF/FastAPI backend creation skills passed quick_validate.py."
+    },
+    {
+      "name": "policy-assertions",
+      "status": "passed",
+      "details": "Static regression coverage asserts the Docker-only policy in both backend packs."
+    },
+    {
+      "name": "pytest-and-ruff",
+      "status": "not_run",
+      "details": "The available Python runtimes do not include pytest or ruff; the isolated dependency fetch was blocked by sandbox DNS."
+    }
+  ]
+}

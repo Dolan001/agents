@@ -181,3 +181,26 @@ def test_design_cache_ignores_only_identical_interim_alias(tmp_path, node):
     assert key() == original
     canonical.write_text('{"paths": {"/new": {}}}')
     assert key() != original
+
+
+@pytest.mark.parametrize("pack", ["drf", "fastapi"])
+def test_backend_packs_require_docker_only_runtime_services(pack):
+    root = Path(__file__).resolve().parents[1]
+    create_name = {
+        "drf": "create-django-monorepo-backend",
+        "fastapi": "create-fastapi-monorepo-backend",
+    }[pack]
+    create_skill = (root / pack / "skills" / create_name / "SKILL.md").read_text()
+    structure = (root / pack / "rules" / "project-structure.md").read_text()
+    database = (
+        root
+        / pack
+        / "skills"
+        / f"implement-{pack}-vertical-slice"
+        / "references"
+        / "database-api-architecture.md"
+    ).read_text()
+
+    assert "Docker Compose is the only runtime provider" in create_skill
+    assert "Never install or use host Redis or global Celery" in structure
+    assert "Docker Compose as the sole PostgreSQL runtime" in database

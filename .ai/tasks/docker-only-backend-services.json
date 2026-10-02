@@ -1,0 +1,37 @@
+{
+  "task_id": "TASK-DOCKER-ONLY-BACKEND-SERVICES",
+  "feature_id": "docker-only-backend-services",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-004"],
+  "description": "Require Docker Compose for PostgreSQL, Redis, and Celery runtime processes without host installations.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/docker-only-backend-services.json"],
+  "allowed_paths": [
+    "rules/phases/backend.md",
+    "skills/start-backend/SKILL.md",
+    "drf/skills/create-django-monorepo-backend/SKILL.md",
+    "drf/skills/implement-drf-vertical-slice/references/database-api-architecture.md",
+    "drf/rules/project-structure.md",
+    "fastapi/skills/create-fastapi-monorepo-backend/SKILL.md",
+    "fastapi/skills/implement-fastapi-vertical-slice/references/database-api-architecture.md",
+    "fastapi/rules/project-structure.md",
+    "tests/test_task_projection.py",
+    ".ai/evidence/docker-only-backend-services.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Backend development and verification never require host PostgreSQL, Redis, or Celery services.",
+    "Missing runtime images are pulled or built through Docker Compose.",
+    "Every run uses a unique Compose project name and purpose-specific database names.",
+    "Celery worker and Beat use the backend image and connect to Compose Redis and PostgreSQL services."
+  ],
+  "required_tests": ["runtime policy tests", "skill validation", "ruff"],
+  "security_review_required": false,
+  "performance_review_required": false,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 10, "maximum_characters": 30000},
+  "completion_evidence": [".ai/evidence/docker-only-backend-services.json"],
+  "status": "READY_FOR_VERIFICATION"
+}
