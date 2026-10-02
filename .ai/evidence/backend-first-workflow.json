@@ -23,6 +23,12 @@
       "result": "130 passed"
     },
     {
+      "name": "existing-project-order-migration",
+      "command": "pytest focused backend-first migration and stage command tests",
+      "exit_code": 0,
+      "result": "4 passed"
+    },
+    {
       "name": "skill-validation",
       "command": "quick_validate.py for 10 changed skill directories",
       "exit_code": 0

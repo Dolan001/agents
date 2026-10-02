@@ -3626,6 +3626,32 @@ def test_backend_run_does_not_require_a_client(
     assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
 
 
+def test_backend_first_migration_invalidates_completed_downstream_phases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert main(
+        [
+            "start-generatehtml",
+            "--project",
+            str(tmp_path),
+            "--github-user",
+            "test-user",
+        ]
+    ) == 0
+    state_path = tmp_path / ".ai" / "state.json"
+    state = json.loads(state_path.read_text())
+    state["completed_phases"] = ["bootstrap", "requirements", "design"]
+    state_path.write_text(json.dumps(state))
+
+    assert main(["start-backend", "--project", str(tmp_path)]) == 0
+    state = json.loads(state_path.read_text())
+    assert state["completed_phases"] == ["bootstrap", "requirements", "backend"]
+
+
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:
     pack = Path(__file__).resolve().parents[1] / "reactjs"
     with pytest.raises(RuntimeError, match="structure is invalid"):

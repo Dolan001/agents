@@ -713,6 +713,28 @@ def command_start(args: argparse.Namespace) -> int:
                 project / ".ai" / "decisions.jsonl",
                 {"at": utc_now(), "decision": "phase_invalidated", "phase": phase},
             )
+        else:
+            phase_index = PHASES.index(phase)
+            later_completed = {
+                item for item in completed if PHASES.index(item) > phase_index
+            }
+            if later_completed:
+                completed -= later_completed
+                state_store = StateStore(project)
+                reordered_state = state_store.load()
+                reordered_state["completed_phases"] = sorted(completed, key=PHASES.index)
+                reordered_state["status"] = "running"
+                state_store.save(reordered_state)
+                selected = queue["tasks"]
+                append_jsonl(
+                    project / ".ai" / "decisions.jsonl",
+                    {
+                        "at": utc_now(),
+                        "decision": "downstream_phases_invalidated",
+                        "phase": phase,
+                        "invalidated": sorted(later_completed, key=PHASES.index),
+                    },
+                )
         if _skip_disabled_client_phase(
             project, phase, force=defer_deployment and phase == "deployment"
         ):
