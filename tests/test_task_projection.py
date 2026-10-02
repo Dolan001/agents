@@ -36,6 +36,42 @@ def test_client_projection_orders_prerequisites_and_excludes_backend_verifiers()
     assert tasks[0]["dependencies"] == ["TASK-AUTH-VERIFY"]
 
 
+def test_backend_foundation_can_create_runnable_framework_structure():
+    foundation = task(
+        "TASK-FOUNDATION",
+        [
+            "apps/backend/config/**",
+            "apps/backend/accounts/models.py",
+            "packages/api-client/**",
+            "docs/api/**",
+            "tests/contracts/**",
+            "compose.yaml",
+            "Makefile",
+            ".env.example",
+        ],
+    )
+    projected = phase_tasks([foundation], "backend")
+    assert projected[0]["allowed_paths"] == [
+        "apps/backend/**",
+        "apps/backend/config/**",
+        "apps/backend/accounts/models.py",
+        "packages/api-client/**",
+        "docs/api/**",
+        "tests/contracts/**",
+        "compose.yaml",
+        "Makefile",
+        ".env.example",
+    ]
+
+
+def test_nonfoundation_backend_slice_remains_narrow():
+    projected = phase_tasks(
+        [task("TASK-ACCOUNTS", ["apps/backend/accounts/**", "compose.yaml"])],
+        "backend",
+    )
+    assert projected[0]["allowed_paths"] == ["apps/backend/accounts/**", "compose.yaml"]
+
+
 @pytest.mark.parametrize("dependency", ["TASK-A", "TASK-MISSING"])
 def test_bad_dependency_plan_fails_before_dispatch(dependency):
     with pytest.raises(RuntimeError, match="cyclic|unknown"):

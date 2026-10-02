@@ -1,6 +1,18 @@
 {
   "leases": [
     {
+      "task_id": "TASK-BACKEND-FOUNDATION-PROJECTION",
+      "agent": "workflow-agent",
+      "paths": [
+        "src/ai_workflow/task_projection.py",
+        "tests/test_task_projection.py",
+        ".ai/evidence/backend-foundation-projection.json"
+      ],
+      "acquired_at": "2026-10-02T12:00:00Z",
+      "expires_at": "2026-10-02T14:00:00Z",
+      "status": "released"
+    },
+    {
       "acquired_at": "2026-10-02T11:40:10.399157Z",
       "agent": "workflow-agent",
       "expires_at": "2026-10-02T13:40:10.399157Z",

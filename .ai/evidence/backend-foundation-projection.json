@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "task_id": "TASK-BACKEND-FOUNDATION-PROJECTION",
+  "status": "READY_FOR_VERIFICATION",
+  "verified": true,
+  "checks": [
+    {"name": "ruff", "exit_code": 0},
+    {"name": "task-projection-tests", "exit_code": 0, "result": "14 passed"}
+  ],
+  "assertions": {
+    "foundation_has_complete_backend_root": true,
+    "planned_root_runtime_files_preserved": true,
+    "nonfoundation_leases_remain_narrow": true,
+    "client_projection_uses_live_backend": true
+  }
+}

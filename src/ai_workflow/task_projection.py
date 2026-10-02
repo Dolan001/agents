@@ -30,9 +30,12 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         ],
     }
     prefixes.extend(test_prefixes[phase])
+    backend_root_paths = {"compose.yaml", "compose.yml", "Makefile", ".env.example"}
 
     def scoped(path: str) -> list[str]:
         if path.startswith(".ai/evidence/"):
+            return [path]
+        if phase == "backend" and path in backend_root_paths:
             return [path]
         return list(dict.fromkeys(
             path if path.startswith(prefix) else prefix + "**"
@@ -45,6 +48,10 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         paths = list(dict.fromkeys(
             value for path in task.get("allowed_paths", []) for value in scoped(path)
         ))
+        if phase == "backend" and (
+            feature == "foundation" or feature.endswith("-foundation")
+        ):
+            paths = list(dict.fromkeys(["apps/backend/**", *paths]))
         if not any(not path.startswith(".ai/") for path in paths):
             continue
         selected[feature] = {**task, "allowed_paths": paths}
@@ -77,15 +84,16 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         visited.add(task_id)
         projected = selected.get(task["feature_id"])
         if projected and projected["task_id"] == task_id:
-            # Whole-product verification dependencies are satisfied only later. The
-            # current phase consumes contracts/fixtures, not invented backend proof.
+            # Final cross-application verification remains later, while client slices
+            # use the already verified live backend during their own implementation.
             projected["description"] = (
                 (
-                    "Implement the backend portion and reconcile generated OpenAPI with the "
-                    "interim client contract. Run real backend checks; integration follows. "
+                    "Implement the backend portion, publish authoritative OpenAPI, and run real "
+                    "PostgreSQL and HTTP checks; cross-application verification follows. "
                     if phase == "backend" else
-                    f"Implement only the {phase} portion against the API contract and fixtures. "
-                    "Whole-product backend verification remains a later-phase obligation. "
+                    f"Implement the {phase} portion against the verified live backend and current "
+                    "OpenAPI. Complete real API integration in this slice; final cross-application "
+                    "verification remains a later-phase obligation. "
                 )
                 + str(task.get("description", ""))
             )

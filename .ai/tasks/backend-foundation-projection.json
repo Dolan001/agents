@@ -1,0 +1,29 @@
+{
+  "task_id": "TASK-BACKEND-FOUNDATION-PROJECTION",
+  "feature_id": "backend-foundation-projection",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-002"],
+  "description": "Allow backend foundation slices to create the runnable framework structure required by their gate.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/backend-foundation-projection.json"],
+  "allowed_paths": [
+    "src/ai_workflow/task_projection.py",
+    "tests/test_task_projection.py",
+    ".ai/evidence/backend-foundation-projection.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Backend foundation receives apps/backend/** and explicitly planned root runtime files.",
+    "Other backend feature leases remain narrowly scoped.",
+    "Client projection text reflects verified live backend integration."
+  ],
+  "required_tests": ["task projection tests", "ruff"],
+  "security_review_required": false,
+  "performance_review_required": false,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 6, "maximum_characters": 20000},
+  "completion_evidence": [".ai/evidence/backend-foundation-projection.json"],
+  "status": "READY_FOR_VERIFICATION"
+}
