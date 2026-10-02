@@ -4,10 +4,10 @@
   "phase_order": [
     "bootstrap",
     "requirements",
+    "backend",
     "design",
     "frontend",
     "mobile",
-    "backend",
     "integration",
     "testing",
     "deployment",
@@ -16,10 +16,10 @@
   "execution_groups": [
     ["bootstrap"],
     ["requirements"],
+    ["backend"],
     ["design"],
     ["frontend"],
     ["mobile"],
-    ["backend"],
     ["integration"],
     ["testing"],
     ["deployment"],
@@ -39,7 +39,7 @@
       "gate": "gates/contracts/requirements.json"
     },
     "design": {
-      "dependencies": ["requirements"],
+      "dependencies": ["backend"],
       "manifest": "pipeline/manifests/design.json",
       "blueprint": "blueprints/design.json",
       "gate": "gates/contracts/design.json"
@@ -57,7 +57,7 @@
       "gate": "gates/contracts/mobile.json"
     },
     "backend": {
-      "dependencies": ["mobile"],
+      "dependencies": ["requirements"],
       "manifest": "pipeline/manifests/backend.json",
       "blueprint": "blueprints/backend.json",
       "gate": "gates/contracts/backend.json"

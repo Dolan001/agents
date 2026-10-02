@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "task_id": "TASK-BACKEND-FIRST-REAL-API-WORKFLOW",
+  "status": "READY_FOR_VERIFICATION",
+  "verified": true,
+  "summary": {
+    "backend_before_design": true,
+    "live_http_and_postgresql_required": true,
+    "deterministic_seed_and_cleanup_required": true,
+    "client_live_integration_required": true,
+    "fixture_only_gate_forbidden": true
+  },
+  "checks": [
+    {
+      "name": "ruff",
+      "command": "/Users/dolanbairagi/Public/ai/workflow/agents/.venv/bin/ruff check src/ai_workflow tests/test_cli.py",
+      "exit_code": 0
+    },
+    {
+      "name": "cli-tests",
+      "command": "/Users/dolanbairagi/Public/ai/workflow/agents/.venv/bin/python -m pytest -q tests/test_cli.py",
+      "exit_code": 0,
+      "result": "130 passed"
+    },
+    {
+      "name": "skill-validation",
+      "command": "quick_validate.py for 10 changed skill directories",
+      "exit_code": 0
+    },
+    {
+      "name": "json-and-python-syntax",
+      "command": "compileall plus JSON parsing",
+      "exit_code": 0
+    }
+  ]
+}

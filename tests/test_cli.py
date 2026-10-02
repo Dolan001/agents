@@ -39,6 +39,7 @@ from ai_workflow.prd import (
 from ai_workflow.requirements import parse_prd
 from ai_workflow.structure import (
     validate_backend_evidence,
+    validate_client_integration_evidence,
     validate_database_evidence,
     validate_rag_evidence,
     validate_realtime_evidence,
@@ -1876,16 +1877,22 @@ def test_control_plane_is_fully_connected() -> None:
     assert report["phases"] == 10
     assert report["nodes"] == 42
     assert report["agentic_nodes"] == 30
-    assert report["execution_groups"][3:6] == [["frontend"], ["mobile"], ["backend"]]
+    assert report["execution_groups"][2:6] == [
+        ["backend"],
+        ["design"],
+        ["frontend"],
+        ["mobile"],
+    ]
 
 
 def test_scheduler_unlocks_only_the_next_sequential_phase() -> None:
     assert ready_phases(set(), set()) == ["bootstrap"]
     assert ready_phases({"bootstrap"}, set()) == ["requirements"]
-    completed = {"bootstrap", "requirements", "design"}
-    assert ready_phases(completed, set()) == ["frontend"]
-    assert ready_phases(completed | {"frontend"}, set()) == ["mobile"]
-    assert ready_phases(completed | {"frontend", "mobile"}, set()) == ["backend"]
+    completed = {"bootstrap", "requirements"}
+    assert ready_phases(completed, set()) == ["backend"]
+    assert ready_phases(completed | {"backend"}, set()) == ["design"]
+    assert ready_phases(completed | {"backend", "design"}, set()) == ["frontend"]
+    assert ready_phases(completed | {"backend", "design", "frontend"}, set()) == ["mobile"]
 
 
 def test_cache_key_changes_only_when_declared_inputs_change(tmp_path: Path) -> None:
@@ -2120,7 +2127,9 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     del adapter
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]
     output = re.search(r"Required output: (.+)", prompt).group(1)  # type: ignore[union-attr]
-    output = output.replace("{feature_id}", "acc-001")
+    bundle_path = re.search(r"Bounded context bundle: (.+)", prompt).group(1)  # type: ignore[union-attr]
+    task_contract = json.loads(Path(bundle_path).read_text())["task_contract"]
+    output = output.replace("{feature_id}", task_contract["feature_id"])
     path = project / output
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {"phase": phase, "node": node}
@@ -2190,8 +2199,23 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         _write_design_fidelity_evidence(project, prompt, phase)
     if phase in {"frontend", "mobile"} and node == f"verify-{phase}":
         _write_design_fidelity_verification(project, prompt, phase)
+        _write_client_integration_evidence(project, phase)
     if phase == "backend" and node == "implement-backend-slices":
         _create_pack_structure(project, prompt)
+        commands = {
+            group: [{"argv": ["true"], "cwd": "."}]
+            for group in (
+                "frontend",
+                "mobile",
+                "backend",
+                "generate-client",
+                "contract",
+                "integration",
+                "e2e",
+            )
+        }
+        manifest = project / ".ai" / "test-commands.json"
+        manifest.write_text(json.dumps({"version": 1, "commands": commands}))
     if phase == "backend" and node == "verify-backend":
         _write_database_evidence(project, prompt)
         _write_backend_evidence(project, prompt)
@@ -2494,6 +2518,8 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
     check_names = (
         "import",
         "startup",
+        "seed-data",
+        "api-live",
         "api",
         "authorization",
         "transactions",
@@ -2510,8 +2536,16 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
         },
         "api": {
             "contract_passed": True,
+            "live_http_passed": True,
+            "database_round_trip_passed": True,
             "success_and_negative_passed": True,
             "authorization_passed": True,
+        },
+        "test_data": {
+            "dataset_version": "synthetic-v1",
+            "provenance": "deterministic-synthetic-seed",
+            "records_created": 3,
+            "cleanup_passed": True,
         },
         "transactions": {"passed": True, "concurrency_cases": 1},
         "background_tasks": {"required": False},
@@ -2524,6 +2558,51 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
         "verified": True,
     }
     path = project / ".ai" / "evidence" / "backend-verification.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(evidence))
+    openapi = project / "docs" / "api" / "openapi.json"
+    openapi.parent.mkdir(parents=True, exist_ok=True)
+    if not openapi.is_file():
+        openapi.write_text(json.dumps({"openapi": "3.1.0"}))
+
+
+def _write_client_integration_evidence(project: Path, phase: str) -> None:
+    backend_path = project / ".ai" / "evidence" / "backend-verification.json"
+    openapi_path = project / "docs" / "api" / "openapi.json"
+    backend = json.loads(backend_path.read_text())
+    evidence = {
+        "version": 1,
+        "phase": phase,
+        "backend_framework": backend["framework"],
+        "backend_evidence_sha256": hashlib.sha256(backend_path.read_bytes()).hexdigest(),
+        "openapi_sha256": hashlib.sha256(openapi_path.read_bytes()).hexdigest(),
+        "dataset_version": backend["test_data"]["dataset_version"],
+        "runtime": {
+            "backend_started": True,
+            "backend_ready": True,
+            "postgresql_ready": True,
+        },
+        "contract": {
+            "generated_client_current": True,
+            "openapi_drift_free": True,
+            "runtime_validation_passed": True,
+        },
+        "journeys": {
+            "authenticated": True,
+            "success": True,
+            "negative": True,
+            "authorization": True,
+            "persistence_round_trip": True,
+            "error_mapping": True,
+            "fixtures_disabled": True,
+        },
+        "commands": [
+            {"argv": ["true"], "cwd": ".", "exit_code": 0},
+            {"argv": ["true"], "cwd": ".", "exit_code": 0},
+        ],
+        "verified": True,
+    }
+    path = project / ".ai" / "evidence" / "client-integration" / f"{phase}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(evidence))
 
@@ -2600,7 +2679,7 @@ def test_complete_one_shot_pilot_for_each_design_mode(
     assert (tmp_path / "packages" / "api-client" / "index.ts").is_file()
 
 
-def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
+def test_stage_commands_build_backend_then_stop_at_design_and_html(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     docs = tmp_path / "docs"
@@ -2614,24 +2693,26 @@ def test_stage_commands_stop_at_design_and_html_without_creating_monorepo(
         str(tmp_path),
         "--github-user",
         "test-user",
+        "--backend",
+        "fastapi",
         "--adapter",
         "codex",
     ]
     assert main(arguments) == 0
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
-    assert state["completed_phases"] == ["bootstrap", "requirements"]
+    assert state["completed_phases"] == ["bootstrap", "requirements", "backend"]
     assert (tmp_path / "HTML" / "design-specification.md").is_file()
     assert not (tmp_path / "HTML" / "approved" / "index.html").exists()
-    assert not (tmp_path / "apps").exists()
+    assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
     assert not (tmp_path / "README.md").exists()
     assert issue_summary(tmp_path)["total_occurrences"] == 0
     assert "No unresolved build issues" in (tmp_path / ".ai" / "issues" / "REPORT.md").read_text()
 
     assert main(["start-generatehtml", "--project", str(tmp_path), "--adapter", "codex"]) == 0
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
-    assert state["completed_phases"] == ["bootstrap", "requirements", "design"]
+    assert state["completed_phases"] == ["bootstrap", "requirements", "backend", "design"]
     assert (tmp_path / "HTML" / "approved" / "index.html").is_file()
-    assert not (tmp_path / "apps").exists()
+    assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
     assert not (tmp_path / "README.md").exists()
 
 
@@ -2642,7 +2723,8 @@ def test_html_verification_routes_findings_through_bounded_repair(
     action_field: str,
 ) -> None:
     (tmp_path / "PRD.md").write_text(
-        "# Collections\n\n- COL-001 User can select multiple collections.\n"
+        "# Collections\n\nBackend framework: FastAPI\n\n"
+        "- COL-001 User can select multiple collections.\n"
     )
     calls: list[str] = []
     repaired = False
@@ -2728,7 +2810,9 @@ def test_html_verification_routes_findings_through_bounded_repair(
 def test_html_generation_approves_in_one_invocation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 View account.\n")
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
+    )
     verifications = []
 
     def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
@@ -2901,7 +2985,9 @@ def test_frontend_requires_separate_html_generation(
 def test_html_schema_error_retries_only_verifier_with_precise_feedback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 View account.\n")
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
+    )
     calls = []
 
     def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
@@ -2969,7 +3055,9 @@ def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None
 def test_nonretryable_verifier_evidence_stops_without_repair(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 User can view an account.\n"
+    )
     calls: list[str] = []
 
     def blocked_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
@@ -3028,7 +3116,9 @@ def test_codex_skills_are_directly_discoverable_from_agents_submodule() -> None:
 def test_agent_node_retries_with_failure_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 User can view an account.\n"
+    )
     attempts = 0
 
     def flaky_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
@@ -3090,7 +3180,9 @@ def test_agent_node_retries_with_failure_context(
 def test_agent_node_does_not_retry_quota_or_environment_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 User can view an account.\n"
+    )
     attempts = 0
 
     def unavailable_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
@@ -3486,10 +3578,16 @@ def test_start_mobile_stops_without_building_declared_web(
         == 0
     )
     state = json.loads((tmp_path / ".ai" / "state.json").read_text())
-    assert state["completed_phases"] == ["bootstrap", "requirements", "design", "mobile"]
+    assert state["completed_phases"] == [
+        "bootstrap",
+        "requirements",
+        "backend",
+        "design",
+        "mobile",
+    ]
     assert not (tmp_path / "apps" / "frontend").exists()
     assert (tmp_path / "apps" / "mobile" / "lib" / "main.dart").is_file()
-    assert not (tmp_path / "apps" / "backend" / "app" / "main.py").exists()
+    assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
 
 
 def test_start_build_requires_only_missing_framework_before_initialization(
@@ -3504,25 +3602,28 @@ def test_start_build_requires_only_missing_framework_before_initialization(
     assert issue_summary(tmp_path)["unresolved"] == 1
 
 
-def test_existing_design_run_requires_a_client_before_backend(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+def test_backend_run_does_not_require_a_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "PRD.md").write_text("# Account\n\n- ACC-001 User can view an account.\n")
     monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
     assert (
         main(
             [
-                "start-design",
+                "start-backend",
                 "--project",
                 str(tmp_path),
                 "--github-user",
                 "test-user",
+                "--backend",
+                "fastapi",
             ]
         )
         == 0
     )
-    assert main(["start-backend", "--project", str(tmp_path), "--backend", "fastapi"]) == 1
-    assert "client: react, nextjs, or flutter" in capsys.readouterr().err
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["completed_phases"] == ["bootstrap", "requirements", "backend"]
+    assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
 
 
 def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> None:
@@ -4015,6 +4116,26 @@ def test_backend_evidence_requires_runtime_api_transaction_and_security_checks(
     evidence_path.write_text(json.dumps(evidence))
     with pytest.raises(RuntimeError, match="backend verification evidence is invalid"):
         validate_backend_evidence(tmp_path, schema, "fastapi")
+
+
+def test_client_integration_evidence_is_bound_to_live_backend_and_openapi(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    prompt = f"Selected framework pack: {root / 'fastapi'}"
+    _write_backend_evidence(tmp_path, prompt)
+    _write_client_integration_evidence(tmp_path, "frontend")
+    schema = root / "schemas" / "client-integration-verification.schema.json"
+    evidence = validate_client_integration_evidence(
+        tmp_path, schema, "frontend", "fastapi"
+    )
+    assert evidence["journeys"]["fixtures_disabled"] is True
+
+    (tmp_path / "docs" / "api" / "openapi.json").write_text(
+        json.dumps({"openapi": "3.1.0", "info": {"title": "changed"}})
+    )
+    with pytest.raises(RuntimeError, match="stale for OpenAPI"):
+        validate_client_integration_evidence(tmp_path, schema, "frontend", "fastapi")
 
 
 def test_backend_evidence_requires_worker_checks_when_background_tasks_are_active(

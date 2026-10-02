@@ -1,12 +1,13 @@
 ---
 name: start-generatehtml
-description: Generate, validate, and approve static HTML from a PRD, screenshots, design assets, or supplied HTML, stopping before frontend code. Use when the user invokes start-generatehtml or requests only the HTML baseline.
+description: Generate, validate, and approve static HTML from a PRD, screenshots, design assets, or supplied HTML after the backend is verified, stopping before client code. Use when the user invokes start-generatehtml or requests only the HTML baseline.
 ---
 
 # Generate approved HTML
 
 Read `.agents/commands/references/start-command-contract.md`, then invoke
-`./.agents/bin/ai start-generatehtml` with `--adapter codex`. Complete the design
+`./.agents/bin/ai start-generatehtml` with `--adapter codex` and the resolved backend. Require the
+backend gate first, then complete the design
 gate and stop before frontend implementation.
 
 Generate, independently verify, and approve HTML in the same invocation. The independent

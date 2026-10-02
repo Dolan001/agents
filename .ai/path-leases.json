@@ -1,4 +1,45 @@
 {
-  "leases": [],
+  "leases": [
+    {
+      "acquired_at": "2026-10-02T11:40:10.399157Z",
+      "agent": "workflow-agent",
+      "expires_at": "2026-10-02T13:40:10.399157Z",
+      "paths": [
+        "src/ai_workflow/model.py",
+        "src/ai_workflow/cli.py",
+        "src/ai_workflow/execution.py",
+        "src/ai_workflow/structure.py",
+        "config/pipeline.json",
+        "pipeline/manifests/backend.json",
+        "pipeline/manifests/design.json",
+        "pipeline/manifests/frontend.json",
+        "pipeline/manifests/mobile.json",
+        "gates/contracts/backend.json",
+        "gates/contracts/frontend.json",
+        "gates/contracts/mobile.json",
+        "schemas/backend-verification.schema.json",
+        "schemas/client-integration-verification.schema.json",
+        "rules/phases/frontend.md",
+        "rules/phases/mobile.md",
+        "skills/start-build/SKILL.md",
+        "skills/start-backend/SKILL.md",
+        "skills/start-generatehtml/SKILL.md",
+        "skills/start-frontend/SKILL.md",
+        "skills/start-mobile/SKILL.md",
+        "commands/references/start-command-contract.md",
+        "AGENTS.md",
+        "reactjs/skills/verify-react-delivery/SKILL.md",
+        "nextjs/skills/verify-nextjs-delivery/SKILL.md",
+        "flutter/skills/verify-flutter-delivery/SKILL.md",
+        "drf/skills/verify-django-delivery/SKILL.md",
+        "fastapi/skills/verify-fastapi-delivery/SKILL.md",
+        "tests/test_cli.py",
+        "tests/test_pipeline_order.py",
+        ".ai/evidence/backend-first-workflow.json"
+      ],
+      "status": "released",
+      "task_id": "TASK-BACKEND-FIRST-REAL-API-WORKFLOW"
+    }
+  ],
   "version": 1
 }

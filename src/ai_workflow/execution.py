@@ -26,6 +26,7 @@ from .model import PHASES, StateStore, utc_now
 from .pipeline import node_cache_key, workflow_root
 from .structure import (
     validate_backend_evidence,
+    validate_client_integration_evidence,
     validate_database_evidence,
     validate_deployment_evidence,
     validate_monorepo,
@@ -366,9 +367,12 @@ def phase_checkpoint_current(
                 if path != output
             ]
             checkpoint = nodes.get(identity, {})
+            cache_is_current = bool(node.get("fanout")) or checkpoint.get(
+                "cache_key"
+            ) == node_cache_key(project, identity, inputs)
             if (
                 checkpoint.get("status") != "VERIFIED"
-                or checkpoint.get("cache_key") != node_cache_key(project, identity, inputs)
+                or not cache_is_current
                 or not _artifact_ok(_inside(project, output), node["verification"])
             ):
                 if (
@@ -420,6 +424,12 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
                 phase,
                 state["frameworks"][phase],
                 allow_baseline_update=verified_baseline_update_current(project),
+            )
+            validate_client_integration_evidence(
+                project,
+                workflow_root() / "schemas" / "client-integration-verification.schema.json",
+                phase,
+                state["frameworks"]["backend"],
             )
         if phase == "backend":
             validate_database_evidence(
@@ -762,6 +772,8 @@ def _control_paths(
             )
         if phase in {"frontend", "mobile", "backend"} and verifying:
             paths.append(root / "schemas" / "realtime-verification.schema.json")
+        if phase in {"frontend", "mobile"} and verifying:
+            paths.append(root / "schemas" / "client-integration-verification.schema.json")
         if phase == "deployment" and verifying:
             paths.append(root / "schemas" / "deployment-readiness.schema.json")
     if (capabilities or {}).get("rag"):
@@ -1488,27 +1500,23 @@ def _prompt(
         )
     if phase in {"frontend", "mobile"}:
         role_boundary += (
-            "\nThis client phase precedes backend implementation. Materialize an interim "
-            "OpenAPI contract and generated typed client from the approved contract plan/specs; "
-            "use explicit test fixtures behind replaceable adapters. Backend-generated OpenAPI "
-            "becomes authoritative during backend/integration, with drift checks against this "
-            "contract. Do not wait for backend serializers, live authentication or whole-product "
-            "verification tasks. Record those obligations as deferred integration checks. "
-            "Do not claim backend security or real API behavior has been verified. "
+            "\nThis client phase follows verified backend implementation. Generate its typed "
+            "client from the current backend OpenAPI and implement against the running service. "
+            "Use the disposable PostgreSQL environment and deterministic synthetic dataset for "
+            "live authenticated, success, negative, authorization, persistence, and error-mapping "
+            "journeys. Fixtures are allowed only in isolated unit tests and cannot satisfy the "
+            "client integration gate. "
             "The task's original acceptance criteria and required tests describe the whole "
-            "product: evaluate each for current-phase applicability, execute all applicable "
-            "client checks, and explicitly record backend migrations/service health and other "
-            "client-platform checks as deferred to their owning phases. Generate only this "
-            "phase's client language. Do not treat these future-phase obligations as blockers "
-            "or silently drop them from the final integration/testing requirements."
+            "product: execute all checks applicable to this client and record current backend "
+            "evidence and OpenAPI hashes. Generate only this phase's client language."
         )
     if node["id"] == "prepare-client-foundation":
         role_boundary += (
             f"\nCreate an executable {phase} application using the selected framework's create "
             "skill, not README placeholders. Install/lock dependencies, configure routing, "
             "styles, test/lint/build commands and generated API client/runtime boundaries. "
-            "Use existing contracts if present; preserve user product decisions and record the "
-            "interim contract provenance. Run focused foundation and contract checks, register "
+            "Use the verified backend contract; preserve user product decisions and record its "
+            "provenance. Run focused foundation and contract checks, register "
             "project commands in .ai/test-commands.json and write truthful foundation evidence."
         )
         if phase == "frontend":

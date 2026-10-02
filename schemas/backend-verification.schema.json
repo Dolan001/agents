@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "framework", "runtime", "api", "transactions", "background_tasks", "openapi", "security", "checks", "verified"],
+  "required": ["version", "framework", "runtime", "api", "test_data", "transactions", "background_tasks", "openapi", "security", "checks", "verified"],
   "properties": {
     "version": {"const": 1},
     "framework": {"enum": ["django-drf", "fastapi"]},
@@ -19,11 +19,24 @@
     "api": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contract_passed", "success_and_negative_passed", "authorization_passed"],
+      "required": ["contract_passed", "live_http_passed", "database_round_trip_passed", "success_and_negative_passed", "authorization_passed"],
       "properties": {
         "contract_passed": {"const": true},
+        "live_http_passed": {"const": true},
+        "database_round_trip_passed": {"const": true},
         "success_and_negative_passed": {"const": true},
         "authorization_passed": {"const": true}
+      }
+    },
+    "test_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_version", "provenance", "records_created", "cleanup_passed"],
+      "properties": {
+        "dataset_version": {"type": "string", "minLength": 1},
+        "provenance": {"const": "deterministic-synthetic-seed"},
+        "records_created": {"type": "integer", "minimum": 1},
+        "cleanup_passed": {"const": true}
       }
     },
     "transactions": {
@@ -80,13 +93,13 @@
     "security": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
     "checks": {
       "type": "array",
-      "minItems": 7,
+      "minItems": 9,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "argv", "cwd", "exit_code"],
         "properties": {
-          "name": {"enum": ["import", "startup", "api", "authorization", "transactions", "broker", "worker", "tasks", "openapi", "security"]},
+          "name": {"enum": ["import", "startup", "seed-data", "api-live", "api", "authorization", "transactions", "broker", "worker", "tasks", "openapi", "security"]},
           "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
           "exit_code": {"const": 0}
@@ -95,6 +108,8 @@
       "allOf": [
         {"contains": {"properties": {"name": {"const": "import"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "startup"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "seed-data"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "api-live"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "api"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "authorization"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "transactions"}}, "required": ["name"]}},
@@ -118,7 +133,7 @@
       "then": {
         "properties": {
           "checks": {
-            "minItems": 10,
+            "minItems": 12,
             "allOf": [
               {"contains": {"properties": {"name": {"const": "broker"}}, "required": ["name"]}},
               {"contains": {"properties": {"name": {"const": "worker"}}, "required": ["name"]}},

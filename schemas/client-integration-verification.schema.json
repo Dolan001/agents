@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "phase", "backend_framework", "backend_evidence_sha256", "openapi_sha256", "dataset_version", "runtime", "contract", "journeys", "commands", "verified"],
+  "properties": {
+    "version": {"const": 1},
+    "phase": {"enum": ["frontend", "mobile"]},
+    "backend_framework": {"enum": ["django-drf", "fastapi"]},
+    "backend_evidence_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "openapi_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend_started", "backend_ready", "postgresql_ready"],
+      "properties": {
+        "backend_started": {"const": true},
+        "backend_ready": {"const": true},
+        "postgresql_ready": {"const": true}
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generated_client_current", "openapi_drift_free", "runtime_validation_passed"],
+      "properties": {
+        "generated_client_current": {"const": true},
+        "openapi_drift_free": {"const": true},
+        "runtime_validation_passed": {"const": true}
+      }
+    },
+    "journeys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authenticated", "success", "negative", "authorization", "persistence_round_trip", "error_mapping", "fixtures_disabled"],
+      "properties": {
+        "authenticated": {"const": true},
+        "success": {"const": true},
+        "negative": {"const": true},
+        "authorization": {"const": true},
+        "persistence_round_trip": {"const": true},
+        "error_mapping": {"const": true},
+        "fixtures_disabled": {"const": true}
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["argv", "cwd", "exit_code"],
+        "properties": {
+          "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
+          "exit_code": {"const": 0}
+        }
+      }
+    },
+    "verified": {"const": true}
+  }
+}

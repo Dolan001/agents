@@ -459,11 +459,20 @@ def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None
 
 def _require_frameworks(target: str, frameworks: dict[str, str]) -> None:
     missing: list[str] = []
-    if target == "frontend" and frameworks["frontend"] == "unknown":
-        missing.append("frontend: react or nextjs")
-    elif target == "mobile" and frameworks["mobile"] == "unknown":
-        missing.append("mobile: flutter")
-    elif target not in {"design-spec", "html"}:
+    if target in {"backend", "design-spec", "html"}:
+        if frameworks["backend"] == "unknown":
+            missing.append("backend: django-drf or fastapi")
+    elif target == "frontend":
+        if frameworks["frontend"] == "unknown":
+            missing.append("frontend: react or nextjs")
+        if frameworks["backend"] == "unknown":
+            missing.append("backend: django-drf or fastapi")
+    elif target == "mobile":
+        if frameworks["mobile"] == "unknown":
+            missing.append("mobile: flutter")
+        if frameworks["backend"] == "unknown":
+            missing.append("backend: django-drf or fastapi")
+    else:
         if frameworks["frontend"] == "unknown" and frameworks["mobile"] == "unknown":
             missing.append("client: react, nextjs, or flutter")
         if frameworks["backend"] == "unknown":
@@ -596,7 +605,7 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         state = StateStore(project).load()
         queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
         tasks = queue.get("tasks", [])
-        for phase in ("requirements", "design"):
+        for phase in ("requirements", "backend", "design"):
             if phase not in state.get("completed_phases", []) or not phase_checkpoint_current(
                 project, phase, tasks
             ):

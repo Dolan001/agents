@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import tokenize
@@ -778,6 +779,48 @@ def validate_backend_evidence(
             "backend background-task evidence does not match the generated structure"
         )
     _reject_secret_evidence(evidence, "backend verification")
+    return evidence
+
+
+def validate_client_integration_evidence(
+    project: Path, schema_path: Path, phase: str, expected_backend: str
+) -> dict[str, Any]:
+    evidence_path = project / ".ai" / "evidence" / "client-integration" / f"{phase}.json"
+    evidence = read_json(evidence_path)
+    schema = read_json(schema_path)
+    if not isinstance(evidence, dict) or not isinstance(schema, dict):
+        raise RuntimeError(f"{phase} client integration evidence or schema is missing")
+    errors = sorted(
+        Draft202012Validator(schema).iter_errors(evidence),
+        key=lambda item: list(item.path),
+    )
+    if errors:
+        summaries = [
+            f"{'/'.join(map(str, error.path)) or '<root>'}: {error.message}" for error in errors
+        ]
+        raise RuntimeError(f"{phase} client integration evidence is invalid: {summaries}")
+    if evidence["phase"] != phase:
+        raise RuntimeError(f"{phase} client integration evidence reports the wrong phase")
+    if evidence["backend_framework"] != expected_backend:
+        raise RuntimeError(f"{phase} client integration backend does not match the selection")
+
+    backend_path = project / ".ai" / "evidence" / "backend-verification.json"
+    openapi_path = project / "docs" / "api" / "openapi.json"
+    backend = read_json(backend_path)
+    if not isinstance(backend, dict) or not openapi_path.is_file():
+        raise RuntimeError(f"{phase} client integration inputs are missing")
+    expected_backend_hash = hashlib.sha256(backend_path.read_bytes()).hexdigest()
+    expected_openapi_hash = hashlib.sha256(openapi_path.read_bytes()).hexdigest()
+    if evidence["backend_evidence_sha256"] != expected_backend_hash:
+        raise RuntimeError(f"{phase} client integration evidence is stale for the backend")
+    if evidence["openapi_sha256"] != expected_openapi_hash:
+        raise RuntimeError(f"{phase} client integration evidence is stale for OpenAPI")
+    test_data = backend.get("test_data")
+    if not isinstance(test_data, dict) or evidence["dataset_version"] != test_data.get(
+        "dataset_version"
+    ):
+        raise RuntimeError(f"{phase} client integration dataset does not match the backend")
+    _reject_secret_evidence(evidence, f"{phase} client integration")
     return evidence
 
 

@@ -1,6 +1,6 @@
 ---
 name: start-build
-description: Start or continue the complete application workflow through design, approved HTML, selected web and/or Flutter mobile clients, backend, integration, independent testing, and delivery evidence. Use when the user asks to build the whole application from scratch or invokes start-build. AWS preparation is always a separate start-deployment run.
+description: Start or continue the complete application workflow through requirements, a verified backend and real PostgreSQL/API tests, design, approved HTML, live-integrated web and/or Flutter clients, system testing, and delivery evidence. Use when the user asks to build the whole application from scratch or invokes start-build. AWS preparation is always a separate start-deployment run.
 ---
 
 # Start complete build
@@ -18,6 +18,11 @@ framework based on product requirements when it is not explicitly declared. Then
 `./.agents/bin/ai start-build` with `--adapter codex` and only the resolved
 `--frontend`, `--mobile`, and `--backend` arguments. Run through delivery. Do not add
 `--push` unless explicitly requested.
+
+The backend gate runs before design and must prove a live HTTP service, deterministic synthetic
+seed data, PostgreSQL persistence, negative and authorization behavior, and cleanup. Client phases
+then implement and verify real API integration against that backend; fixtures cannot pass a client
+gate.
 
 The CLI deterministically reconciles `.ai/selected-packs.json` before execution and initializes only
 `base`, the selected application frameworks, and explicit RAG/web-scraping capabilities. Do not run

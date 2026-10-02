@@ -1,8 +1,7 @@
 # Mobile phase
 
-Create an executable Flutter foundation and typed client before feature slices.
-Use interim OpenAPI and fixtures until backend implementation, then reconcile backend
-OpenAPI and test live integration. Dispatch only mobile/shared-contract portions of
+Require the verified backend and generated OpenAPI, then create an executable Flutter foundation
+and generated typed client before feature slices. Dispatch only mobile/shared-contract portions of
 the dependency plan; independent verifier records are not implementation tasks.
 Blocked evidence stops the phase and never satisfies a prerequisite.
 
@@ -10,7 +9,11 @@ Load only the selected Flutter behavior pack and generate original application s
 under target `apps/mobile/`. Use approved design semantics and API contracts while
 adapting interactions to Android and iOS conventions. Require typed network boundaries,
 secure storage, lifecycle and offline states, accessibility, localization, focused
-tests, deterministic structure evidence, and truthful platform release evidence.
+tests, deterministic structure evidence, and truthful platform release evidence. Implement slices
+against the running backend and disposable PostgreSQL test data. Fixtures may support isolated unit
+tests but cannot satisfy the phase gate. Independently verify authenticated success, negative,
+authorization, persistence round-trip, and error-mapping journeys, then write
+`.ai/evidence/client-integration/mobile.json` against the current backend evidence and OpenAPI hashes.
 After implementation, compare deterministic Android and iOS captures with approved HTML semantics,
 repair meaningful drift while preserving native conventions, and require independent evidence at
 `.ai/evidence/design-fidelity/mobile/verification.json`.

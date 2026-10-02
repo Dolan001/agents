@@ -11,10 +11,10 @@ from .io import read_json, write_json
 PHASES = (
     "bootstrap",
     "requirements",
+    "backend",
     "design",
     "frontend",
     "mobile",
-    "backend",
     "integration",
     "testing",
     "deployment",

@@ -1,0 +1,77 @@
+{
+  "acceptance_criteria": [
+    "Backend runs before design and clients.",
+    "Backend gate requires live HTTP, PostgreSQL round trips, deterministic seeded records and cleanup.",
+    "Frontend and mobile gates require current live-backend integration evidence.",
+    "Stage commands and full builds preserve checkpoints and stop at their named boundaries."
+  ],
+  "agent": "workflow-agent",
+  "allowed_paths": [
+    "src/ai_workflow/model.py",
+    "src/ai_workflow/cli.py",
+    "src/ai_workflow/execution.py",
+    "src/ai_workflow/structure.py",
+    "config/pipeline.json",
+    "pipeline/manifests/backend.json",
+    "pipeline/manifests/design.json",
+    "pipeline/manifests/frontend.json",
+    "pipeline/manifests/mobile.json",
+    "gates/contracts/backend.json",
+    "gates/contracts/frontend.json",
+    "gates/contracts/mobile.json",
+    "schemas/backend-verification.schema.json",
+    "schemas/client-integration-verification.schema.json",
+    "rules/phases/frontend.md",
+    "rules/phases/mobile.md",
+    "skills/start-build/SKILL.md",
+    "skills/start-backend/SKILL.md",
+    "skills/start-generatehtml/SKILL.md",
+    "skills/start-frontend/SKILL.md",
+    "skills/start-mobile/SKILL.md",
+    "commands/references/start-command-contract.md",
+    "AGENTS.md",
+    "reactjs/skills/verify-react-delivery/SKILL.md",
+    "nextjs/skills/verify-nextjs-delivery/SKILL.md",
+    "flutter/skills/verify-flutter-delivery/SKILL.md",
+    "drf/skills/verify-django-delivery/SKILL.md",
+    "fastapi/skills/verify-fastapi-delivery/SKILL.md",
+    "tests/test_cli.py",
+    "tests/test_pipeline_order.py",
+    ".ai/evidence/backend-first-workflow.json"
+  ],
+  "completion_evidence": [
+    ".ai/evidence/backend-first-workflow.json"
+  ],
+  "context_budget": {
+    "maximum_characters": 45000,
+    "maximum_files": 10
+  },
+  "dependencies": [],
+  "description": "Reorder full builds around backend-first live API verification, then design and client implementation with live integration.",
+  "expected_outputs": [
+    ".ai/evidence/backend-first-workflow.json"
+  ],
+  "feature_id": "backend-first-real-api-workflow",
+  "forbidden_paths": [
+    ".agents/**",
+    ".git/**"
+  ],
+  "inputs": [],
+  "performance_review_required": false,
+  "priority": 1,
+  "required_tests": [
+    "pipeline ordering tests",
+    "backend/client evidence validator tests",
+    "start command tests",
+    "ruff"
+  ],
+  "requirement_ids": [
+    "WF-001"
+  ],
+  "retry_policy": {
+    "maximum_attempts": 3
+  },
+  "security_review_required": false,
+  "status": "READY_FOR_VERIFICATION",
+  "task_id": "TASK-BACKEND-FIRST-REAL-API-WORKFLOW"
+}

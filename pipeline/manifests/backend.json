@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "prerequisites": ["mobile"],
+  "prerequisites": ["requirements"],
   "agents": ["selected-backend-agent", "selected-backend-verifier"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],
   "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "docs/generated/requirements.json", "docs/api/**", "apps/backend/**"],
