@@ -1,0 +1,29 @@
+{
+  "task_id": "TASK-BACKEND-SLICE-INTEGRATION-PATHS",
+  "feature_id": "backend-slice-integration-paths",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-004"],
+  "description": "Give backend feature slices the shared framework integration paths required to expose and verify their APIs.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/backend-slice-integration-paths.json"],
+  "allowed_paths": [
+    "src/ai_workflow/task_projection.py",
+    "tests/test_task_projection.py",
+    ".ai/evidence/backend-slice-integration-paths.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Non-foundation backend slices can register framework routes and settings.",
+    "Backend slices can update authoritative OpenAPI and generated clients.",
+    "Backend slices retain their feature-specific source paths."
+  ],
+  "required_tests": ["task projection tests", "ruff"],
+  "security_review_required": false,
+  "performance_review_required": false,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 3, "maximum_characters": 20000},
+  "completion_evidence": [".ai/evidence/backend-slice-integration-paths.json"],
+  "status": "READY_FOR_VERIFICATION"
+}

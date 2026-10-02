@@ -31,6 +31,20 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
     }
     prefixes.extend(test_prefixes[phase])
     backend_root_paths = {"compose.yaml", "compose.yml", "Makefile", ".env.example"}
+    backend_integration_paths = [
+        "apps/backend/core/**",
+        "apps/backend/app/main.py",
+        "apps/backend/app/api/**",
+        "apps/backend/app/core/config.py",
+        "apps/backend/pyproject.toml",
+        "apps/backend/*.lock",
+        "apps/backend/requirements*.txt",
+        "docs/api/**",
+        "packages/api-client/**",
+        "tests/contracts/**",
+        "compose.yaml",
+        ".env.example",
+    ]
 
     def scoped(path: str) -> list[str]:
         if path.startswith(".ai/evidence/"):
@@ -52,6 +66,10 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
             feature == "foundation" or feature.endswith("-foundation")
         ):
             paths = list(dict.fromkeys(["apps/backend/**", *paths]))
+        elif phase == "backend" and any(path.startswith("apps/backend/") for path in paths):
+            # A feature slice owns its domain, but it also has to register routes/settings,
+            # lock new dependencies, publish OpenAPI/clients, and run live Compose checks.
+            paths = list(dict.fromkeys([*paths, *backend_integration_paths]))
         if not any(not path.startswith(".ai/") for path in paths):
             continue
         selected[feature] = {**task, "allowed_paths": paths}

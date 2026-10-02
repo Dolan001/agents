@@ -64,12 +64,26 @@ def test_backend_foundation_can_create_runnable_framework_structure():
     ]
 
 
-def test_nonfoundation_backend_slice_remains_narrow():
+def test_nonfoundation_backend_slice_gets_shared_integration_paths():
     projected = phase_tasks(
         [task("TASK-ACCOUNTS", ["apps/backend/accounts/**", "compose.yaml"])],
         "backend",
     )
-    assert projected[0]["allowed_paths"] == ["apps/backend/accounts/**", "compose.yaml"]
+    assert projected[0]["allowed_paths"] == [
+        "apps/backend/accounts/**",
+        "compose.yaml",
+        "apps/backend/core/**",
+        "apps/backend/app/main.py",
+        "apps/backend/app/api/**",
+        "apps/backend/app/core/config.py",
+        "apps/backend/pyproject.toml",
+        "apps/backend/*.lock",
+        "apps/backend/requirements*.txt",
+        "docs/api/**",
+        "packages/api-client/**",
+        "tests/contracts/**",
+        ".env.example",
+    ]
 
 
 @pytest.mark.parametrize(

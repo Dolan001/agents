@@ -1,0 +1,17 @@
+{
+  "task_id": "TASK-BACKEND-SLICE-INTEGRATION-PATHS",
+  "status": "passed",
+  "summary": "Backend feature projections now include framework integration, dependency lock, OpenAPI, generated client, contract-test, Compose, and environment paths.",
+  "checks": [
+    {
+      "name": "identity-projection",
+      "status": "passed",
+      "details": "A projected identity slice retains its domain paths and receives every required shared integration path."
+    },
+    {
+      "name": "python-syntax",
+      "status": "passed",
+      "details": "task_projection.py and its regression test compile successfully."
+    }
+  ]
+}
