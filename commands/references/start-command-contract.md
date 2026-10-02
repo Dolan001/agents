@@ -54,11 +54,11 @@ These entrypoints execute work; they are not explanatory prompt templates.
 Canonical invocation:
 
 ```text
-./.agents/bin/ai <command> --project . --adapter codex <validated arguments>
+./.agents/bin/ai <command> --project . --adapter codex-reviewed <validated arguments>
 ```
 
-Honor an explicitly selected adapter. For authorized Docker or browser work that
-needs escalation, `--adapter codex-reviewed` uses Codex automatic approval review
+Lifecycle commands default to `codex-reviewed`; honor an explicitly selected adapter. For authorized
+Docker or browser work that needs escalation, `--adapter codex-reviewed` uses Codex automatic approval review
 with the workspace-write sandbox. Check `codex exec --help` for `--approve-for-me`
 support first. Never silently substitute this adapter or disable the sandbox.
 If the parent launcher is also sandboxed, request its normal tool approval; changing

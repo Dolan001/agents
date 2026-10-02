@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "task_id": "TASK-BACKEND-RUNTIME-ADAPTER",
+  "status": "READY_FOR_VERIFICATION",
+  "verified": true,
+  "checks": [
+    {"name": "ruff", "exit_code": 0},
+    {"name": "adapter-and-projection-tests", "exit_code": 0, "result": "24 passed"},
+    {"name": "skill-validation", "exit_code": 0, "result": "11 skills valid"}
+  ],
+  "assertions": {
+    "lifecycle_default_is_codex_reviewed": true,
+    "backend_skill_uses_codex_reviewed": true,
+    "explicit_adapter_is_honored": true
+  }
+}

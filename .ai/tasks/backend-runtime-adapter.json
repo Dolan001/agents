@@ -1,0 +1,41 @@
+{
+  "task_id": "TASK-BACKEND-RUNTIME-ADAPTER",
+  "feature_id": "backend-runtime-adapter",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-003"],
+  "description": "Default lifecycle commands to the reviewed adapter required for Docker, PostgreSQL, and browser verification.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/backend-runtime-adapter.json"],
+  "allowed_paths": [
+    "src/ai_workflow/cli.py",
+    "tests/test_reviewed_adapter.py",
+    "skills/start-backend/SKILL.md",
+    "skills/start-build/SKILL.md",
+    "skills/start-design/SKILL.md",
+    "skills/start-generatehtml/SKILL.md",
+    "skills/start-frontend/SKILL.md",
+    "skills/start-mobile/SKILL.md",
+    "skills/start-integration/SKILL.md",
+    "skills/start-testing/SKILL.md",
+    "skills/start-delivery/SKILL.md",
+    "skills/start-deployment/SKILL.md",
+    "skills/resume-build/SKILL.md",
+    "commands/references/start-command-contract.md",
+    ".ai/evidence/backend-runtime-adapter.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Start and resume lifecycle commands default to codex-reviewed.",
+    "Backend skill does not explicitly downgrade to codex.",
+    "Explicit supported adapter selections remain honored."
+  ],
+  "required_tests": ["reviewed adapter parser tests", "skill validation", "ruff"],
+  "security_review_required": false,
+  "performance_review_required": false,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 16, "maximum_characters": 30000},
+  "completion_evidence": [".ai/evidence/backend-runtime-adapter.json"],
+  "status": "READY_FOR_VERIFICATION"
+}

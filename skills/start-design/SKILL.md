@@ -6,6 +6,6 @@ description: After the backend is verified, create only the design specification
 # Start design specification
 
 Read `.agents/commands/references/start-command-contract.md`, then invoke
-`./.agents/bin/ai start-design` with `--adapter codex` and the resolved backend. The command runs
+`./.agents/bin/ai start-design` with `--adapter codex-reviewed` and the resolved backend. The command runs
 any missing requirements and backend prerequisites first. Stop after
 `HTML/design-specification.md`; do not continue to HTML or application code.

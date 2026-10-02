@@ -6,7 +6,7 @@ description: Generate, validate, and approve static HTML from a PRD, screenshots
 # Generate approved HTML
 
 Read `.agents/commands/references/start-command-contract.md`, then invoke
-`./.agents/bin/ai start-generatehtml` with `--adapter codex` and the resolved backend. Require the
+`./.agents/bin/ai start-generatehtml` with `--adapter codex-reviewed` and the resolved backend. Require the
 backend gate first, then complete the design
 gate and stop before frontend implementation.
 

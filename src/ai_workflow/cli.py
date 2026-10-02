@@ -1126,7 +1126,9 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
     command.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
-    command.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    command.add_argument(
+        "--adapter", choices=["codex", "codex-reviewed"], default="codex-reviewed"
+    )
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
     command.add_argument("--remaining", action="store_true", default=True)

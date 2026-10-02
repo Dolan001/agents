@@ -1,6 +1,30 @@
 {
   "leases": [
     {
+      "task_id": "TASK-BACKEND-RUNTIME-ADAPTER",
+      "agent": "workflow-agent",
+      "paths": [
+        "src/ai_workflow/cli.py",
+        "tests/test_reviewed_adapter.py",
+        "skills/start-backend/SKILL.md",
+        "skills/start-build/SKILL.md",
+        "skills/start-design/SKILL.md",
+        "skills/start-generatehtml/SKILL.md",
+        "skills/start-frontend/SKILL.md",
+        "skills/start-mobile/SKILL.md",
+        "skills/start-integration/SKILL.md",
+        "skills/start-testing/SKILL.md",
+        "skills/start-delivery/SKILL.md",
+        "skills/start-deployment/SKILL.md",
+        "skills/resume-build/SKILL.md",
+        "commands/references/start-command-contract.md",
+        ".ai/evidence/backend-runtime-adapter.json"
+      ],
+      "acquired_at": "2026-10-02T13:30:00Z",
+      "expires_at": "2026-10-02T15:30:00Z",
+      "status": "released"
+    },
+    {
       "task_id": "TASK-BACKEND-FOUNDATION-PROJECTION",
       "agent": "workflow-agent",
       "paths": [

@@ -6,6 +6,6 @@ description: Run missing application prerequisites through final verification an
 # Start delivery
 
 Read `.agents/commands/references/start-command-contract.md`, then invoke
-`./.agents/bin/ai start-delivery` with `--adapter codex`. Add `--commit-verified` or
+`./.agents/bin/ai start-delivery` with `--adapter codex-reviewed`. Add `--commit-verified` or
 `--push` only when the user explicitly requests those Git mutations. This command does
 not generate AWS assets; use `$start-deployment` separately.

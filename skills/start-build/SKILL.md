@@ -15,7 +15,7 @@ containing only the missing choice or choices:
 
 Accept only these five frameworks. Wait for every missing selection; never choose a
 framework based on product requirements when it is not explicitly declared. Then invoke
-`./.agents/bin/ai start-build` with `--adapter codex` and only the resolved
+`./.agents/bin/ai start-build` with `--adapter codex-reviewed` and only the resolved
 `--frontend`, `--mobile`, and `--backend` arguments. Run through delivery. Do not add
 `--push` unless explicitly requested.
 

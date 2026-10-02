@@ -4,22 +4,26 @@ from ai_workflow.cli import parser
 
 
 @pytest.mark.parametrize(
-    "arguments",
+    ("arguments", "expected"),
     [
-        ["start-frontend"],
-        ["start-generatehtml"],
-        ["resume-build"],
-        ["build"],
-        ["one-shot", "--prd", "PRD.md", "--backend", "django-drf"],
-        ["generate-prd", "--requirements", "REQUIREMENTS.md"],
-        ["prepare-project-docs"],
-        ["resolve-token", "--token", "example"],
-        ["sync-design"],
+        (["start-backend"], "codex-reviewed"),
+        (["start-frontend"], "codex-reviewed"),
+        (["start-generatehtml"], "codex-reviewed"),
+        (["resume-build"], "codex-reviewed"),
+        (["build"], "codex"),
+        (["one-shot", "--prd", "PRD.md", "--backend", "django-drf"], "codex"),
+        (["generate-prd", "--requirements", "REQUIREMENTS.md"], "codex"),
+        (["prepare-project-docs"], "codex"),
+        (["resolve-token", "--token", "example"], "codex"),
+        (["sync-design"], "codex"),
     ],
 )
-def test_reviewed_adapter_requires_explicit_selection(arguments: list[str]) -> None:
+def test_lifecycle_commands_default_to_reviewed_adapter(
+    arguments: list[str], expected: str
+) -> None:
     cli = parser()
-    assert cli.parse_args(arguments).adapter == "codex"
+    assert cli.parse_args(arguments).adapter == expected
     assert cli.parse_args([*arguments, "--adapter", "codex-reviewed"]).adapter == "codex-reviewed"
+    assert cli.parse_args([*arguments, "--adapter", "codex"]).adapter == "codex"
     with pytest.raises(SystemExit):
         cli.parse_args([*arguments, "--adapter", "unrestricted"])

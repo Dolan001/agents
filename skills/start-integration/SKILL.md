@@ -6,5 +6,5 @@ description: Run missing prerequisites and connect generated web and/or Flutter 
 # Start integration
 
 Read `.agents/commands/references/start-command-contract.md`, then invoke
-`./.agents/bin/ai start-integration` with `--adapter codex`. Stop after the
+`./.agents/bin/ai start-integration` with `--adapter codex-reviewed`. Stop after the
 integration gate.
