@@ -37,7 +37,9 @@
     "fastapi/skills/verify-fastapi-delivery/SKILL.md",
     "tests/test_cli.py",
     "tests/test_pipeline_order.py",
-    ".ai/evidence/backend-first-workflow.json"
+    ".ai/evidence/backend-first-workflow.json",
+    "skills/prepare-project-docs/SKILL.md",
+    "skills/start-design/SKILL.md"
   ],
   "completion_evidence": [
     ".ai/evidence/backend-first-workflow.json"

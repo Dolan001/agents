@@ -30,7 +30,7 @@
     },
     {
       "name": "skill-validation",
-      "command": "quick_validate.py for 10 changed skill directories",
+      "command": "quick_validate.py for 12 changed skill directories",
       "exit_code": 0
     },
     {

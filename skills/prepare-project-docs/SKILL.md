@@ -25,5 +25,5 @@ to five questions per round; large projects may require multiple rounds.
 
 Do not ask the user to choose low-level implementation details. On `READY`, report the
 five validated document paths, material changes, assumptions, selected packs, and the
-next command `$start-design --prd <actual PRD path>`. Do not start design or build
-unless separately requested.
+next command `$start-backend --prd <actual PRD path>`. Do not start backend or later
+work unless separately requested.
