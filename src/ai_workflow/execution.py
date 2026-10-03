@@ -961,6 +961,10 @@ def _node_input_files(
     feature: dict[str, Any] | None = None,
 ) -> list[str]:
     files = set(_phase_input_files(project, phase))
+    if phase == "backend" and node == "verify-backend":
+        report = project / "artifacts" / "tests" / "command-results.json"
+        if report.is_file():
+            files.add(report.relative_to(project).as_posix())
     if phase == "design":
         canonical = project / "docs/api/openapi.json"
         interim = project / "docs/api/openapi.interim.json"
@@ -1570,7 +1574,8 @@ def _prompt(
         if node["id"] == "verify-backend":
             role_boundary += (
                 f"\nAfter all backend evidence passes, capture project-scoped cleanup evidence and "
-                f"run `docker compose -p {compose_project} down --volumes --remove-orphans`. Remove "
+                f"run `docker compose -p {compose_project} down --volumes "
+                "--remove-orphans`. Remove "
                 "only dangling images carrying the exact "
                 f"`ai.workflow.project={compose_project}` label. Confirm no project containers, "
                 "networks, or volumes remain, and retain at most the one current tagged dependency "
@@ -1599,6 +1604,16 @@ def _prompt(
                 "resolution and Docker disk failures separately; follow the selected create "
                 "skill's recovery guidance instead of repeating an unchanged install."
             )
+    if node["id"] == "prepare-backend-verification":
+        role_boundary += (
+            "\nPrepare the project-owned backend verification harness before independent review. "
+            "Create and validate .ai/test-commands.json with backend, generate-client, and "
+            "contract "
+            "groups; use container paths that are actually mounted. Ensure configured Redis worker "
+            "and Beat services participate in live checks. When RAG is active, add a versioned "
+            "representative and adversarial evaluation dataset plus its deterministic runner under "
+            "tests/rag/. Do not write backend-verification.json or claim independent approval."
+        )
     prompt = f"""You are executing one controlled node of a production workflow.
 
 Project root: {project}
@@ -1716,7 +1731,7 @@ def _run_adapter(project: Path, adapter: str, prompt: str) -> dict[str, Any]:
     }
 
 
-def _validate_project_test_commands(project: Path) -> None:
+def _validate_project_test_commands(project: Path, phase: str | None = None) -> None:
     manifest_path = project / ".ai" / "test-commands.json"
     manifest = read_json(manifest_path)
     schema = read_json(workflow_root() / "schemas" / "test-commands.schema.json")
@@ -1732,6 +1747,15 @@ def _validate_project_test_commands(project: Path) -> None:
             for failure in failures[:8]
         ]
         raise RuntimeError(f"test-command manifest is invalid: {details}")
+    required_groups = {
+        "backend": {"backend", "generate-client", "contract"},
+        "frontend": {"frontend", "generate-client", "contract"},
+        "mobile": {"mobile", "generate-client", "contract"},
+        "integration": {"generate-client", "contract", "integration"},
+    }.get(phase, set())
+    missing_groups = sorted(required_groups - set(manifest["commands"]))
+    if missing_groups:
+        raise RuntimeError(f"test-command manifest is missing {phase} groups: {missing_groups}")
     docker_required = False
     for commands in manifest["commands"].values():
         for specification in commands:
@@ -1811,14 +1835,26 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
     elif action == "run_project_owned_test_commands":
         manifest = read_json(project / ".ai" / "test-commands.json", {"commands": {}})
         configured = manifest.get("commands", {}) if isinstance(manifest, dict) else {}
+        phase_groups = {
+            "backend": ("backend", "generate-client", "contract"),
+            "frontend": ("frontend", "generate-client", "contract"),
+            "mobile": ("mobile", "generate-client", "contract"),
+            "integration": ("generate-client", "contract", "integration"),
+        }.get(
+            phase,
+            (
+                "backend", "frontend", "mobile", "generate-client", "contract",
+                "integration", "e2e",
+            ),
+        )
         groups = [
             group
-            for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
+            for group in phase_groups
             if isinstance(configured, dict) and configured.get(group)
         ]
         run_command_groups(project, groups)
     elif action == "validate_project_test_commands":
-        _validate_project_test_commands(project)
+        _validate_project_test_commands(project, phase)
     elif action == "aggregate_feature_evidence":
         evidence = project / ".ai" / "evidence" / "features"
         files = (

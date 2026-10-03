@@ -3,8 +3,8 @@
   "prerequisites": ["requirements"],
   "agents": ["selected-backend-agent", "selected-backend-verifier"],
   "rules": ["rules/common.md", "rules/phases/backend.md"],
-  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "docs/generated/requirements.json", "docs/api/**", "apps/backend/**"],
-  "outputs": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/database-verification.json", ".ai/evidence/backend-verification.json", ".ai/evidence/features/**"],
-  "scope": {"allowed_paths": ["apps/backend/**", "docs/api/**", ".ai/test-commands.json", ".ai/evidence/**"]},
+  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "BACKEND_SPEC.md", "docs/BACKEND_SPEC.md", "docs/generated/requirements.json", "docs/api/**", "apps/backend/**", "packages/api-client/**", "tests/**", ".ai/test-commands.json", "compose.yaml", "Makefile", ".env.example"],
+  "outputs": ["apps/backend/**", "packages/api-client/**", "tests/**", "docs/api/**", "compose.yaml", "Makefile", ".env.example", ".ai/test-commands.json", "artifacts/tests/command-results.json", ".ai/evidence/database-verification.json", ".ai/evidence/backend-verification.json", ".ai/evidence/features/**"],
+  "scope": {"allowed_paths": ["apps/backend/**", "packages/api-client/**", "tests/**", "docs/api/**", "compose.yaml", "Makefile", ".env.example", ".ai/test-commands.json", "artifacts/tests/**", ".ai/evidence/**"]},
   "gate": "gates/contracts/backend.json"
 }

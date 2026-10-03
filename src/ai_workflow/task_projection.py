@@ -30,7 +30,9 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         ],
     }
     prefixes.extend(test_prefixes[phase])
-    backend_root_paths = {"compose.yaml", "compose.yml", "Makefile", ".env.example"}
+    backend_root_paths = {
+        "compose.yaml", "compose.yml", "Makefile", ".env.example", ".ai/test-commands.json"
+    }
     backend_integration_paths = [
         "apps/backend/core/**",
         "apps/backend/app/main.py",
@@ -44,6 +46,7 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         "tests/contracts/**",
         "compose.yaml",
         ".env.example",
+        ".ai/test-commands.json",
     ]
 
     def scoped(path: str) -> list[str]:
@@ -65,7 +68,7 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         if phase == "backend" and (
             feature == "foundation" or feature.endswith("-foundation")
         ):
-            paths = list(dict.fromkeys(["apps/backend/**", *paths]))
+            paths = list(dict.fromkeys(["apps/backend/**", *paths, ".ai/test-commands.json"]))
         elif phase == "backend" and any(path.startswith("apps/backend/") for path in paths):
             # A feature slice owns its domain, but it also has to register routes/settings,
             # lock new dependencies, publish OpenAPI/clients, and run live Compose checks.

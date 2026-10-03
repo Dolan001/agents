@@ -7,8 +7,7 @@
     "version": {"const": 1},
     "commands": {
       "type": "object",
-      "required": ["backend", "generate-client", "contract", "integration", "e2e"],
-      "anyOf": [{"required": ["frontend"]}, {"required": ["mobile"]}],
+      "minProperties": 1,
       "additionalProperties": false,
       "patternProperties": {
         "^(frontend|mobile|backend|generate-client|contract|integration|e2e)$": {

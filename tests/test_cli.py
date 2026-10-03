@@ -24,7 +24,12 @@ from ai_workflow.design_fidelity import (
 )
 from ai_workflow.discovery import detect
 from ai_workflow.documents import DOCUMENTS, validate_document_set
-from ai_workflow.execution import _artifact_ok, _build_context_bundle, _node_input_files
+from ai_workflow.execution import (
+    _artifact_ok,
+    _build_context_bundle,
+    _node_input_files,
+    _validate_project_test_commands,
+)
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
 from ai_workflow.git import run_git
 from ai_workflow.issues import issue_summary, track_build_issue
@@ -1348,6 +1353,27 @@ def test_test_all_executes_every_configured_verification_group(tmp_path: Path) -
     ]
 
 
+def test_backend_test_manifest_is_valid_before_client_commands_exist(tmp_path: Path) -> None:
+    manifest = tmp_path / ".ai" / "test-commands.json"
+    manifest.parent.mkdir(parents=True)
+    specification = [{"argv": [sys.executable, "-c", "pass"], "cwd": "."}]
+    manifest.write_text(json.dumps({
+        "version": 1,
+        "commands": {
+            "backend": specification,
+            "generate-client": specification,
+            "contract": specification,
+        },
+    }))
+
+    _validate_project_test_commands(tmp_path, "backend")
+    payload = json.loads(manifest.read_text())
+    del payload["commands"]["contract"]
+    manifest.write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError, match="missing backend groups"):
+        _validate_project_test_commands(tmp_path, "backend")
+
+
 def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) -> None:
     scripts = tmp_path / "apps" / "backend" / "scripts"
     scripts.mkdir(parents=True)
@@ -1875,8 +1901,8 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 10
-    assert report["nodes"] == 42
-    assert report["agentic_nodes"] == 30
+    assert report["nodes"] == 45
+    assert report["agentic_nodes"] == 31
     assert report["execution_groups"][2:6] == [
         ["backend"],
         ["design"],
@@ -2202,6 +2228,10 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         _write_client_integration_evidence(project, phase)
     if phase == "backend" and node == "implement-backend-slices":
         _create_pack_structure(project, prompt)
+        openapi = project / "docs" / "api" / "openapi.json"
+        openapi.parent.mkdir(parents=True, exist_ok=True)
+        if not openapi.is_file():
+            openapi.write_text(json.dumps({"openapi": "3.1.0"}))
         commands = {
             group: [{"argv": ["true"], "cwd": "."}]
             for group in (

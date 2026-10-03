@@ -63,6 +63,7 @@ def test_backend_foundation_can_create_runnable_framework_structure():
         "compose.yaml",
         "Makefile",
         ".env.example",
+        ".ai/test-commands.json",
     ]
 
 
@@ -85,6 +86,7 @@ def test_nonfoundation_backend_slice_gets_shared_integration_paths():
         "packages/api-client/**",
         "tests/contracts/**",
         ".env.example",
+        ".ai/test-commands.json",
     ]
 
 
@@ -133,7 +135,7 @@ def test_backend_runtime_policy_reuses_services_and_scopes_cleanup():
     rule = (root / "rules" / "phases" / "backend.md").read_text()
     skill = (root / "skills" / "start-backend" / "SKILL.md").read_text()
 
-    assert "Never run `docker compose up --build` for every feature" in rule
+    assert "Never run `docker compose up --build` for every feature" in " ".join(rule.split())
     assert "mount source for normal slice checks" in skill
     assert "Retain one current" in skill
     assert "never use an unfiltered or global Docker prune" in skill

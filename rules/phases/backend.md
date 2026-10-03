@@ -21,8 +21,8 @@ version or build the locked backend image through Compose. Derive one normalized
 name from the checkout path, and use distinct normalized database names for each verification
 purpose. Keep PostgreSQL identifiers within 63 bytes and credentials out of names.
 Build dependencies only when the Dockerfile or dependency manifests/locks change. For source-only
-changes, mount current source into the project-owned service or test container. Never run
-`docker compose up --build` for every feature. Remove one-off containers and disposable databases
+changes, mount current source into the project-owned service or test container. Never run `docker
+compose up --build` for every feature. Remove one-off containers and disposable databases
 after each check without stopping shared services. Tag the dependency image with the deterministic
 project name and label it `ai.workflow.project=<compose-project>`. After the final backend verifier
 passes, run a project-scoped Compose down with volumes and orphans removed. Delete only dangling
