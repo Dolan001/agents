@@ -27,6 +27,7 @@ from ai_workflow.documents import DOCUMENTS, validate_document_set
 from ai_workflow.execution import (
     _artifact_ok,
     _build_context_bundle,
+    _feature_input_files,
     _node_input_files,
     _validate_project_test_commands,
 )
@@ -1376,6 +1377,17 @@ def test_backend_test_manifest_is_valid_before_client_commands_exist(tmp_path: P
     manifest.write_text(json.dumps(payload))
     with pytest.raises(RuntimeError, match="missing backend groups"):
         _validate_project_test_commands(tmp_path, "backend")
+
+
+def test_backend_feature_cache_excludes_phase_owned_rag_evaluation_data(tmp_path: Path) -> None:
+    dataset = tmp_path / "tests" / "rag" / "evaluation" / "dataset.v1.json"
+    dataset.parent.mkdir(parents=True)
+    dataset.write_text("{}")
+    feature = {"allowed_paths": ["tests/rag/**"], "inputs": []}
+
+    assert "tests/rag/evaluation/dataset.v1.json" not in _feature_input_files(
+        tmp_path, feature
+    )
 
 
 def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) -> None:

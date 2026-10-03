@@ -931,6 +931,8 @@ def _feature_input_files(project: Path, feature: dict[str, Any]) -> set[str]:
             continue
         for match in project.glob(pattern):
             if match.is_file() and _context_file_allowed(project, match):
+                if match.relative_to(project).as_posix().startswith("tests/rag/evaluation/"):
+                    continue
                 files.add(match.relative_to(project).as_posix())
     feature_id = feature.get("feature_id")
     if isinstance(feature_id, str):
