@@ -63,7 +63,6 @@ def test_backend_foundation_can_create_runnable_framework_structure():
         "compose.yaml",
         "Makefile",
         ".env.example",
-        ".ai/test-commands.json",
     ]
 
 
@@ -86,7 +85,6 @@ def test_nonfoundation_backend_slice_gets_shared_integration_paths():
         "packages/api-client/**",
         "tests/contracts/**",
         ".env.example",
-        ".ai/test-commands.json",
     ]
 
 
