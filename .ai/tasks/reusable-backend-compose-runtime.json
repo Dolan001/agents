@@ -1,0 +1,33 @@
+{
+  "task_id": "TASK-REUSABLE-BACKEND-COMPOSE-RUNTIME",
+  "feature_id": "reusable-backend-compose-runtime",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-004"],
+  "description": "Reuse one bounded Compose runtime across backend slices and clean it after the final gate.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/reusable-backend-compose-runtime.json"],
+  "allowed_paths": [
+    "src/ai_workflow/execution.py",
+    "rules/phases/backend.md",
+    "skills/start-backend/SKILL.md",
+    "tests/test_task_projection.py",
+    ".ai/evidence/reusable-backend-compose-runtime.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Every backend node receives the same project-specific Compose project name.",
+    "Feature slices reuse services and rebuild only when dependency or image inputs change.",
+    "Temporary databases and one-off containers are isolated without touching unrelated Docker workloads.",
+    "The final verifier removes runtime resources and obsolete project-labelled revisions while retaining one current image for later client phases.",
+    "Client phases and concurrent projects remain isolated."
+  ],
+  "required_tests": ["runtime-name regression", "prompt-policy regression", "skill validation", "syntax validation"],
+  "security_review_required": false,
+  "performance_review_required": true,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 5, "maximum_characters": 30000},
+  "completion_evidence": [".ai/evidence/reusable-backend-compose-runtime.json"],
+  "status": "READY_FOR_VERIFICATION"
+}

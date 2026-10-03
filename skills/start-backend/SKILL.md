@@ -13,5 +13,10 @@ Use one project-scoped Compose network for the complete verification run. Postgr
 internal network and is reached by service name; do not publish or probe changing host database ports.
 Use Docker Compose as the only provider for PostgreSQL and any requirement-backed Redis, Celery
 worker, or Celery Beat process. Never require or install host services. Pull missing pinned service
-images and build the worker/Beat services from the locked backend image. Use a unique normalized
-Compose project name and purpose-specific database names for each workflow run.
+images and build the worker/Beat services from the locked backend image. Use the deterministic
+Compose project name supplied by the workflow for every backend slice, reuse its services and image,
+and use purpose-specific database names. Rebuild only after Dockerfile or dependency-lock changes;
+mount source for normal slice checks. Keep the shared runtime during resumable failures, then remove
+its containers, network, and volumes after the final backend verifier passes. Retain one current
+project-labelled dependency image for later client integration and delete only dangling revisions
+with the exact project label. Cleanup must never use an unfiltered or global Docker prune.

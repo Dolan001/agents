@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import fnmatch
 import hashlib
 import json
@@ -9,6 +10,8 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -1380,6 +1383,39 @@ def _release_path_lease(project: Path, task_id: str) -> None:
     )
 
 
+def _backend_compose_project_name(project: Path) -> str:
+    """Return one stable, collision-resistant Compose project name per checkout."""
+    slug = re.sub(r"[^a-z0-9]+", "-", project.resolve().name.lower()).strip("-")
+    slug = slug or "project"
+    digest = hashlib.sha256(str(project.resolve()).encode()).hexdigest()[:8]
+    return f"ai-{slug[:36]}-backend-{digest}"
+
+
+@contextmanager
+def _backend_run_lock(project: Path) -> Iterator[None]:
+    """Allow only one backend workflow to own a checkout's shared runtime."""
+    target = project / ".ai" / "backend-runtime.lock"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle = target.open("a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            handle.close()
+            raise RuntimeError(
+                "another backend workflow is already active for this checkout"
+            ) from error
+        handle.seek(0)
+        handle.truncate()
+        handle.write(f"pid={os.getpid()} compose={_backend_compose_project_name(project)}\n")
+        handle.flush()
+        yield
+    finally:
+        if not handle.closed:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+
+
 def _prompt(
     project: Path,
     phase: str,
@@ -1511,6 +1547,7 @@ def _prompt(
             "evidence and OpenAPI hashes. Generate only this phase's client language."
         )
     if phase == "backend":
+        compose_project = _backend_compose_project_name(project)
         role_boundary += (
             "\nThis node owns only backend behavior inside its projected allowed paths and the "
             "behavior supplied by already-completed dependencies. Whole-product criteria may "
@@ -1518,7 +1555,29 @@ def _prompt(
             "owning slices; do not implement them early and do not block this node on them. Run "
             "only the projected required tests. Cross-feature and cross-client behavior is proven "
             "at its owning slice and the final integration gate."
+            f"\nUse `{compose_project}` as the exact Docker Compose project name for every backend "
+            "slice and verifier in this checkout. Reuse its PostgreSQL, Redis, backend, worker, "
+            "and Beat services; never invent a feature-specific Compose project. Start or recreate "
+            "only services whose configuration changed. Build the dependency image only when the "
+            "Dockerfile or dependency manifests/locks changed, tag it "
+            f"`{compose_project}-backend:deps`, and label it "
+            f"`ai.workflow.project={compose_project}`. For ordinary source changes, mount "
+            "the current backend source into project-owned test or service containers instead of "
+            "rebuilding. Use purpose-specific disposable databases inside the shared PostgreSQL "
+            "service and remove those databases plus one-off containers after each check. Do not "
+            "publish database or broker ports. Do not prune or stop unrelated Docker resources."
         )
+        if node["id"] == "verify-backend":
+            role_boundary += (
+                f"\nAfter all backend evidence passes, capture project-scoped cleanup evidence and "
+                f"run `docker compose -p {compose_project} down --volumes --remove-orphans`. Remove "
+                "only dangling images carrying the exact "
+                f"`ai.workflow.project={compose_project}` label. Confirm no project containers, "
+                "networks, or volumes remain, and retain at most the one current tagged dependency "
+                "image for later frontend/mobile integration. Never use an unfiltered or global "
+                "Docker prune. If verification fails, remove one-off containers and "
+                "disposable databases but keep the single shared runtime available for resume."
+            )
     if node["id"] == "prepare-client-foundation":
         role_boundary += (
             f"\nCreate an executable {phase} application using the selected framework's create "
@@ -1776,7 +1835,7 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
         raise RuntimeError(f"deterministic action has no implementation: {action}")
 
 
-def execute_phase(
+def _execute_phase_unlocked(
     project: Path,
     phase: str,
     adapter: str,
@@ -2122,3 +2181,22 @@ def execute_phase(
     store.save(state)
     write_json(project / ".ai" / "node-state.json", checkpoints)
     return {"phase": phase, "executed": executed, "gate": gate, "deliveries": deliveries}
+
+
+def execute_phase(
+    project: Path,
+    phase: str,
+    adapter: str,
+    selected_features: list[dict[str, Any]],
+    commit_verified: bool = False,
+    push: bool = False,
+    stop_after_node: str | None = None,
+) -> dict[str, Any]:
+    if phase != "backend":
+        return _execute_phase_unlocked(
+            project, phase, adapter, selected_features, commit_verified, push, stop_after_node
+        )
+    with _backend_run_lock(project):
+        return _execute_phase_unlocked(
+            project, phase, adapter, selected_features, commit_verified, push, stop_after_node
+        )

@@ -1,0 +1,40 @@
+{
+  "task_id": "TASK-REUSABLE-BACKEND-COMPOSE-RUNTIME",
+  "status": "passed",
+  "summary": "Backend nodes now share one deterministic Compose runtime, reuse a labelled dependency image, mount source for slice checks, and perform project-scoped cleanup.",
+  "checks": [
+    {
+      "name": "runtime-name-isolation",
+      "status": "passed",
+      "details": "Names are stable for one checkout, valid and bounded for Compose, and distinct for different checkout paths."
+    },
+    {
+      "name": "duplicate-run-safety",
+      "status": "passed",
+      "details": "A checkout-level file lock rejects a second concurrent backend workflow and releases after completion or failure."
+    },
+    {
+      "name": "source-and-dependency-freshness",
+      "status": "passed",
+      "details": "Policy rebuilds only for Dockerfile or dependency changes and mounts current source for ordinary slice tests."
+    },
+    {
+      "name": "cleanup-scope",
+      "status": "passed",
+      "details": "Cleanup is restricted to the exact Compose project and workflow image label; unfiltered/global prune is forbidden."
+    },
+    {
+      "name": "client-handoff",
+      "status": "passed",
+      "details": "Final backend cleanup retains one current dependency image so frontend and mobile live integration do not rebuild dependencies."
+    },
+    {
+      "name": "validation",
+      "status": "passed",
+      "details": "Python syntax, direct runtime regressions, skill validation, and diff whitespace checks passed."
+    }
+  ],
+  "limitations": [
+    "The runtime lock uses the POSIX fcntl API supported by the workflow's macOS and Linux Docker environments."
+  ]
+}

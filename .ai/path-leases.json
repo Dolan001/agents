@@ -1,6 +1,20 @@
 {
   "leases": [
     {
+      "task_id": "TASK-REUSABLE-BACKEND-COMPOSE-RUNTIME",
+      "agent": "workflow-agent",
+      "paths": [
+        "src/ai_workflow/execution.py",
+        "rules/phases/backend.md",
+        "skills/start-backend/SKILL.md",
+        "tests/test_task_projection.py",
+        ".ai/evidence/reusable-backend-compose-runtime.json"
+      ],
+      "acquired_at": "2026-10-03T07:00:00Z",
+      "expires_at": "2026-10-03T09:00:00Z",
+      "status": "released"
+    },
+    {
       "task_id": "TASK-BACKEND-PHASE-OWNED-ACCEPTANCE",
       "agent": "workflow-agent",
       "paths": [

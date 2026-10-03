@@ -8,16 +8,27 @@ before the backend gate can pass. PostgreSQL is mandatory for both backend frame
 Require schema creation exclusively through migrations and validate connection,
 empty-database upgrade, migration head/drift/idempotence, tables, constraints, indexes,
 hot-query plans, and query budgets in `.ai/evidence/database-verification.json`.
-Run these checks in one uniquely named Compose project. Keep PostgreSQL private to the Compose
+Run these checks in one deterministic project-scoped Compose project shared by every backend slice
+and the final verifier. Keep PostgreSQL private to the Compose
 network and address it by service name; never depend on host port 5432 or create a sequence of
-ad hoc containers with changing forwarded ports. Wait for the declared database health check once,
-then reuse that runtime for clean-database, prior-schema, live HTTP, persistence, and cleanup checks.
+feature-named Compose projects or ad hoc containers with changing forwarded ports. Wait for the
+declared database health check once, then reuse that runtime for slice tests, clean-database,
+prior-schema, live HTTP, persistence, and cleanup checks.
 Docker Compose is the sole runtime provider for PostgreSQL and, when activated by requirements,
 Redis, Celery workers, and Celery Beat. Never discover, install, start, or use host PostgreSQL,
 Redis, or globally installed Celery as a fallback. If an image is absent, pull its reviewed pinned
-version or build the locked backend image through Compose. Derive a normalized unique Compose
-project name from the target project and run, and use distinct normalized database names for each
-verification purpose. Keep PostgreSQL identifiers within 63 bytes and credentials out of names.
+version or build the locked backend image through Compose. Derive one normalized Compose project
+name from the checkout path, and use distinct normalized database names for each verification
+purpose. Keep PostgreSQL identifiers within 63 bytes and credentials out of names.
+Build dependencies only when the Dockerfile or dependency manifests/locks change. For source-only
+changes, mount current source into the project-owned service or test container. Never run
+`docker compose up --build` for every feature. Remove one-off containers and disposable databases
+after each check without stopping shared services. Tag the dependency image with the deterministic
+project name and label it `ai.workflow.project=<compose-project>`. After the final backend verifier
+passes, run a project-scoped Compose down with volumes and orphans removed. Delete only dangling
+images carrying that exact workflow-project label; retain one current tagged dependency image for
+later frontend/mobile integration. Never use unfiltered/global Docker prune as workflow cleanup and
+never remove unrelated running workloads, volumes, images, or caches.
 Run the backend as a network service and make HTTP requests from a project-owned test container or
 runtime client on the same network. Do not substitute in-process clients for live HTTP.
 Validate dependency-lock alternatives, activated domain capability groups, and executable source

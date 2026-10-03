@@ -6,6 +6,8 @@ import pytest
 from ai_workflow.execution import (
     _acquire_path_lease,
     _artifact_ok,
+    _backend_compose_project_name,
+    _backend_run_lock,
     _client_foundation_ready,
     _complete_task_contract,
     _release_path_lease,
@@ -103,6 +105,38 @@ def test_backend_projection_defers_client_and_later_feature_acceptance():
     assert projected["acceptance_criteria"][0].startswith(
         "Satisfy only backend behavior owned by this feature"
     )
+
+
+def test_backend_compose_project_name_is_stable_valid_and_checkout_scoped(tmp_path: Path):
+    first = tmp_path / "My Backend Project"
+    second = tmp_path / "another" / "My Backend Project"
+    first.mkdir()
+    second.mkdir(parents=True)
+
+    first_name = _backend_compose_project_name(first)
+
+    assert first_name == _backend_compose_project_name(first)
+    assert first_name != _backend_compose_project_name(second)
+    assert len(first_name) <= 63
+    assert first_name.replace("-", "").isalnum()
+
+
+def test_backend_runtime_rejects_duplicate_workflow(tmp_path: Path):
+    with _backend_run_lock(tmp_path):
+        with pytest.raises(RuntimeError, match="another backend workflow"):
+            with _backend_run_lock(tmp_path):
+                pass
+
+
+def test_backend_runtime_policy_reuses_services_and_scopes_cleanup():
+    root = Path(__file__).resolve().parents[1]
+    rule = (root / "rules" / "phases" / "backend.md").read_text()
+    skill = (root / "skills" / "start-backend" / "SKILL.md").read_text()
+
+    assert "Never run `docker compose up --build` for every feature" in rule
+    assert "mount source for normal slice checks" in skill
+    assert "Retain one current" in skill
+    assert "never use an unfiltered or global Docker prune" in skill
 
 
 @pytest.mark.parametrize(
