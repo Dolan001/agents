@@ -813,7 +813,10 @@ def command_test(args: argparse.Namespace) -> int:
     if scope == "all":
         groups = [
             group
-            for group in ("backend", "frontend", "mobile", "contract", "integration", "e2e")
+            for group in (
+                "backend", "frontend", "mobile", "generate-client", "contract",
+                "integration", "e2e",
+            )
             if isinstance(configured, dict) and configured.get(group)
         ]
         commands = {group: configured[group] for group in groups if isinstance(configured, dict)}

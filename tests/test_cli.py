@@ -1336,7 +1336,10 @@ def test_test_all_executes_every_configured_verification_group(tmp_path: Path) -
                 "version": 1,
                 "commands": {
                     group: specification
-                    for group in ("backend", "frontend", "contract", "integration", "e2e")
+                    for group in (
+                        "backend", "frontend", "generate-client", "contract", "integration",
+                        "e2e",
+                    )
                 },
             }
         )
@@ -1347,6 +1350,7 @@ def test_test_all_executes_every_configured_verification_group(tmp_path: Path) -
     assert [result["group"] for result in report["results"]] == [
         "backend",
         "frontend",
+        "generate-client",
         "contract",
         "integration",
         "e2e",
