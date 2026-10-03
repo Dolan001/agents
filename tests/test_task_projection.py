@@ -86,6 +86,25 @@ def test_nonfoundation_backend_slice_gets_shared_integration_paths():
     ]
 
 
+def test_backend_projection_defers_client_and_later_feature_acceptance():
+    realtime = task(
+        "TASK-REALTIME",
+        ["apps/backend/events/**", "apps/mobile/lib/core/realtime/**"],
+    )
+    realtime["acceptance_criteria"] = [
+        "Persist events; reconnect them from Flutter after message persistence exists."
+    ]
+    realtime["required_tests"] = ["websocket-auth", "mobile-reconnect"]
+
+    projected = phase_tasks([realtime], "backend")[0]
+
+    assert projected["required_tests"] == ["websocket-auth"]
+    assert "mobile-reconnect" in projected["description"]
+    assert projected["acceptance_criteria"][0].startswith(
+        "Satisfy only backend behavior owned by this feature"
+    )
+
+
 @pytest.mark.parametrize(
     "relative",
     [

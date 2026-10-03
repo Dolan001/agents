@@ -72,7 +72,32 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
             paths = list(dict.fromkeys([*paths, *backend_integration_paths]))
         if not any(not path.startswith(".ai/") for path in paths):
             continue
-        selected[feature] = {**task, "allowed_paths": paths}
+        projected = {**task, "allowed_paths": paths}
+        if phase == "backend":
+            original_tests = [str(item) for item in task.get("required_tests", [])]
+            client_markers = ("mobile", "flutter", "android", "ios", "frontend", "browser")
+            deferred_tests = [
+                item for item in original_tests
+                if any(marker in item.lower() for marker in client_markers)
+            ]
+            projected["required_tests"] = [
+                item for item in original_tests if item not in deferred_tests
+            ] or ["focused backend checks for the projected feature scope"]
+            original_criteria = [str(item) for item in task.get("acceptance_criteria", [])]
+            projected["acceptance_criteria"] = [
+                "Satisfy only backend behavior owned by this feature's allowed paths and its "
+                "already-completed dependency closure. Record client or later-feature clauses "
+                "as deferred; they do not block this backend slice.",
+                *(f"Backend-owned portion of: {item}" for item in original_criteria),
+            ]
+            if deferred_tests:
+                projected["description"] = (
+                    str(projected.get("description", ""))
+                    + " Deferred to owning client phases: "
+                    + ", ".join(deferred_tests)
+                    + "."
+                )
+        selected[feature] = projected
 
     ordered: list[dict[str, Any]] = []
     visiting: set[str] = set()
@@ -113,7 +138,7 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
                     "OpenAPI. Complete real API integration in this slice; final cross-application "
                     "verification remains a later-phase obligation. "
                 )
-                + str(task.get("description", ""))
+                + str(projected.get("description") or task.get("description", ""))
             )
             dependencies = set().union(*(
                 projected_dependencies(item) for item in task.get("dependencies", [])

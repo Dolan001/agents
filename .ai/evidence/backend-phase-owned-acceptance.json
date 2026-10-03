@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-BACKEND-PHASE-OWNED-ACCEPTANCE",
+  "status": "passed",
+  "summary": "Backend projections now defer client and later-feature obligations to their owning slices instead of treating them as backend blockers.",
+  "checks": [
+    {
+      "name": "realtime-projection",
+      "status": "passed",
+      "details": "The current realtime task retains websocket, replay, and Redis checks while deferring mobile-reconnect and later message behavior."
+    },
+    {
+      "name": "syntax-validation",
+      "status": "passed",
+      "details": "Updated projection, execution prompt, and regression test compile successfully."
+    },
+    {
+      "name": "skill-validation",
+      "status": "passed",
+      "details": "The start-backend skill remains valid."
+    }
+  ]
+}

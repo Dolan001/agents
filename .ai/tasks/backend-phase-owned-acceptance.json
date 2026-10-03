@@ -1,0 +1,31 @@
+{
+  "task_id": "TASK-BACKEND-PHASE-OWNED-ACCEPTANCE",
+  "feature_id": "backend-phase-owned-acceptance",
+  "agent": "workflow-agent",
+  "priority": 1,
+  "requirement_ids": ["WF-004"],
+  "description": "Prevent backend slices from failing on client or later-feature acceptance obligations.",
+  "inputs": [],
+  "expected_outputs": [".ai/evidence/backend-phase-owned-acceptance.json"],
+  "allowed_paths": [
+    "src/ai_workflow/execution.py",
+    "src/ai_workflow/task_projection.py",
+    "base/agents/dependency-planner.md",
+    "tests/test_task_projection.py",
+    ".ai/evidence/backend-phase-owned-acceptance.json"
+  ],
+  "forbidden_paths": [".git/**"],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Backend tasks execute only backend-owned checks within their paths and dependency closure.",
+    "Mobile, frontend, and later-feature checks are deferred to their owning slices without blocking backend work.",
+    "Future task plans keep each required test with one owning phase or feature."
+  ],
+  "required_tests": ["task projection regression", "syntax validation"],
+  "security_review_required": false,
+  "performance_review_required": false,
+  "retry_policy": {"maximum_attempts": 3},
+  "context_budget": {"maximum_files": 5, "maximum_characters": 30000},
+  "completion_evidence": [".ai/evidence/backend-phase-owned-acceptance.json"],
+  "status": "READY_FOR_VERIFICATION"
+}

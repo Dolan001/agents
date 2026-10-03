@@ -1510,6 +1510,15 @@ def _prompt(
             "product: execute all checks applicable to this client and record current backend "
             "evidence and OpenAPI hashes. Generate only this phase's client language."
         )
+    if phase == "backend":
+        role_boundary += (
+            "\nThis node owns only backend behavior inside its projected allowed paths and the "
+            "behavior supplied by already-completed dependencies. Whole-product criteria may "
+            "mention later backend features or clients. Record those clauses as deferred to their "
+            "owning slices; do not implement them early and do not block this node on them. Run "
+            "only the projected required tests. Cross-feature and cross-client behavior is proven "
+            "at its owning slice and the final integration gate."
+        )
     if node["id"] == "prepare-client-foundation":
         role_boundary += (
             f"\nCreate an executable {phase} application using the selected framework's create "
