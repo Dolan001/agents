@@ -1881,6 +1881,7 @@ def _execute_phase_unlocked(
     commit_verified: bool = False,
     push: bool = False,
     stop_after_node: str | None = None,
+    verification_only: bool = False,
 ) -> dict[str, Any]:
     if phase not in PHASES:
         raise RuntimeError(f"unknown phase: {phase}")
@@ -1897,8 +1898,36 @@ def _execute_phase_unlocked(
         raise RuntimeError(f"missing blueprint: {phase}")
     checkpoints = read_json(project / ".ai" / "node-state.json", {"version": 1, "nodes": {}})
     node_state = checkpoints.setdefault("nodes", {})
+    if verification_only:
+        if phase != "backend":
+            raise RuntimeError("verification-only execution is supported only for backend")
+        prefix = "backend/implement-backend-slices/"
+        implementations = {
+            identity: checkpoint
+            for identity, checkpoint in node_state.items()
+            if identity.startswith(prefix)
+        }
+        if not implementations:
+            raise RuntimeError("backend verification-only requires verified feature evidence")
+        missing = []
+        for identity, checkpoint in implementations.items():
+            feature_id = identity.removeprefix(prefix)
+            output = (
+                project / ".ai" / "evidence" / "features" / feature_id / "backend.json"
+            )
+            if checkpoint.get("status") != "VERIFIED" or not _artifact_ok(
+                output, "evidence-schema"
+            ):
+                missing.append(feature_id)
+        if missing:
+            raise RuntimeError(
+                "backend verification-only requires verified feature evidence: "
+                + ", ".join(missing)
+            )
     executed: list[str] = []
     for node in blueprint["nodes"]:
+        if verification_only and node.get("id") == "implement-backend-slices":
+            continue
         if node["type"] == "deterministic":
             _run_deterministic(project, phase, node["action"], state)
             node_state[f"{phase}/{node['id']}"] = {
@@ -2229,12 +2258,15 @@ def execute_phase(
     commit_verified: bool = False,
     push: bool = False,
     stop_after_node: str | None = None,
+    verification_only: bool = False,
 ) -> dict[str, Any]:
     if phase != "backend":
         return _execute_phase_unlocked(
-            project, phase, adapter, selected_features, commit_verified, push, stop_after_node
+            project, phase, adapter, selected_features, commit_verified, push, stop_after_node,
+            verification_only,
         )
     with _backend_run_lock(project):
         return _execute_phase_unlocked(
-            project, phase, adapter, selected_features, commit_verified, push, stop_after_node
+            project, phase, adapter, selected_features, commit_verified, push, stop_after_node,
+            verification_only,
         )

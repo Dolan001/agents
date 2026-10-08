@@ -27,3 +27,8 @@ def test_lifecycle_commands_default_to_reviewed_adapter(
     assert cli.parse_args([*arguments, "--adapter", "codex"]).adapter == "codex"
     with pytest.raises(SystemExit):
         cli.parse_args([*arguments, "--adapter", "unrestricted"])
+
+
+def test_backend_accepts_guarded_verification_only_mode() -> None:
+    args = parser().parse_args(["start-backend", "--verification-only"])
+    assert args.verification_only is True

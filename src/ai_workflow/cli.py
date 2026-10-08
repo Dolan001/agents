@@ -620,6 +620,9 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
 
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    verification_only = bool(getattr(args, "verification_only", False))
+    if verification_only and args.command != "start-backend":
+        raise RuntimeError("--verification-only is supported only by start-backend")
     frontend_only = args.command == "start-frontend"
     if frontend_only:
         if args.html or args.screenshot:
@@ -758,6 +761,7 @@ def command_start(args: argparse.Namespace) -> int:
                 commit_verified=args.commit_verified or args.push,
                 push=args.push,
                 stop_after_node=stop_after,
+                verification_only=verification_only and phase == "backend",
             )
         )
         if phase == "requirements":
@@ -1135,6 +1139,11 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
     command.add_argument("--remaining", action="store_true", default=True)
+    command.add_argument(
+        "--verification-only",
+        action="store_true",
+        help="Run only the backend preparation, deterministic test matrix, and final verifier",
+    )
     command.add_argument(
         "--approve-html",
         action="store_true",
