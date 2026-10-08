@@ -1142,7 +1142,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument(
         "--verification-only",
         action="store_true",
-        help="Run only the backend preparation, deterministic test matrix, and final verifier",
+        help="Reuse the backend harness and run only its deterministic matrix and final verifier",
     )
     command.add_argument(
         "--approve-html",

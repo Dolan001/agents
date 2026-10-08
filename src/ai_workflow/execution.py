@@ -1911,6 +1911,13 @@ def _execute_phase_unlocked(
         }
         if not implementations:
             raise RuntimeError("backend verification-only requires verified feature evidence")
+        harness = project / ".ai" / "evidence" / "backend-test-harness.json"
+        manifest = project / ".ai" / "test-commands.json"
+        if not _artifact_ok(harness, "evidence-schema") or not manifest.is_file():
+            raise RuntimeError(
+                "backend verification-only requires an existing verification harness; "
+                "run start-backend once without --verification-only"
+            )
         missing = []
         for identity, checkpoint in implementations.items():
             feature_id = identity.removeprefix(prefix)
@@ -1928,7 +1935,10 @@ def _execute_phase_unlocked(
             )
     executed: list[str] = []
     for node in blueprint["nodes"]:
-        if verification_only and node.get("id") == "implement-backend-slices":
+        if verification_only and node.get("id") in {
+            "implement-backend-slices",
+            "prepare-backend-verification",
+        }:
             continue
         if node["type"] == "deterministic":
             _run_deterministic(project, phase, node["action"], state)
