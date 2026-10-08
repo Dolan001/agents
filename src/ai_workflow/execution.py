@@ -1614,7 +1614,9 @@ def _prompt(
             "groups; use container paths that are actually mounted. Ensure configured Redis worker "
             "and Beat services participate in live checks. When RAG is active, add a versioned "
             "representative and adversarial evaluation dataset plus its deterministic runner under "
-            "tests/rag/. Do not write backend-verification.json or claim independent approval."
+            "tests/rag/. Make disposable runtime-environment files self-recovering after temporary-"
+            "directory cleanup without logging credentials. Do not write backend-verification.json "
+            "or claim independent approval."
         )
     prompt = f"""You are executing one controlled node of a production workflow.
 
