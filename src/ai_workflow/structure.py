@@ -873,11 +873,15 @@ def validate_rag_evidence(project: Path, schema_path: Path, phase: str) -> dict[
         metric_names = [str(metric["name"]).lower() for metric in evidence["metrics"]]
         required_metric_terms = {
             "retrieval quality": ("recall", "mrr", "ndcg"),
-            "authorization leakage": ("authorization_leakage", "acl_leakage"),
+            "authorization leakage": (
+                "authorization_leakage",
+                "acl_leakage",
+                "cross_tenant_leakage",
+            ),
             "groundedness": ("ground", "faithful"),
             "citation quality": ("citation",),
             "abstention quality": ("abstention",),
-            "latency": ("latency",),
+            "latency": ("latency", "p95"),
             "cost or usage": ("cost", "usage"),
         }
         for label, terms in required_metric_terms.items():

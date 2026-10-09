@@ -150,6 +150,54 @@ def test_rag_evidence_is_phase_specific_and_fail_closed(tmp_path: Path) -> None:
         validate_rag_evidence(tmp_path, schema, "integration")
 
 
+def test_backend_rag_evidence_accepts_cross_tenant_leakage_metric(tmp_path: Path) -> None:
+    evidence = tmp_path / ".ai" / "evidence" / "rag"
+    evidence.mkdir(parents=True)
+    names = [
+        "recall_at_8",
+        "cross_tenant_leakage",
+        "grounded_claim_precision",
+        "citation_validity",
+        "abstention_accuracy",
+        "retrieval_p95_ms",
+        "external_provider_cost",
+    ]
+    payload = {
+        "version": 1,
+        "capability": "rag",
+        "phase": "backend",
+        "dataset_version": "eval-v1",
+        "checks": {
+            "typed_api_contract": True,
+            "authorization_before_retrieval": True,
+            "tenant_isolation": True,
+            "grounded_abstention": True,
+            "citation_span_validation": True,
+            "stream_recovery": True,
+            "source_authorization": True,
+            "source_lifecycle": True,
+            "idempotent_ingestion": True,
+            "embedding_version_isolation": True,
+            "hybrid_retrieval": True,
+            "exact_recall_baseline": True,
+            "context_budget": True,
+            "prompt_injection_resistance": True,
+            "provider_failure_bounds": True,
+            "deletion_and_reindex": True,
+            "usage_accounting": True,
+        },
+        "metrics": [
+            {"name": name, "value": 1.0, "threshold": 1.0, "comparison": "==", "passed": True}
+            for name in names
+        ],
+        "commands": [{"argv": ["pytest", "tests/rag"], "cwd": ".", "exit_code": 0}],
+        "verified": True,
+    }
+    (evidence / "backend.json").write_text(json.dumps(payload))
+    schema = Path(__file__).resolve().parents[1] / "schemas" / "rag-verification.schema.json"
+    assert validate_rag_evidence(tmp_path, schema, "backend")["verified"] is True
+
+
 def test_webscraping_evidence_requires_exact_stable_results(tmp_path: Path) -> None:
     evidence = tmp_path / ".ai" / "evidence" / "webscraping"
     evidence.mkdir(parents=True)
