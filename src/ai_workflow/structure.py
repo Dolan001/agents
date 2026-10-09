@@ -767,17 +767,6 @@ def validate_backend_evidence(
         raise RuntimeError(f"backend verification evidence is invalid: {summaries}")
     if evidence["framework"] != expected_framework:
         raise RuntimeError("backend verification framework does not match the selected backend")
-    structure = read_json(project / ".ai" / "evidence" / "structure" / "backend.json")
-    if not isinstance(structure, dict):
-        raise RuntimeError("backend structure evidence is missing")
-    active_groups = structure.get("active_path_groups")
-    if not isinstance(active_groups, list):
-        raise RuntimeError("backend structure evidence does not report capability groups")
-    expected_background_tasks = "background-tasks" in active_groups
-    if evidence["background_tasks"]["required"] is not expected_background_tasks:
-        raise RuntimeError(
-            "backend background-task evidence does not match the generated structure"
-        )
     _reject_secret_evidence(evidence, "backend verification")
     return evidence
 

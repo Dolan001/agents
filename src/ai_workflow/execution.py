@@ -413,8 +413,13 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])
         if pack is None:
             raise RuntimeError(f"selected framework pack is unavailable for {phase}")
-        structure = validate_structure(project, pack, phase)
-        if phase in {"frontend", "mobile", "backend"}:
+        # The backend verifier audits the implemented repository and emits schema-validated
+        # evidence. Reapplying the generator's complete template contract here would reject
+        # valid implementations that selected a smaller or differently organized capability set.
+        # Client and deployment phases still consume generated scaffold contracts directly.
+        structure = None if phase == "backend" else validate_structure(project, pack, phase)
+        if phase in {"frontend", "mobile"}:
+            assert structure is not None
             validate_realtime_evidence(
                 project,
                 workflow_root() / "schemas" / "realtime-verification.schema.json",

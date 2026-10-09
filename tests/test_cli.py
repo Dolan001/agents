@@ -4214,20 +4214,13 @@ def test_backend_evidence_requires_worker_checks_when_background_tasks_are_activ
     tmp_path: Path,
 ) -> None:
     root = Path(__file__).resolve().parents[1]
-    pack = root / "fastapi"
-    prompt = f"Selected framework pack: {pack}"
-    _create_pack_structure(tmp_path, prompt)
-    _activate_complete_background_tasks(tmp_path, pack)
-    validate_structure(tmp_path, pack, "backend")
+    prompt = f"Selected framework pack: {root / 'fastapi'}"
     _write_backend_evidence(tmp_path, prompt)
     schema = root / "schemas" / "backend-verification.schema.json"
 
-    with pytest.raises(RuntimeError, match="does not match the generated structure"):
-        validate_backend_evidence(tmp_path, schema, "fastapi")
-
     evidence_path = tmp_path / ".ai" / "evidence" / "backend-verification.json"
     evidence = json.loads(evidence_path.read_text())
-    evidence["background_tasks"] = {
+    complete_background_tasks = {
         "required": True,
         "broker": "redis",
         "broker_connection_passed": True,
@@ -4241,6 +4234,12 @@ def test_backend_evidence_requires_worker_checks_when_background_tasks_are_activ
         "scheduling_required": False,
         "scheduling_passed": None,
     }
+    evidence["background_tasks"] = {"required": True}
+    evidence_path.write_text(json.dumps(evidence))
+    with pytest.raises(RuntimeError, match="backend verification evidence is invalid"):
+        validate_backend_evidence(tmp_path, schema, "fastapi")
+
+    evidence["background_tasks"] = complete_background_tasks
     evidence["checks"].extend(
         {"name": name, "argv": ["true"], "cwd": "apps/backend", "exit_code": 0}
         for name in ("broker", "worker", "tasks")
