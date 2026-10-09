@@ -139,6 +139,7 @@ def test_backend_runtime_policy_reuses_services_and_scopes_cleanup():
     assert "never use an unfiltered or global Docker prune" in skill
     execution = (root / "src" / "ai_workflow" / "execution.py").read_text()
     assert "self-recovering after temporary-" in execution
+    assert "never guess hard-coded lock IDs" in execution
 
 
 @pytest.mark.parametrize(

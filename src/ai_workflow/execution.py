@@ -1615,7 +1615,9 @@ def _prompt(
             "and Beat services participate in live checks. When RAG is active, add a versioned "
             "representative and adversarial evaluation dataset plus its deterministic runner under "
             "tests/rag/. Make disposable runtime-environment files self-recovering after temporary-"
-            "directory cleanup without logging credentials. Do not write backend-verification.json "
+            "directory cleanup without logging credentials. Derive service assertions and numeric "
+            "identifiers from the implementation or configuration; never guess hard-coded lock IDs "
+            "or other runtime constants. Do not write backend-verification.json "
             "or claim independent approval."
         )
     prompt = f"""You are executing one controlled node of a production workflow.
