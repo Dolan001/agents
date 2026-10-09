@@ -1580,6 +1580,9 @@ def _prompt(
         )
         if node["id"] == "verify-backend":
             role_boundary += (
+                "\nWrite schema-valid `.ai/evidence/database-verification.json` and "
+                "`.ai/evidence/backend-verification.json` from the current live checks before "
+                "claiming approval. Both artifacts are required by the backend gate. "
                 f"\nAfter all backend evidence passes, capture project-scoped cleanup evidence and "
                 f"run `docker compose -p {compose_project} down --volumes "
                 "--remove-orphans`. Remove "

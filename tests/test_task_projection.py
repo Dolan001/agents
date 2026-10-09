@@ -140,6 +140,8 @@ def test_backend_runtime_policy_reuses_services_and_scopes_cleanup():
     execution = (root / "src" / "ai_workflow" / "execution.py").read_text()
     assert "self-recovering after temporary-" in execution
     assert "never guess hard-coded lock IDs" in execution
+    assert "database-verification.json" in execution
+    assert "Both artifacts are required by the backend gate" in execution
 
 
 @pytest.mark.parametrize(
