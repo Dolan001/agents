@@ -3720,6 +3720,42 @@ def test_backend_run_does_not_require_a_client(
     assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
 
 
+def test_completed_backend_uses_fast_verification_when_source_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
+    )
+    calls: list[str] = []
+
+    def recording_agent(*args: object, **kwargs: object) -> dict[str, object]:
+        prompt = str(args[2])
+        calls.append(prompt)
+        return _fake_agent(*args, **kwargs)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", recording_agent)
+    assert main(
+        [
+            "start-backend",
+            "--project",
+            str(tmp_path),
+            "--github-user",
+            "test-user",
+            "--backend",
+            "fastapi",
+        ]
+    ) == 0
+
+    calls.clear()
+    backend_source = tmp_path / "apps" / "backend" / "app" / "main.py"
+    backend_source.write_text(backend_source.read_text() + "\n# changed\n")
+    assert main(["start-backend", "--project", str(tmp_path)]) == 0
+
+    assert len(calls) == 1
+    assert "verify-backend" in calls[0]
+    assert "implement-backend-slices" not in calls[0]
+
+
 def test_backend_first_migration_invalidates_completed_downstream_phases(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

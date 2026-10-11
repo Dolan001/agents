@@ -618,9 +618,44 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         ) from exc
 
 
+def _can_use_backend_fast_verification(
+    project: Path,
+    tasks: list[dict[str, Any]],
+) -> bool:
+    """Use the final matrix for an already completed backend instead of reopening slices."""
+    state = StateStore(project).load()
+    completed = set(state.get("completed_phases", []))
+    if not {"requirements", "backend"} <= completed:
+        return False
+    if not phase_checkpoint_current(project, "requirements", tasks):
+        return False
+    gate = read_json(project / ".ai" / "evidence" / "gates" / "backend.json", {})
+    verification = read_json(
+        project / ".ai" / "evidence" / "backend-verification.json", {}
+    )
+    database = read_json(
+        project / ".ai" / "evidence" / "database-verification.json", {}
+    )
+    return bool(
+        isinstance(gate, dict)
+        and gate.get("passed") is True
+        and isinstance(verification, dict)
+        and verification.get("verified") is True
+        and isinstance(database, dict)
+        and database.get("verified") is True
+        and (project / ".ai" / "evidence" / "backend-test-harness.json").is_file()
+        and (project / ".ai" / "test-commands.json").is_file()
+    )
+
+
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     verification_only = bool(getattr(args, "verification_only", False))
+    full_revalidation = bool(getattr(args, "full_revalidation", False))
+    if verification_only and full_revalidation:
+        raise RuntimeError("--verification-only and --full-revalidation cannot be combined")
+    if full_revalidation and args.command != "start-backend":
+        raise RuntimeError("--full-revalidation is supported only by start-backend")
     if verification_only and args.command != "start-backend":
         raise RuntimeError("--verification-only is supported only by start-backend")
     frontend_only = args.command == "start-frontend"
@@ -688,6 +723,13 @@ def command_start(args: argparse.Namespace) -> int:
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
         command_plan(args)
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+    if (
+        args.command == "start-backend"
+        and not verification_only
+        and not full_revalidation
+        and _can_use_backend_fast_verification(project, queue["tasks"])
+    ):
+        verification_only = True
     selected = [task for task in queue["tasks"] if task["status"] not in {"VERIFIED", "COMMITTED"}]
     completed = set(StateStore(project).load().get("completed_phases", []))
     results = []
@@ -1143,6 +1185,11 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
         "--verification-only",
         action="store_true",
         help="Reuse the backend harness and run only its deterministic matrix and final verifier",
+    )
+    command.add_argument(
+        "--full-revalidation",
+        action="store_true",
+        help="Reopen stale backend feature slices instead of using automatic fast verification",
     )
     command.add_argument(
         "--approve-html",
