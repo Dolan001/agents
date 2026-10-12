@@ -2257,6 +2257,29 @@ def test_design_fidelity_rejects_tampered_metrics_and_diff(tmp_path: Path) -> No
         validate_design_fidelity_comparison(tmp_path, "frontend", "react")
 
 
+def test_design_fidelity_requires_every_target_html_baseline(tmp_path: Path) -> None:
+    _initialize_design_sync_target(tmp_path)
+    extra = tmp_path / "HTML" / "approved" / "web--details.html"
+    extra.write_text("<!doctype html><title>Approved details</title>")
+    _write_design_fidelity_evidence(tmp_path, "Target/framework: frontend/react", "frontend")
+
+    comparison = tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "comparison.json"
+    assert _artifact_ok(comparison, "design-comparison-aligned") is False
+    with pytest.raises(RuntimeError, match="do not cover approved HTML"):
+        validate_design_fidelity_comparison(tmp_path, "frontend", "react")
+
+
+def test_design_comparison_gate_rejects_unaligned_evidence(tmp_path: Path) -> None:
+    _initialize_design_sync_target(tmp_path)
+    prompt = "Target/framework: frontend/react"
+    _write_design_fidelity_evidence(tmp_path, prompt, "frontend")
+    comparison = tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "comparison.json"
+    assert _artifact_ok(comparison, "design-comparison-aligned") is True
+
+    _write_design_fidelity_evidence(tmp_path, prompt, "frontend", aligned=False)
+    assert _artifact_ok(comparison, "design-comparison-aligned") is False
+
+
 def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     del adapter
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]

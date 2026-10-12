@@ -103,6 +103,24 @@ def validate_design_fidelity_comparison(
     case_ids = [item.get("id") for item in cases if isinstance(item, dict)]
     if len(case_ids) != len(set(case_ids)):
         failures.append("design-fidelity case IDs must be unique")
+    html_paths = {
+        item["path"]
+        for item in baseline_files
+        if item["path"].lower().endswith((".html", ".htm"))
+    }
+    target_prefix = "web--" if target == "frontend" else "mobile--"
+    target_html_paths = {
+        path for path in html_paths if Path(path).name.startswith(target_prefix)
+    }
+    required_html_paths = target_html_paths or html_paths
+    covered_html_paths = {
+        str(case.get("baseline_html")) for case in cases if isinstance(case, dict)
+    }
+    missing_html_paths = sorted(required_html_paths - covered_html_paths)
+    if missing_html_paths:
+        failures.append(
+            f"{target} design cases do not cover approved HTML: {missing_html_paths}"
+        )
     if target == "frontend":
         names = {
             case.get("viewport", {}).get("name")

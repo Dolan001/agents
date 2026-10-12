@@ -20,7 +20,11 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
 from .design import approve_generated_html, classify_design_inputs, validate_html_approval
-from .design_fidelity import validate_design_fidelity_evidence, verified_baseline_update_current
+from .design_fidelity import (
+    validate_design_fidelity_comparison,
+    validate_design_fidelity_evidence,
+    verified_baseline_update_current,
+)
 from .discovery import inventory, save_inventory
 from .git import commit_verified_feature
 from .io import append_jsonl, read_json, write_json
@@ -142,6 +146,25 @@ def _artifact_ok(path: Path, verification: str) -> bool:
             return isinstance(schema, dict) and not list(
                 Draft202012Validator(schema).iter_errors(payload)
             )
+        return True
+    if verification == "design-comparison-aligned":
+        if (
+            not isinstance(payload, dict)
+            or payload.get("aligned") is not True
+            or payload.get("verified") is not True
+        ):
+            return False
+        try:
+            target = path.parent.name
+            project = path.parents[4]
+            state = read_json(project / ".ai" / "state.json", {})
+            frameworks = state.get("frameworks", {}) if isinstance(state, dict) else {}
+            framework = frameworks.get(target) if isinstance(frameworks, dict) else None
+            if target not in {"frontend", "mobile"} or not isinstance(framework, str):
+                return False
+            validate_design_fidelity_comparison(project, target, framework)
+        except (OSError, RuntimeError, ValueError):
+            return False
         return True
     if verification == "no-unresolved-critical":
         return isinstance(payload, dict) and not payload.get("unresolved_critical", True)
@@ -1566,6 +1589,16 @@ def _prompt(
             "product: execute all checks applicable to this client and record current backend "
             "evidence and OpenAPI hashes. Generate only this phase's client language."
         )
+        if node["id"] in {"sync-frontend-design", "sync-mobile-design"}:
+            role_boundary += (
+                "\nThis is a repair gate, not a findings-only report. Inventory every approved "
+                "HTML document for this target and include each one in at least one deterministic "
+                "design case. Repair shared tokens and components before individual routes, rerun "
+                "the focused checks and captures, and return only when the comparison is both "
+                "aligned:true and verified:true with no unresolved meaningful drift. If an "
+                "external tool blocker prevents repair or capture, report that blocker truthfully "
+                "instead."
+            )
     if phase == "backend":
         compose_project = _backend_compose_project_name(project)
         role_boundary += (
