@@ -1542,6 +1542,11 @@ def _prompt(
             "visual sources still require rendered comparison. Never claim omitted checks ran."
         )
         role_boundary += (
+            " Before returning a failure, scan every generated document for every applicable "
+            "rule and aggregate the complete affected-file set for each defect class. Do not "
+            "use a representative subset that makes a later retry rediscover the same issue."
+        )
+        role_boundary += (
             "\nReturn evidence matching this exact JSON Schema (do not add undeclared fields):\n"
             + json.dumps(read_json(root / "schemas/html-evidence.schema.json"))
         )

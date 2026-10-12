@@ -2828,6 +2828,7 @@ def test_html_verification_routes_findings_through_bounded_repair(
         node = re.search(r"Phase/node: [a-z-]+/([a-z-]+)", prompt).group(1)  # type: ignore[union-attr]
         calls.append(node)
         if node == "verify-html-baseline":
+            assert "aggregate the complete affected-file set" in prompt
             bundle_match = re.search(r"Bounded context bundle: (.+)", prompt)
             assert bundle_match
             verifier_bundle = json.loads(Path(bundle_match.group(1)).read_text())
