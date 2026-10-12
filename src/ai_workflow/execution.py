@@ -975,9 +975,13 @@ def _node_input_files(
     if phase == "design":
         canonical = project / "docs/api/openapi.json"
         interim = project / "docs/api/openapi.interim.json"
+        versioned = project / "docs/api/openapi.v1.json"
         if (
-            canonical.is_file() and interim.is_file()
-            and canonical.read_bytes() == interim.read_bytes()
+            canonical.is_file()
+            and any(
+                candidate.is_file() and canonical.read_bytes() == candidate.read_bytes()
+                for candidate in (interim, versioned)
+            )
         ):
             # Client foundation materializes this alias without changing the API.
             files.discard("docs/api/openapi.json")

@@ -1438,6 +1438,19 @@ def test_backend_feature_cache_excludes_phase_owned_rag_evaluation_data(tmp_path
     )
 
 
+def test_design_cache_ignores_identical_versioned_openapi_alias(tmp_path: Path) -> None:
+    api = tmp_path / "docs" / "api"
+    api.mkdir(parents=True)
+    contract = '{"openapi":"3.1.0"}'
+    (api / "openapi.v1.json").write_text(contract)
+    before = _node_input_files(tmp_path, "design", "create-design-specification")
+
+    (api / "openapi.json").write_text(contract)
+    after = _node_input_files(tmp_path, "design", "create-design-specification")
+
+    assert after == before
+
+
 def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) -> None:
     scripts = tmp_path / "apps" / "backend" / "scripts"
     scripts.mkdir(parents=True)
