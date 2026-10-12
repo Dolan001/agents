@@ -7,6 +7,6 @@
     {"id": "implement-mobile-slices", "type": "agentic", "agent": "selected-mobile-agent", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/mobile.json", "verification": "evidence-schema"},
     {"id": "sync-mobile-design", "type": "agentic", "agent": "design-fidelity-resolver", "required_output": ".ai/evidence/design-fidelity/mobile/comparison.json", "verification": "design-comparison-aligned"},
     {"id": "verify-mobile-design", "type": "agentic", "agent": "selected-mobile-verifier", "required_output": ".ai/evidence/design-fidelity/mobile/verification.json", "verification": "verified-true"},
-    {"id": "verify-mobile", "type": "agentic", "agent": "selected-mobile-verifier", "required_output": ".ai/evidence/mobile-verification.json", "verification": "verified-true"}
+    {"id": "verify-mobile", "type": "agentic", "agent": "selected-mobile-verifier", "required_output": ".ai/evidence/mobile-verification.json", "verification": "verified-true", "repair": {"id": "repair-mobile-verification", "agent": "selected-mobile-agent", "required_output": ".ai/evidence/mobile-repair.json", "verification": "evidence-schema"}}
   ]
 }

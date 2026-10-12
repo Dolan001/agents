@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,24 @@ def _evidence_paths(project: Path, target: str) -> dict[str, Path]:
     }
 
 
+def _frontend_runtime_bypass_failures(project: Path) -> list[str]:
+    """Reject production shortcuts that display approved artifacts instead of React UI."""
+    source_root = project / "apps" / "frontend" / "src"
+    if not source_root.is_dir():
+        return []
+    failures: list[str] = []
+    for path in sorted(source_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in {".js", ".jsx", ".ts", ".tsx"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        relative = path.relative_to(project).as_posix()
+        if "HTML/approved" in text or re.search(r"\.html\?raw(?:['\"]|$)", text):
+            failures.append(f"frontend runtime imports approved HTML: {relative}")
+        if "dangerouslySetInnerHTML" in text or re.search(r"\.innerHTML\b", text):
+            failures.append(f"frontend runtime injects HTML strings: {relative}")
+    return failures
+
+
 def validate_design_fidelity_comparison(
     project: Path, target: str, framework: str
 ) -> dict[str, Any]:
@@ -99,6 +118,8 @@ def validate_design_fidelity_comparison(
             failures.append("design-fidelity baseline hash is stale")
     if manifest.get("baseline_files") != baseline_files:
         failures.append("design-fidelity baseline inventory does not match approved HTML")
+    if target == "frontend":
+        failures.extend(_frontend_runtime_bypass_failures(project))
     cases = manifest.get("cases", [])
     case_ids = [item.get("id") for item in cases if isinstance(item, dict)]
     if len(case_ids) != len(set(case_ids)):

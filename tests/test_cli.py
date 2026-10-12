@@ -2280,6 +2280,23 @@ def test_design_comparison_gate_rejects_unaligned_evidence(tmp_path: Path) -> No
     assert _artifact_ok(comparison, "design-comparison-aligned") is False
 
 
+def test_design_comparison_rejects_runtime_approved_html_injection(tmp_path: Path) -> None:
+    _initialize_design_sync_target(tmp_path)
+    prompt = "Target/framework: frontend/react"
+    _write_design_fidelity_evidence(tmp_path, prompt, "frontend")
+    unsafe = tmp_path / "apps" / "frontend" / "src" / "Unsafe.tsx"
+    unsafe.parent.mkdir(parents=True)
+    unsafe.write_text(
+        'import approved from "../../../../HTML/approved/index.html?raw";\n'
+        "export const Unsafe = () => <div dangerouslySetInnerHTML={{__html: approved}} />;\n"
+    )
+
+    comparison = tmp_path / ".ai" / "evidence" / "design-fidelity" / "frontend" / "comparison.json"
+    assert _artifact_ok(comparison, "design-comparison-aligned") is False
+    with pytest.raises(RuntimeError, match="runtime imports approved HTML"):
+        validate_design_fidelity_comparison(tmp_path, "frontend", "react")
+
+
 def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     del adapter
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]
