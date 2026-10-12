@@ -27,7 +27,7 @@ reviewed Django migrations or Alembic revisions; neither backend may fall back t
 or create production tables directly during application startup.
 
 Projects may be web only, mobile only, or web plus mobile; every mode includes one
-supported backend. The first selected client phase creates the monorepo root contract:
+supported backend. The backend phase creates the monorepo root contract when needed:
 
 ```text
 target-project/
@@ -300,13 +300,33 @@ Use a narrower command when only part of the lifecycle is required:
 | `$workflow-status` | Read-only status report | No change |
 
 `$start-generatehtml` generates and independently verifies HTML, then stops. Review
-the HTML yourself if desired; personal review is optional. `$start-frontend` consumes
+the HTML yourself if desired; personal review is optional. It runs `$start-design`
+automatically when the design specification is missing or stale. `$start-frontend` consumes
 that verified baseline and runs only frontend work. Missing or stale prerequisites
 produce a recovery command; frontend does not regenerate HTML automatically.
 
 `$start-build` runs the combined lifecycle. Other stage commands retain prerequisite
-orchestration; for example, `$start-backend` does not skip requirements, design, or
-any selected client when they are incomplete.
+orchestration. The normal order is requirements and contracts, verified backend,
+design specification, approved HTML, live-integrated clients, system testing, and
+delivery. A stage command runs only its missing prerequisites and stops at its named gate.
+
+For a new project, the practical command sequence is:
+
+```bash
+./.agents/bin/ai prepare-project-docs --project . --requirements REQUIREMENTS.md --adapter codex
+./.agents/bin/ai start-backend --project . --adapter codex-reviewed
+./.agents/bin/ai start-design --project . --adapter codex-reviewed       # optional review checkpoint
+./.agents/bin/ai start-generatehtml --project . --adapter codex-reviewed
+./.agents/bin/ai start-frontend --project . --adapter codex-reviewed     # when web is selected
+./.agents/bin/ai start-mobile --project . --adapter codex-reviewed       # when mobile is selected
+./.agents/bin/ai start-integration --project . --adapter codex-reviewed
+./.agents/bin/ai start-testing --project . --adapter codex-reviewed
+./.agents/bin/ai start-delivery --project . --adapter codex-reviewed
+```
+
+Framework and GitHub arguments are optional when the project documents or saved state
+already resolve them, so a normal resumed backend run can be simply
+`./.agents/bin/ai start-backend`.
 
 `$sync-design` is also available after implementation. By default it repairs selected web/mobile
 targets; `--check-only` reports localized drift without application edits. Approved HTML remains
@@ -344,83 +364,10 @@ Application implementation is still prohibited. The requirements gate must pass 
 design work starts. Contract generation reconciles the PRD with `TRD.md` and
 `BACKEND_SPEC.md`; a mismatch fails instead of silently choosing one document.
 
-### 8. Produce and approve HTML
+### 8. Build and verify the backend
 
-Design input precedence is deterministic:
-
-```text
-supplied HTML → screenshots/design evidence → PRD only
-```
-
-- With supplied HTML, agents validate, improve when required, and approve it.
-- With screenshots but no HTML, agents generate HTML from visual evidence plus PRD.
-- With neither, agents generate HTML from the PRD and design specification.
-
-The route is recorded in `.ai/design-inputs.json`. The design phase uses the PRD,
-`TRD.md`, `UI_UX_SPEC.md`, normalized requirements, and generated API contracts so
-screens, permissions, fields, states, validation, errors, pagination, jobs, and realtime
-behavior agree before HTML generation. It produces `HTML/design-specification.md`, approved
-static HTML under `HTML/approved/`, and design evidence. Accessibility and HTML-quality checks
-must pass before frontend work.
-
-`$start-design` intentionally stops after `HTML/design-specification.md`.
-`$start-generatehtml` completes the design gate and stops before application code.
-
-### 9. Build the optional web frontend
-
-When selected, the frontend phase loads only React or Next.js guidance. Specialized
-agents:
-
-- create and validate the framework-neutral monorepo root;
-- implement the approved HTML as production frontend code;
-- preserve requirements, responsive behavior, accessibility, and design intent;
-- define project-owned frontend test commands; and
-- produce feature and structure evidence.
-
-Each web feature retains the PRD, TRD, UI/UX specification, normalized requirements,
-API contracts, and approved design as required references; feature scoping cannot replace
-those contracts.
-
-The generated `apps/frontend` structure must match the selected behavior pack's exact
-project-structure contract before the frontend gate passes. If web is not selected,
-the phase is checkpointed as skipped without invoking an agent.
-
-Each framework node receives only its role-specific skill and the relevant selected
-pack rules and hooks. React/Next.js implementation and verification are therefore
-performed by the selected pack's implementer and independent verifier, not generic
-framework-neutral substitutes.
-
-Before frontend approval, the design-fidelity resolver captures deterministic mobile, tablet, and
-desktop cases against hashed approved HTML, writes a repair plan, corrects meaningful drift, and
-recaptures affected routes/states. The existing selected frontend verifier then independently checks
-the raw captures, accessibility, responsiveness, focused tests, and production build.
-
-### 10. Build the optional Flutter mobile application
-
-When selected, the mobile phase loads only `flutter`, establishes any missing
-monorepo root structure, and generates one application under `apps/mobile/` for Android
-and iOS. It creates feature-first boundaries, validated environments, navigation,
-localization, adaptive design, typed networking, secure storage, lifecycle and offline
-behavior, and unit/widget/golden/integration test foundations.
-
-Each mobile feature retains the PRD, TRD, UI/UX specification, normalized requirements,
-API contracts, and approved design as required references.
-
-The gate validates the exact Flutter structure contract, Android and iOS platform
-directories, accessibility and responsive evidence, Flutter analysis/tests, and
-truthful platform release readiness. Unavailable iOS tooling must be reported as
-unverified rather than silently passed. If mobile is not selected, no Flutter context
-is loaded and the phase is checkpointed as skipped.
-
-Before mobile approval, the same resolver compares stable Flutter goldens for Android and iOS with
-approved HTML semantics while preserving valid Material/Cupertino differences. The Flutter verifier
-independently checks all manifest cases, responsive/text-scale behavior, accessibility, analysis,
-focused tests, and golden evidence.
-
-### 11. Build the backend
-
-After selected client approval, the backend phase loads only Django REST Framework or
-FastAPI guidance. It uses reconciled requirements and observed web/mobile data needs to:
+After requirements and API-contract approval, the backend phase runs before design and
+loads only Django REST Framework or FastAPI guidance. It uses reconciled requirements to:
 
 - implement API endpoints, domain logic, persistence, authentication, permissions,
   validation, exceptions, and error responses;
@@ -446,6 +393,13 @@ The independent verifier must also produce `.ai/evidence/backend-verification.js
 successful commands for application import, startup/readiness, positive and negative API behavior,
 authorization, transaction/concurrency cases, OpenAPI, and security. The backend phase cannot pass
 with a placeholder `verified` flag or structure-only fixture.
+
+Development and verification use a project-scoped Compose network. PostgreSQL, Redis,
+Celery workers, and the backend run in Docker when those capabilities are selected; a
+local PostgreSQL, Redis, or Celery installation is not required. The project uses an
+isolated database name and service-name networking. Verification covers a migration from
+empty state, a prior-schema upgrade, live HTTP success and negative cases, persistence,
+authorization, and cleanup.
 
 Durable background processing is requirement-triggered rather than generated for every backend.
 When a domain adds a task, either backend uses Celery with Redis and a PostgreSQL transactional
@@ -499,12 +453,99 @@ PostgreSQL idempotency, bounded execution, no-change success, selector-drift dia
 fixtures and independent accuracy/cleanup evidence are mandatory. CAPTCHA, queues, access denials and
 other protective controls stop and report the job; they are not bypassed.
 
+### 9. Produce and approve HTML
+
+Design input precedence is deterministic:
+
+```text
+supplied HTML → screenshots/design evidence → PRD only
+```
+
+- With supplied HTML, agents validate, improve when required, and approve it.
+- With screenshots but no HTML, agents generate HTML from visual evidence plus PRD.
+- With neither, agents generate HTML from the PRD and design specification.
+
+The route is recorded in `.ai/design-inputs.json`. The design phase uses the PRD,
+`TRD.md`, `UI_UX_SPEC.md`, normalized requirements, and generated API contracts so
+screens, permissions, fields, states, validation, errors, pagination, jobs, and realtime
+behavior agree before HTML generation. It produces `HTML/design-specification.md`, approved
+static HTML under `HTML/approved/`, and design evidence. Accessibility and HTML-quality checks
+must pass before frontend work.
+
+`$start-design` intentionally stops after `HTML/design-specification.md`.
+`$start-generatehtml` completes the design gate and stops before application code.
+Generation is checkpointed: a new invocation reuses a current design specification and
+verified generation nodes, then resumes the failed or stale node. Large PRD-only baselines
+use `HTML/baseline-manifest.json`, `HTML/build_baseline.py`, and
+`HTML/check_baseline.py` so shared defects can be repaired once and the whole route set can
+be checked consistently. Browser checks that cannot run may be explicitly deferred to the
+client design-sync gate; source, route, accessibility, and independent static checks still
+have to pass.
+
+### 10. Build the optional web frontend
+
+When selected, the frontend phase loads only React or Next.js guidance. Specialized
+agents:
+
+- create and validate the framework-neutral monorepo root;
+- implement the approved HTML as production frontend code;
+- generate a typed client from the verified OpenAPI contract and expose callable,
+  runtime-decoded methods for required operations;
+- connect each implemented route and state to the real backend during the same feature
+  slice, including success, validation, authentication, authorization, and error behavior;
+- preserve requirements, responsive behavior, accessibility, and design intent;
+- define project-owned frontend test commands; and
+- produce feature and structure evidence.
+
+Each web feature retains the PRD, TRD, UI/UX specification, normalized requirements,
+API contracts, and approved design as required references; feature scoping cannot replace
+those contracts. Feature path leases include the relevant routes, application wiring,
+services, generated client, and contract tests so integration work is not blocked by an
+artificial file boundary.
+
+The generated `apps/frontend` structure must match the selected behavior pack's exact
+project-structure contract before the frontend gate passes. If web is not selected,
+the phase is checkpointed as skipped without invoking an agent.
+
+Each framework node receives only its role-specific skill and the relevant selected
+pack rules and hooks. React/Next.js implementation and verification are therefore
+performed by the selected pack's implementer and independent verifier, not generic
+framework-neutral substitutes.
+
+Before frontend approval, the design-fidelity resolver captures deterministic mobile, tablet, and
+desktop cases against hashed approved HTML, writes a repair plan, corrects meaningful drift, and
+recaptures affected routes/states. The existing selected frontend verifier then independently checks
+the raw captures, accessibility, responsiveness, focused tests, and production build.
+
+### 11. Build the optional Flutter mobile application
+
+When selected, the mobile phase loads only `flutter`, establishes any missing
+monorepo root structure, and generates one application under `apps/mobile/` for Android
+and iOS. It creates feature-first boundaries, validated environments, navigation,
+localization, adaptive design, typed networking, secure storage, lifecycle and offline
+behavior, and unit/widget/golden/integration test foundations.
+
+Each mobile feature retains the PRD, TRD, UI/UX specification, normalized requirements,
+API contracts, and approved design as required references.
+
+The gate validates the exact Flutter structure contract, Android and iOS platform
+directories, accessibility and responsive evidence, Flutter analysis/tests, and
+truthful platform release readiness. Unavailable iOS tooling must be reported as
+unverified rather than silently passed. If mobile is not selected, no Flutter context
+is loaded and the phase is checkpointed as skipped.
+
+Before mobile approval, the same resolver compares stable Flutter goldens for Android and iOS with
+approved HTML semantics while preserving valid Material/Cupertino differences. The Flutter verifier
+independently checks all manifest cases, responsive/text-scale behavior, accessibility, analysis,
+focused tests, and golden evidence.
+
 ### 12. Integrate selected clients and backend
 
-The integration phase generates or updates typed web and/or Dart API boundaries,
-connects selected client flows to real backend APIs, and creates contract and
-integration tests. Project-owned OpenAPI/client generation commands run without shell
-evaluation. The gate requires every selected client, backend, and contract to agree.
+Each frontend and mobile phase already generates its typed API boundary and connects its
+flows to the verified live backend. The integration phase rechecks those completed
+connections together, exercises cross-client and end-to-end behavior, and catches contract
+drift. Project-owned OpenAPI/client generation commands run without shell evaluation. The
+gate requires every selected client, backend, and contract to agree.
 
 ### 13. Run independent testing and security review
 
@@ -608,6 +649,18 @@ reused; changed inputs invalidate only affected work. Each failed agentic node g
 most two retries. The first attempt does not load recovery guidance. A retry receives
 the concise prior failure and the `recover-failure` skill. Exhausted failures are
 recorded in `.ai/failures.jsonl` and stop the phase.
+
+Completed backend runs automatically use the fast verification path when requirements,
+contracts, backend source, and database evidence are unchanged. It runs the deterministic
+matrix and final verifier instead of reopening every feature slice. Use
+`--verification-only` to request that path explicitly or `--full-revalidation` to force
+all backend slices to reopen.
+
+HTML generation resumes from its last verified design/generation checkpoint. Frontend
+resume uses `.ai/evidence/frontend-prerequisites.json`, which fingerprints backend source,
+OpenAPI, backend/database evidence, and approved HTML before cached frontend nodes are
+accepted. Changes to generated client output alone do not invalidate the backend or design;
+real backend, contract, evidence, or approved-design changes do.
 
 The executable `on_failure` hook also tracks every recovered or terminal error under
 `.ai/issues/`. `events.jsonl` preserves every occurrence, `issues.json` groups repeated
