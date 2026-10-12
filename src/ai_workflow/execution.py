@@ -1604,7 +1604,10 @@ def _prompt(
             "skill, not README placeholders. Install/lock dependencies, configure routing, "
             "styles, test/lint/build commands and generated API client/runtime boundaries. "
             "Use the verified backend contract; preserve user product decisions and record its "
-            "provenance. Run focused foundation and contract checks, register "
+            "provenance. Generate callable, runtime-decoded client methods for every OpenAPI "
+            "operation required by the selected client tasks; checking only that operation IDs "
+            "exist in OpenAPI is insufficient. Record and test operation coverage before marking "
+            "the foundation ready. Run focused foundation and contract checks, register "
             "project commands in .ai/test-commands.json and write truthful foundation evidence."
         )
         if phase == "frontend":

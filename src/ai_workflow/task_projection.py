@@ -45,6 +45,14 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
         "compose.yaml",
         ".env.example",
     ]
+    frontend_integration_paths = [
+        "apps/frontend/src/app/**",
+        "apps/frontend/src/routes/**",
+        "apps/frontend/src/services/**",
+        "packages/api-client/generate.py",
+        "packages/api-client/typescript/**",
+        "tests/contracts/**",
+    ]
 
     def scoped(path: str) -> list[str]:
         if path.startswith(".ai/evidence/"):
@@ -70,6 +78,12 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
             # A feature slice owns its domain, but it also has to register routes/settings,
             # lock new dependencies, publish OpenAPI/clients, and run live Compose checks.
             paths = list(dict.fromkeys([*paths, *backend_integration_paths]))
+        elif phase == "frontend" and any(
+            path.startswith("apps/frontend/") for path in paths
+        ):
+            # Feature UI has to be composed into the application router and may expose
+            # missing generated operations already present in the authoritative OpenAPI.
+            paths = list(dict.fromkeys([*paths, *frontend_integration_paths]))
         if not any(not path.startswith(".ai/") for path in paths):
             continue
         projected = {**task, "allowed_paths": paths}

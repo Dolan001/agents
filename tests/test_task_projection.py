@@ -35,6 +35,15 @@ def test_client_projection_orders_prerequisites_and_excludes_backend_verifiers()
     assert [item["task_id"] for item in projected] == ["TASK-API", "TASK-WEB"]
     assert projected[1]["dependencies"] == ["TASK-API"]
     assert projected[0]["allowed_paths"] == ["packages/api-client/**"]
+    assert projected[1]["allowed_paths"] == [
+        "apps/frontend/**",
+        "apps/frontend/src/app/**",
+        "apps/frontend/src/routes/**",
+        "apps/frontend/src/services/**",
+        "packages/api-client/generate.py",
+        "packages/api-client/typescript/**",
+        "tests/contracts/**",
+    ]
     assert tasks[0]["dependencies"] == ["TASK-AUTH-VERIFY"]
 
 
