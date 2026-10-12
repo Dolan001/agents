@@ -615,6 +615,8 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         current = _frontend_prerequisite_fingerprint(project)
         snapshot_path = project / ".ai" / "evidence" / "frontend-prerequisites.json"
         snapshot = read_json(snapshot_path, {})
+        if isinstance(snapshot, dict) and snapshot.get("sha256") == current["sha256"]:
+            return
         backend_current = "backend" in completed and phase_checkpoint_current(
             project, "backend", tasks
         )
@@ -623,8 +625,6 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         )
         if backend_current and design_current:
             write_json(snapshot_path, current)
-            return
-        if isinstance(snapshot, dict) and snapshot.get("sha256") == current["sha256"]:
             return
         nodes = read_json(project / ".ai" / "node-state.json", {"nodes": {}}).get(
             "nodes", {}
