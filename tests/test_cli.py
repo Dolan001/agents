@@ -3147,6 +3147,32 @@ def test_html_approval_is_bound_to_passing_source_hashes(tmp_path: Path) -> None
         validate_html_approval(tmp_path)
 
 
+def test_html_approval_accepts_semantic_source_check_evidence(tmp_path: Path) -> None:
+    generated = tmp_path / "HTML" / "generated"
+    generated.mkdir(parents=True)
+    index = generated / "index.html"
+    index.write_text("<!doctype html><title>Reviewed draft</title>")
+    digest = hashlib.sha256(index.read_bytes()).hexdigest()
+    evidence = tmp_path / ".ai" / "evidence" / "design"
+    evidence.mkdir(parents=True)
+    (tmp_path / ".ai" / "design-inputs.json").write_text(
+        json.dumps({"mode": "prd_only"})
+    )
+    (evidence / "verification.json").write_text(json.dumps({"verified": True}))
+    (evidence / "source-checks.json").write_text(json.dumps({
+        "verified": True,
+        "approved": True,
+        "checks": [
+            {"name": "source", "status": "passed"},
+            {"name": "browser", "status": "deferred"},
+        ],
+        "output_hashes": {"HTML/generated/index.html": digest},
+    }))
+
+    assert approve_generated_html(tmp_path)["approved"] is True
+    assert validate_html_approval(tmp_path)["approved"] is True
+
+
 def test_nonretryable_verifier_evidence_stops_without_repair(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

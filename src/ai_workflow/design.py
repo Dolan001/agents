@@ -150,8 +150,7 @@ def approve_generated_html(project: Path) -> dict[str, Any]:
     expected = checks.get("output_hashes") if isinstance(checks, dict) else None
     if (
         not isinstance(checks, dict)
-        or checks.get("status") != "passed"
-        or checks.get("exit_code") != 0
+        or not _source_checks_passed(checks)
         or not isinstance(expected, dict)
     ):
         raise RuntimeError("current HTML source checks have not passed; rerun $start-generatehtml")
@@ -209,7 +208,7 @@ def validate_html_approval(project: Path) -> dict[str, Any]:
     checks = read_json(project / ".ai" / "evidence" / "design" / "source-checks.json", {})
     if not isinstance(approval, dict) or approval.get("approved") is not True:
         raise RuntimeError("HTML owner approval evidence is missing or invalid")
-    if not isinstance(checks, dict) or checks.get("status") != "passed":
+    if not isinstance(checks, dict) or not _source_checks_passed(checks):
         raise RuntimeError("HTML owner approval references missing or failed source checks")
     generated = project / "HTML" / "generated"
     approved = project / "HTML" / "approved"
@@ -222,3 +221,21 @@ def validate_html_approval(project: Path) -> dict[str, Any]:
     if approval.get("approved_hashes") != _tree_hashes(approved, approved):
         raise RuntimeError("HTML owner approval is stale because the approved baseline changed")
     return approval
+
+
+def _source_checks_passed(checks: dict[str, Any]) -> bool:
+    """Accept legacy command metadata or complete semantic verifier evidence."""
+    if checks.get("status") == "passed" and checks.get("exit_code") == 0:
+        return True
+    results = checks.get("checks")
+    if (
+        checks.get("verified") is not True
+        or checks.get("approved") is not True
+        or not isinstance(results, list)
+        or not results
+    ):
+        return False
+    statuses = {
+        item.get("status") for item in results if isinstance(item, dict)
+    }
+    return "passed" in statuses and not statuses.intersection({"failed", "not_run"})
