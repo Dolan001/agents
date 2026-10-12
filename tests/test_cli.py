@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 from PIL import Image
 
 from ai_workflow.capabilities import detect_prd_capabilities
-from ai_workflow.cli import main
+from ai_workflow.cli import _frontend_prerequisite_fingerprint, main
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
 from ai_workflow.design import (
@@ -1449,6 +1449,37 @@ def test_design_cache_ignores_identical_versioned_openapi_alias(tmp_path: Path) 
     after = _node_input_files(tmp_path, "design", "create-design-specification")
 
     assert after == before
+
+
+def test_frontend_prerequisite_fingerprint_ignores_generated_client_changes(
+    tmp_path: Path,
+) -> None:
+    backend = tmp_path / "apps" / "backend" / "core.py"
+    backend.parent.mkdir(parents=True)
+    backend.write_text("runtime = 1\n")
+    approved = tmp_path / "HTML" / "approved" / "index.html"
+    approved.parent.mkdir(parents=True)
+    approved.write_text("<title>Approved</title>")
+    api = tmp_path / "docs" / "api" / "openapi.v1.json"
+    api.parent.mkdir(parents=True)
+    api.write_text("{}")
+    evidence = tmp_path / ".ai" / "evidence"
+    (evidence / "design").mkdir(parents=True)
+    for relative in (
+        "backend-verification.json",
+        "database-verification.json",
+        "design/owner-approval.json",
+    ):
+        (evidence / relative).write_text("{}")
+
+    first = _frontend_prerequisite_fingerprint(tmp_path)["sha256"]
+    client = tmp_path / "packages" / "api-client" / "typescript" / "client.ts"
+    client.parent.mkdir(parents=True)
+    client.write_text("export const generated = true\n")
+    assert _frontend_prerequisite_fingerprint(tmp_path)["sha256"] == first
+
+    backend.write_text("runtime = 2\n")
+    assert _frontend_prerequisite_fingerprint(tmp_path)["sha256"] != first
 
 
 def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -605,17 +606,95 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         state = StateStore(project).load()
         queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
         tasks = queue.get("tasks", [])
-        for phase in ("requirements", "backend", "design"):
-            if phase not in state.get("completed_phases", []) or not phase_checkpoint_current(
-                project, phase, tasks
-            ):
-                raise RuntimeError(f"{phase} prerequisite is missing or stale")
+        completed = set(state.get("completed_phases", []))
+        if "requirements" not in completed or not phase_checkpoint_current(
+            project, "requirements", tasks
+        ):
+            raise RuntimeError("requirements prerequisite is missing or stale")
         validate_html_approval(project)
+        current = _frontend_prerequisite_fingerprint(project)
+        snapshot_path = project / ".ai" / "evidence" / "frontend-prerequisites.json"
+        snapshot = read_json(snapshot_path, {})
+        backend_current = "backend" in completed and phase_checkpoint_current(
+            project, "backend", tasks
+        )
+        design_current = "design" in completed and phase_checkpoint_current(
+            project, "design", tasks
+        )
+        if backend_current and design_current:
+            write_json(snapshot_path, current)
+            return
+        if isinstance(snapshot, dict) and snapshot.get("sha256") == current["sha256"]:
+            return
+        nodes = read_json(project / ".ai" / "node-state.json", {"nodes": {}}).get(
+            "nodes", {}
+        )
+        frontend_started = isinstance(nodes, dict) and any(
+            key.startswith("frontend/") and value.get("status") == "VERIFIED"
+            for key, value in nodes.items() if isinstance(value, dict)
+        )
+        backend_gate = read_json(project / ".ai/evidence/gates/backend.json", {})
+        backend_evidence = read_json(
+            project / ".ai/evidence/backend-verification.json", {}
+        )
+        database_evidence = read_json(
+            project / ".ai/evidence/database-verification.json", {}
+        )
+        source_code, source_changes = run_git(
+            project, "status", "--porcelain", "--", "apps/backend", "docs/api/openapi.v1.json"
+        )
+        if (
+            frontend_started
+            and design_current
+            and isinstance(backend_gate, dict)
+            and backend_gate.get("passed") is True
+            and isinstance(backend_evidence, dict)
+            and backend_evidence.get("verified") is True
+            and isinstance(database_evidence, dict)
+            and database_evidence.get("verified") is True
+            and source_code == 0
+            and not source_changes
+        ):
+            # Migrate an in-progress frontend created before prerequisite snapshots.
+            write_json(snapshot_path, current)
+            return
+        stale = "backend" if not backend_current else "design"
+        raise RuntimeError(f"{stale} prerequisite is missing or stale")
     except RuntimeError as exc:
         raise RuntimeError(
             f"start-frontend requires current verified HTML ({exc}). Run {recovery}, "
             "optionally review the HTML, then run start-frontend again."
         ) from exc
+
+
+def _frontend_prerequisite_fingerprint(project: Path) -> dict[str, Any]:
+    """Bind frontend resume to runtime backend, contract, evidence, and approved design."""
+    roots = [
+        project / "apps" / "backend",
+        project / "HTML" / "approved",
+    ]
+    files = [
+        project / "docs" / "api" / "openapi.v1.json",
+        project / ".ai" / "evidence" / "backend-verification.json",
+        project / ".ai" / "evidence" / "database-verification.json",
+        project / ".ai" / "evidence" / "design" / "owner-approval.json",
+    ]
+    for root in roots:
+        if root.is_dir():
+            files.extend(path for path in root.rglob("*") if path.is_file())
+    digest = hashlib.sha256(b"frontend-prerequisites-v1")
+    for path in sorted(set(files)):
+        relative = path.relative_to(project).as_posix()
+        if any(part in _IGNORED_FINGERPRINT_PARTS for part in path.parts):
+            continue
+        digest.update(b"\0path\0" + relative.encode() + b"\0content\0")
+        digest.update(path.read_bytes() if path.is_file() else b"<missing>")
+    return {"version": 1, "sha256": digest.hexdigest(), "recorded_at": utc_now()}
+
+
+_IGNORED_FINGERPRINT_PARTS = {
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"
+}
 
 
 def _can_use_backend_fast_verification(
