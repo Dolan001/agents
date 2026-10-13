@@ -3232,6 +3232,12 @@ def test_frontend_requires_separate_html_generation(
     assert main([
         "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
     ]) == 0
+    state_path = tmp_path / ".ai/state.json"
+    state = json.loads(state_path.read_text())
+    state["completed_phases"] = [
+        phase for phase in state["completed_phases"] if phase != "backend"
+    ]
+    state_path.write_text(json.dumps(state))
     calls.clear()
     assert main(frontend) == 0
     assert calls and set(calls) == {"frontend"}

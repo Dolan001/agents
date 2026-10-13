@@ -617,9 +617,9 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         snapshot = read_json(snapshot_path, {})
         if isinstance(snapshot, dict) and snapshot.get("sha256") == current["sha256"]:
             return
-        backend_current = "backend" in completed and phase_checkpoint_current(
-            project, "backend", tasks
-        )
+        # Later stages use the durable backend prerequisite fingerprint. Individual
+        # backend node caches can be older than generated clients produced afterward.
+        backend_current = _backend_prerequisite_current(project, tasks)
         design_current = "design" in completed and phase_checkpoint_current(
             project, "design", tasks
         )
