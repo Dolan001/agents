@@ -264,8 +264,8 @@ def _source_checks_passed(checks: dict[str, Any]) -> bool:
         return True
     results = checks.get("checks")
     if (
-        checks.get("verified") is not True
-        or checks.get("approved") is not True
+        checks.get("approved") is not True
+        or not (checks.get("verified") is True or checks.get("exit_code") == 0)
         or not isinstance(results, list)
         or not results
     ):

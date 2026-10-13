@@ -803,8 +803,7 @@ def command_start(args: argparse.Namespace) -> int:
         command_plan(args)
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
     if (
-        args.command == "start-backend"
-        and not verification_only
+        not verification_only
         and not full_revalidation
         and _can_use_backend_fast_verification(project, queue["tasks"])
     ):

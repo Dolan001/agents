@@ -19,7 +19,13 @@ from typing import Any
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
-from .design import approve_generated_html, classify_design_inputs, validate_html_approval
+from .design import (
+    _source_checks_passed,
+    _tree_hashes,
+    approve_generated_html,
+    classify_design_inputs,
+    validate_html_approval,
+)
 from .design_fidelity import (
     validate_design_fidelity_comparison,
     validate_design_fidelity_evidence,
@@ -119,6 +125,26 @@ def _artifact_ok(path: Path, verification: str) -> bool:
         return False
     if _implementation_blocker(payload):
         return False
+    if (
+        path.name == "verification.json"
+        and path.parent.name == "design"
+        and path.parent.parent.name == "evidence"
+        and isinstance(payload, dict)
+        and payload.get("verified") is True
+    ):
+        project = path.parents[3]
+        checks = read_json(path.parent / "source-checks.json", {})
+        generated = project / "HTML" / "generated"
+        expected = checks.get("output_hashes") if isinstance(checks, dict) else None
+        if (
+            not isinstance(checks, dict)
+            or not _source_checks_passed(checks)
+            or not isinstance(expected, dict)
+            or not generated.is_dir()
+            or expected != _tree_hashes(project, generated)
+            or payload.get("output_hashes") != expected
+        ):
+            return False
     if path.name in {"frontend-foundation.json", "mobile-foundation.json"}:
         if not _client_foundation_ready(path.parents[2], path.stem.split("-")[0], payload):
             return False
@@ -1014,6 +1040,17 @@ def _node_input_files(
         files.discard("HTML/source/inventory.json")
     if feature:
         scoped = _feature_input_files(project, feature)
+        if phase == "backend":
+            scoped = {
+                path
+                for path in scoped
+                if path
+                not in {
+                    "packages/api-client/typescript/client.ts",
+                    "packages/api-client/dart/client.dart",
+                }
+                and not path.startswith(("tests/frontend/", "tests/mobile/", "tests/e2e/"))
+            }
         if scoped:
             files = scoped | {path for path in files if _is_contract_reference(path)}
         test_matrix = project / "artifacts" / "tests" / "command-results.json"
@@ -1023,8 +1060,13 @@ def _node_input_files(
             foundation = project / f".ai/evidence/{phase}-foundation.json"
             if foundation.is_file():
                 files.add(foundation.relative_to(project).as_posix())
+            client_names = {
+                "backend": {"generate.py"},
+                "frontend": {"generate.py", "client.ts"},
+                "mobile": {"generate.py", "client.dart"},
+            }[phase]
             for path in (project / "packages/api-client").rglob("*"):
-                if _context_file_allowed(project, path):
+                if path.name in client_names and _context_file_allowed(project, path):
                     files.add(path.relative_to(project).as_posix())
     if phase == "design" and node in {
         "establish-html-baseline",
@@ -1565,6 +1607,8 @@ def _prompt(
             "promotes HTML/generated to HTML/approved; missing promotion is not a failure. "
             "Record passing source checks with exit_code:0 and SHA-256 output_hashes for every "
             "HTML/generated file in .ai/evidence/design/source-checks.json. "
+            "Write source-checks.json completely before writing verification.json; the "
+            "verification artifact is the final commit marker for this node. "
             "PRD-only static fallback may defer unavailable browser checks explicitly; supplied "
             "visual sources still require rendered comparison. Never claim omitted checks ran."
         )
@@ -2033,6 +2077,31 @@ def _execute_phase_unlocked(
                 and _artifact_ok(output_path, node["verification"])
             ):
                 continue
+            if (
+                phase == "design"
+                and node["id"] == "verify-html-baseline"
+                and checkpoint.get("status") == "VERIFIED"
+                and _artifact_ok(output_path, node["verification"])
+            ):
+                payload = read_json(output_path, {})
+                checked_at = payload.get("checked_at") if isinstance(payload, dict) else None
+                checkpoint_at = checkpoint.get("at")
+                if (
+                    isinstance(checked_at, str)
+                    and isinstance(checkpoint_at, str)
+                    and checked_at > checkpoint_at
+                ):
+                    # Recover an independently verified artifact written immediately before
+                    # promotion was interrupted. Its hashes are revalidated by _artifact_ok.
+                    approve_generated_html(project)
+                    node_state[identity] = {
+                        "status": "VERIFIED",
+                        "output": output,
+                        "cache_key": cache_key,
+                        "at": utc_now(),
+                    }
+                    write_json(project / ".ai" / "node-state.json", checkpoints)
+                    continue
             pipeline = read_json(workflow_root() / "config" / "pipeline.json")
             maximum_retries = int(pipeline["execution"]["maximum_retries_per_failure"])
             failure_reasons: list[str] = []

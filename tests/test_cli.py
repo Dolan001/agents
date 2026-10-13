@@ -2338,9 +2338,30 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         path.write_text(f"# {phase} {node}\n")
 
     if phase == "design" and node == "establish-html-baseline":
-        approved = project / "HTML" / "approved" / "index.html"
-        approved.parent.mkdir(parents=True, exist_ok=True)
-        approved.write_text("<!doctype html><title>Approved account</title>")
+        generated = project / "HTML" / "generated" / "index.html"
+        generated.parent.mkdir(parents=True, exist_ok=True)
+        generated.write_text("<!doctype html><title>Approved account</title>")
+    if phase == "design" and node == "verify-html-baseline":
+        generated = project / "HTML" / "generated"
+        output_hashes = {
+            file.relative_to(project).as_posix(): hashlib.sha256(file.read_bytes()).hexdigest()
+            for file in sorted(generated.rglob("*"))
+            if file.is_file()
+        }
+        checks = path.parent / "source-checks.json"
+        checks.write_text(
+            json.dumps(
+                {
+                    "approved": True,
+                    "exit_code": 0,
+                    "checks": [{"name": "source", "status": "passed"}],
+                    "output_hashes": output_hashes,
+                }
+            )
+        )
+        payload["approved"] = True
+        payload["output_hashes"] = output_hashes
+        path.write_text(json.dumps(payload))
     if phase in {"frontend", "mobile"} and node == "scaffold-target-monorepo":
         contract_path = Path(__file__).resolve().parents[1] / "config" / "target-monorepo.json"
         contract = json.loads(contract_path.read_text())
@@ -2934,7 +2955,7 @@ def test_html_verification_routes_findings_through_bounded_repair(
                         "verified": False,
                         "findings": [
                             {
-                                "path": "HTML/approved/index.html",
+                                "path": "HTML/generated/index.html",
                                 "message": "Multiple-collection selection is missing.",
                                 action_field: "Add multiple owned-collection selection controls.",
                             }
@@ -2954,7 +2975,7 @@ def test_html_verification_routes_findings_through_bounded_repair(
             bundle = json.loads(Path(bundle_match.group(1)).read_text())
             selected = {item["path"] for item in bundle["selected_files"]}
             assert ".ai/evidence/design/verification.json" in selected
-            assert "HTML/approved/index.html" in selected
+            assert "HTML/generated/index.html" in selected
             repaired = True
         return _fake_agent(project, adapter, prompt)
 
@@ -3032,10 +3053,31 @@ def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phase
         "feature_id": "design", "requirement_ids": ["ACC-001"],
         "changed_files": [], "checks": [{"name": "browser", "status": "deferred"}],
         "reviews": [], "verified": True, "approved": True, "findings": [],
-        "output_hashes": {"HTML/generated/index.html": "a" * 64},
+        "output_hashes": {},
         "recovery": {"classification": "browser_runtime_deferred_prd_only"},
     }
     path.write_text(json.dumps(payload))
+    assert not _artifact_ok(path, "verified-true")
+    generated = tmp_path / "HTML/generated"
+    generated.mkdir(parents=True)
+    draft = generated / "index.html"
+    draft.write_text("<!doctype html><title>Account</title>")
+    digest = hashlib.sha256(draft.read_bytes()).hexdigest()
+    payload["output_hashes"] = {"HTML/generated/index.html": digest}
+    path.write_text(json.dumps(payload))
+    (path.parent / "source-checks.json").write_text(
+        json.dumps(
+            {
+                "approved": True,
+                "exit_code": 0,
+                "checks": [
+                    {"name": "source", "status": "passed"},
+                    {"name": "browser", "status": "deferred"},
+                ],
+                "output_hashes": payload["output_hashes"],
+            }
+        )
+    )
     assert _artifact_ok(path, "verified-true")
     other = tmp_path / "backend.json"
     other.write_text(json.dumps(payload))
@@ -3887,6 +3929,13 @@ def test_completed_backend_uses_fast_verification_when_source_changes(
     ) == 0
 
     calls.clear()
+    frontend_test = tmp_path / "tests" / "frontend" / "account.test.tsx"
+    frontend_test.parent.mkdir(parents=True)
+    frontend_test.write_text("// client-only test\n")
+    assert main(["start-generatehtml", "--project", str(tmp_path)]) == 0
+    assert not [prompt for prompt in calls if "Phase/node: backend/" in prompt]
+
+    calls.clear()
     backend_source = tmp_path / "apps" / "backend" / "app" / "main.py"
     backend_source.write_text(backend_source.read_text() + "\n# changed\n")
     assert main(["start-backend", "--project", str(tmp_path)]) == 0
@@ -3894,6 +3943,43 @@ def test_completed_backend_uses_fast_verification_when_source_changes(
     assert len(calls) == 1
     assert "verify-backend" in calls[0]
     assert "implement-backend-slices" not in calls[0]
+
+
+def test_generatehtml_uses_backend_fast_verification_for_stale_prerequisite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
+    )
+    calls: list[str] = []
+
+    def recording_agent(*args: object, **kwargs: object) -> dict[str, object]:
+        prompt = str(args[2])
+        calls.append(prompt)
+        return _fake_agent(*args, **kwargs)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", recording_agent)
+    assert main(
+        [
+            "start-generatehtml",
+            "--project",
+            str(tmp_path),
+            "--github-user",
+            "test-user",
+            "--backend",
+            "fastapi",
+        ]
+    ) == 0
+
+    calls.clear()
+    backend_source = tmp_path / "apps" / "backend" / "app" / "main.py"
+    backend_source.write_text(backend_source.read_text() + "\n# changed\n")
+    assert main(["start-generatehtml", "--project", str(tmp_path)]) == 0
+
+    backend_calls = [prompt for prompt in calls if "Phase/node: backend/" in prompt]
+    assert len(backend_calls) == 1
+    assert "verify-backend" in backend_calls[0]
+    assert all("implement-backend-slices" not in prompt for prompt in backend_calls)
 
 
 def test_backend_first_migration_invalidates_completed_downstream_phases(
