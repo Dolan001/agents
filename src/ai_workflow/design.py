@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,13 @@ from .model import utc_now
 HTML_SUFFIXES = {".html", ".htm"}
 SCREENSHOT_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 DESIGN_SUFFIXES = {".fig", ".svg", ".pdf"}
+_AUTH_FORM_ROUTES = {"/login", "/register", "/forgot-password", "/reset-password"}
+_VISIBLE_BASELINE_PROCESS_PHRASES = (
+    "does not submit",
+    "no live request is made",
+    "prd-only baseline",
+    "static control",
+)
 
 
 def _tree_hashes(project: Path, root: Path) -> dict[str, str]:
@@ -51,6 +59,31 @@ def _inside(project: Path, value: str) -> Path:
     if not path.is_file():
         raise RuntimeError(f"design input does not exist: {path}")
     return path
+
+
+def _validate_prd_only_html_semantics(project: Path, root: Path) -> None:
+    """Keep generated design fixtures semantic and free of workflow-facing product copy."""
+    routing = read_json(project / ".ai" / "design-inputs.json", {})
+    if not isinstance(routing, dict) or routing.get("mode") != "prd_only":
+        return
+    failures: list[str] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in HTML_SUFFIXES:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        lowered = text.lower()
+        relative = path.relative_to(project).as_posix()
+        phrases = [phrase for phrase in _VISIBLE_BASELINE_PROCESS_PHRASES if phrase in lowered]
+        if phrases:
+            failures.append(f"{relative} exposes workflow copy: {', '.join(phrases)}")
+        route_match = re.search(r'data-route=["\']([^"\']+)["\']', text, re.I)
+        if route_match and route_match.group(1) in _AUTH_FORM_ROUTES:
+            if not re.search(r"<form\b", text, re.I):
+                failures.append(f"{relative} account controls are not inside a form")
+            if not re.search(r'<button\b[^>]*type=["\']submit["\']', text, re.I):
+                failures.append(f"{relative} account form has no submit button")
+    if failures:
+        raise RuntimeError("PRD-only HTML semantic checks failed: " + "; ".join(failures))
 
 
 def ingest_design_inputs(
@@ -160,6 +193,7 @@ def approve_generated_html(project: Path) -> dict[str, Any]:
         raise RuntimeError(
             "HTML/generated changed after source checks; rerun $start-generatehtml before approval"
         )
+    _validate_prd_only_html_semantics(project, generated)
 
     approved = project / "HTML" / "approved"
     staging = project / "HTML" / ".approved-workflow-staging"
@@ -220,6 +254,7 @@ def validate_html_approval(project: Path) -> dict[str, Any]:
         raise RuntimeError("HTML owner approval is stale because the generated draft changed")
     if approval.get("approved_hashes") != _tree_hashes(approved, approved):
         raise RuntimeError("HTML owner approval is stale because the approved baseline changed")
+    _validate_prd_only_html_semantics(project, approved)
     return approval
 
 
