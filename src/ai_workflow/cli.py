@@ -727,6 +727,73 @@ def _can_use_backend_fast_verification(
     )
 
 
+def _backend_prerequisite_fingerprint(project: Path) -> dict[str, Any]:
+    """Hash backend-owned runtime, contract, and focused verification inputs only."""
+    roots = [
+        project / "apps" / "backend",
+        project / "docs" / "api",
+        project / "tests" / "backend",
+        project / "tests" / "contract",
+        project / "tests" / "contracts",
+        project / "tests" / "harness",
+        project / "tests" / "integration",
+        project / "tests" / "rag",
+        project / "tests" / "security",
+    ]
+    files = [
+        project / "packages" / "api-client" / "generate.py",
+        project / ".ai" / "test-commands.json",
+        project / "compose.yaml",
+        project / "Makefile",
+        project / ".env.example",
+    ]
+    for root in roots:
+        if root.is_dir():
+            files.extend(path for path in root.rglob("*") if path.is_file())
+    digest = hashlib.sha256(b"backend-prerequisites-v1")
+    selected: list[Path] = []
+    for path in sorted(set(files)):
+        if not path.is_file() or any(part in _IGNORED_FINGERPRINT_PARTS for part in path.parts):
+            continue
+        selected.append(path)
+        digest.update(b"\0path\0" + path.relative_to(project).as_posix().encode() + b"\0content\0")
+        digest.update(path.read_bytes())
+    return {
+        "version": 1,
+        "sha256": digest.hexdigest(),
+        "latest_input_mtime_ns": max((path.stat().st_mtime_ns for path in selected), default=0),
+        "recorded_at": utc_now(),
+    }
+
+
+def _record_backend_prerequisite_snapshot(project: Path) -> None:
+    write_json(
+        project / ".ai" / "evidence" / "backend-prerequisites.json",
+        _backend_prerequisite_fingerprint(project),
+    )
+
+
+def _backend_prerequisite_current(project: Path, tasks: list[dict[str, Any]]) -> bool:
+    """Reuse a verified backend for later stages when backend-owned inputs are unchanged."""
+    if not _can_use_backend_fast_verification(project, tasks):
+        return False
+    current = _backend_prerequisite_fingerprint(project)
+    snapshot_path = project / ".ai" / "evidence" / "backend-prerequisites.json"
+    snapshot = read_json(snapshot_path, {})
+    if isinstance(snapshot, dict) and snapshot.get("sha256") == current["sha256"]:
+        return True
+    verification_path = project / ".ai" / "evidence" / "backend-verification.json"
+    if (
+        not snapshot_path.exists()
+        and verification_path.is_file()
+        and verification_path.stat().st_mtime_ns >= current["latest_input_mtime_ns"]
+    ):
+        # One-time migration for verified projects created before this snapshot existed.
+        write_json(snapshot_path, current)
+        return True
+    return False
+
+
 def command_start(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     verification_only = bool(getattr(args, "verification_only", False))
@@ -802,6 +869,20 @@ def command_start(args: argparse.Namespace) -> int:
     if not read_json(project / ".ai" / "task-queue.json", {"tasks": []})["tasks"]:
         command_plan(args)
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
+    backend_prerequisite_current = (
+        args.command != "start-backend"
+        and _backend_prerequisite_current(project, queue["tasks"])
+    )
+    if backend_prerequisite_current:
+        state_store = StateStore(project)
+        prerequisite_state = state_store.load()
+        prerequisite_completed = set(prerequisite_state.get("completed_phases", []))
+        if "requirements" in prerequisite_completed and "backend" not in prerequisite_completed:
+            prerequisite_completed.add("backend")
+            prerequisite_state["completed_phases"] = sorted(
+                prerequisite_completed, key=PHASES.index
+            )
+            state_store.save(prerequisite_state)
     if (
         not verification_only
         and not full_revalidation
@@ -820,7 +901,11 @@ def command_start(args: argparse.Namespace) -> int:
             optional_skipped = (
                 phase in {"frontend", "mobile", "deployment"} and frameworks[phase] == "unknown"
             )
-            if optional_skipped or phase_checkpoint_current(project, phase, queue["tasks"]):
+            if (
+                optional_skipped
+                or (phase == "backend" and backend_prerequisite_current)
+                or phase_checkpoint_current(project, phase, queue["tasks"])
+            ):
                 if phase == terminal_phase:
                     break
                 continue
@@ -872,18 +957,19 @@ def command_start(args: argparse.Namespace) -> int:
         stop_after = (
             "create-design-specification" if target == "design-spec" and phase == "design" else None
         )
-        results.append(
-            execute_phase(
-                project,
-                phase,
-                args.adapter,
-                selected,
-                commit_verified=args.commit_verified or args.push,
-                push=args.push,
-                stop_after_node=stop_after,
-                verification_only=verification_only and phase == "backend",
-            )
+        phase_result = execute_phase(
+            project,
+            phase,
+            args.adapter,
+            selected,
+            commit_verified=args.commit_verified or args.push,
+            push=args.push,
+            stop_after_node=stop_after,
+            verification_only=verification_only and phase == "backend",
         )
+        results.append(phase_result)
+        if phase == "backend" and not phase_result.get("partial"):
+            _record_backend_prerequisite_snapshot(project)
         if phase == "requirements":
             refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
             queue = refreshed
