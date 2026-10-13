@@ -2072,6 +2072,26 @@ def _execute_phase_unlocked(
             cache_key = node_cache_key(project, identity, inputs)
             checkpoint = node_state.get(identity, {})
             if (
+                phase == "design"
+                and node["id"] == "establish-html-baseline"
+                and checkpoint.get("status") == "VERIFIED"
+                and _artifact_ok(
+                    project / ".ai/evidence/design/verification.json",
+                    "verified-true",
+                )
+            ):
+                # The independent verifier may repair the generated baseline after this
+                # node completes. Its hash-bound approval supersedes the older draft cache.
+                node_state[identity] = {
+                    "status": "VERIFIED",
+                    "output": output,
+                    "cache_key": cache_key,
+                    "inputs": inputs,
+                    "at": utc_now(),
+                }
+                write_json(project / ".ai/node-state.json", checkpoints)
+                continue
+            if (
                 checkpoint.get("status") == "VERIFIED"
                 and checkpoint.get("cache_key") == cache_key
                 and _artifact_ok(output_path, node["verification"])

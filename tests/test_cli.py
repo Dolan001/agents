@@ -3044,6 +3044,47 @@ def test_html_generation_approves_in_one_invocation(
     assert validate_html_approval(tmp_path)["approval_method"] == "independent HTML verification"
 
 
+def test_html_generation_recovers_verified_repair_without_regeneration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent_with_html_checks)
+    assert main([
+        "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
+    ]) == 0
+
+    generated = tmp_path / "HTML/generated/index.html"
+    generated.write_text("<!doctype html><title>Verifier repair</title>")
+    digest = hashlib.sha256(generated.read_bytes()).hexdigest()
+    evidence = tmp_path / ".ai/evidence/design"
+    (evidence / "source-checks.json").write_text(json.dumps({
+        "approved": True, "exit_code": 0,
+        "checks": [{"name": "source", "status": "passed"}],
+        "output_hashes": {"HTML/generated/index.html": digest},
+    }))
+    verification = json.loads((evidence / "verification.json").read_text())
+    verification["verified"] = verification["approved"] = True
+    verification["checked_at"] = "2099-01-01T00:00:00Z"
+    verification["output_hashes"] = {"HTML/generated/index.html": digest}
+    (evidence / "verification.json").write_text(json.dumps(verification))
+    (evidence / "owner-approval.json").unlink()
+    state_path = tmp_path / ".ai/state.json"
+    state = json.loads(state_path.read_text())
+    state["completed_phases"] = [
+        phase for phase in state["completed_phases"] if phase != "design"
+    ]
+    state_path.write_text(json.dumps(state))
+
+    def unexpected_agent(*args: object, **kwargs: object) -> dict[str, object]:
+        raise AssertionError("verified HTML recovery must not launch an agent")
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", unexpected_agent)
+    assert main(["start-generatehtml", "--project", str(tmp_path)]) == 0
+    assert (tmp_path / "HTML/approved/index.html").read_text() == generated.read_text()
+
+
 def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phases(
     tmp_path: Path,
 ) -> None:
