@@ -3972,6 +3972,14 @@ def test_generatehtml_uses_backend_fast_verification_for_stale_prerequisite(
     ) == 0
 
     calls.clear()
+    state_path = tmp_path / ".ai" / "state.json"
+    state = json.loads(state_path.read_text())
+    state["completed_phases"] = ["bootstrap", "requirements"]
+    state_path.write_text(json.dumps(state))
+    assert main(["start-generatehtml", "--project", str(tmp_path)]) == 0
+    assert not [prompt for prompt in calls if "Phase/node: backend/" in prompt]
+
+    calls.clear()
     backend_source = tmp_path / "apps" / "backend" / "app" / "main.py"
     backend_source.write_text(backend_source.read_text() + "\n# changed\n")
     assert main(["start-generatehtml", "--project", str(tmp_path)]) == 0

@@ -697,17 +697,8 @@ _IGNORED_FINGERPRINT_PARTS = {
 }
 
 
-def _can_use_backend_fast_verification(
-    project: Path,
-    tasks: list[dict[str, Any]],
-) -> bool:
-    """Use the final matrix for an already completed backend instead of reopening slices."""
-    state = StateStore(project).load()
-    completed = set(state.get("completed_phases", []))
-    if not {"requirements", "backend"} <= completed:
-        return False
-    if not phase_checkpoint_current(project, "requirements", tasks):
-        return False
+def _verified_backend_evidence_available(project: Path) -> bool:
+    """Return whether the durable backend gate and verification artifacts are usable."""
     gate = read_json(project / ".ai" / "evidence" / "gates" / "backend.json", {})
     verification = read_json(
         project / ".ai" / "evidence" / "backend-verification.json", {}
@@ -724,6 +715,20 @@ def _can_use_backend_fast_verification(
         and database.get("verified") is True
         and (project / ".ai" / "evidence" / "backend-test-harness.json").is_file()
         and (project / ".ai" / "test-commands.json").is_file()
+    )
+
+
+def _can_use_backend_fast_verification(
+    project: Path,
+    tasks: list[dict[str, Any]],
+) -> bool:
+    """Use the final matrix for an already completed backend instead of reopening slices."""
+    state = StateStore(project).load()
+    completed = set(state.get("completed_phases", []))
+    return bool(
+        {"requirements", "backend"} <= completed
+        and phase_checkpoint_current(project, "requirements", tasks)
+        and _verified_backend_evidence_available(project)
     )
 
 
@@ -775,7 +780,9 @@ def _record_backend_prerequisite_snapshot(project: Path) -> None:
 
 def _backend_prerequisite_current(project: Path, tasks: list[dict[str, Any]]) -> bool:
     """Reuse a verified backend for later stages when backend-owned inputs are unchanged."""
-    if not _can_use_backend_fast_verification(project, tasks):
+    if not phase_checkpoint_current(
+        project, "requirements", tasks
+    ) or not _verified_backend_evidence_available(project):
         return False
     current = _backend_prerequisite_fingerprint(project)
     snapshot_path = project / ".ai" / "evidence" / "backend-prerequisites.json"
