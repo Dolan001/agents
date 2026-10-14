@@ -2178,6 +2178,32 @@ def test_sync_design_repairs_and_independently_verifies_frontend(
     assert validate_design_fidelity_evidence(tmp_path, "frontend", "react")["verified"] is True
 
 
+def test_design_verification_ignores_its_own_evidence_paths(
+    tmp_path: Path,
+) -> None:
+    _initialize_design_sync_target(tmp_path)
+    application_changes = ["apps/frontend/design.css"]
+    _write_design_fidelity_evidence(
+        tmp_path,
+        "Target/framework: frontend/react",
+        "frontend",
+        changed_paths=[
+            *application_changes,
+            ".ai/evidence/design-fidelity/frontend/manifest.json",
+            ".ai/evidence/design-fidelity/frontend/repair-plan.md",
+            ".ai/evidence/design-fidelity/frontend/comparison.json",
+        ],
+    )
+    _write_design_fidelity_verification(
+        tmp_path,
+        "Target/framework: frontend/react",
+        "frontend",
+        changed_paths=application_changes,
+    )
+
+    assert validate_design_fidelity_evidence(tmp_path, "frontend", "react")["verified"] is True
+
+
 def test_sync_design_check_only_reports_drift_without_editing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -265,18 +265,28 @@ def validate_design_fidelity_evidence(
     manifest_ids = {item.get("id") for item in manifest.get("cases", []) if isinstance(item, dict)}
     if set(verification.get("case_ids", [])) != manifest_ids:
         failures.append("design-fidelity verifier did not cover every manifest case")
-    if verification.get("changed_paths") != comparison.get("changed_paths"):
+    evidence_root = f".ai/evidence/design-fidelity/{target}/"
+    comparison_changes = [
+        path
+        for path in comparison.get("changed_paths", [])
+        if isinstance(path, str) and not path.startswith(evidence_root)
+    ]
+    verification_changes = [
+        path
+        for path in verification.get("changed_paths", [])
+        if isinstance(path, str) and not path.startswith(evidence_root)
+    ]
+    if verification_changes != comparison_changes:
         failures.append("comparison and verification changed paths differ")
-    changed_paths = comparison.get("changed_paths", [])
     outside = [
         path
-        for path in changed_paths
-        if isinstance(path, str) and not _allowed_change(target, path, allow_baseline_update)
+        for path in comparison_changes
+        if not _allowed_change(target, path, allow_baseline_update)
     ]
     if outside:
         failures.append(f"design-fidelity evidence declares out-of-scope changes: {outside}")
     observed_baseline_change = any(
-        isinstance(path, str) and path.startswith("HTML/approved/") for path in changed_paths
+        path.startswith("HTML/approved/") for path in comparison_changes
     )
     if verification.get("baseline_changed") is not observed_baseline_change:
         failures.append("baseline_changed does not match declared changed paths")
