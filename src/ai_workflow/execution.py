@@ -405,6 +405,10 @@ def phase_checkpoint_current(
     nodes = checkpoints.get("nodes", {}) if isinstance(checkpoints, dict) else {}
     if not isinstance(blueprint, dict) or not isinstance(nodes, dict):
         return False
+    if phase in {"frontend", "mobile"} and _client_phase_verification_current(
+        project, phase, nodes
+    ):
+        return True
     for node in blueprint.get("nodes", []):
         if node.get("type") != "agentic":
             continue
@@ -1129,6 +1133,27 @@ def _node_input_files(
                     if _context_file_allowed(project, path) and path.name != "verification.json"
                 )
     return sorted(files)
+
+
+def _client_phase_verification_current(
+    project: Path, phase: str, nodes: dict[str, Any]
+) -> bool:
+    """Treat a current whole-client verifier as the durable phase checkpoint."""
+    node_id = f"verify-{phase}"
+    identity = f"{phase}/{node_id}/phase"
+    output = f".ai/evidence/{phase}-verification.json"
+    inputs = [
+        path
+        for path in _node_input_files(project, phase, node_id)
+        if path != output
+    ]
+    checkpoint = nodes.get(identity, {})
+    return bool(
+        isinstance(checkpoint, dict)
+        and checkpoint.get("status") == "VERIFIED"
+        and checkpoint.get("cache_key") == node_cache_key(project, identity, inputs)
+        and _artifact_ok(project / output, "verified-true")
+    )
 
 
 def _build_context_bundle(
@@ -1999,6 +2024,9 @@ def _execute_phase_unlocked(
         raise RuntimeError(f"missing blueprint: {phase}")
     checkpoints = read_json(project / ".ai" / "node-state.json", {"version": 1, "nodes": {}})
     node_state = checkpoints.setdefault("nodes", {})
+    client_phase_verified = phase in {"frontend", "mobile"} and (
+        _client_phase_verification_current(project, phase, node_state)
+    )
     if verification_only:
         if phase != "backend":
             raise RuntimeError("verification-only execution is supported only for backend")
@@ -2057,6 +2085,8 @@ def _execute_phase_unlocked(
                     "stopped_after_node": node["id"],
                     "executed": executed,
                 }
+            continue
+        if client_phase_verified:
             continue
         features = selected_features if node.get("fanout") else [None]
         for feature in features:

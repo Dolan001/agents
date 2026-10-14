@@ -3242,6 +3242,19 @@ def test_frontend_requires_separate_html_generation(
     assert main(frontend) == 0
     assert calls and set(calls) == {"frontend"}
 
+    calls.clear()
+    state = json.loads(state_path.read_text())
+    state["completed_phases"] = [
+        phase for phase in state["completed_phases"] if phase != "frontend"
+    ]
+    state_path.write_text(json.dumps(state))
+    nodes_path = tmp_path / ".ai/node-state.json"
+    nodes = json.loads(nodes_path.read_text())
+    nodes["nodes"]["frontend/implement-frontend-slices/acc-001"]["cache_key"] = "stale"
+    nodes_path.write_text(json.dumps(nodes))
+    assert main(frontend) == 0
+    assert not calls
+
     approved = next((tmp_path / "HTML" / "approved").rglob("*.html"))
     approved.write_text(approved.read_text() + "<!-- design changed -->")
     calls.clear()
