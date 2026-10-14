@@ -14,9 +14,7 @@
     "tests/contract",
     "tests/integration",
     "tests/e2e",
-    "artifacts/tests",
-    "artifacts/security",
-    "artifacts/final"
+    "artifacts/tests"
   ],
   "ownership": {
     "apps/frontend": "selected frontend pack",

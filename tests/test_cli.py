@@ -4072,6 +4072,13 @@ def test_structure_contract_fails_closed_for_missing_paths(tmp_path: Path) -> No
     assert "package.json" in report["missing_paths"]
 
 
+def test_frontend_monorepo_contract_excludes_later_phase_outputs() -> None:
+    contract_path = Path(__file__).resolve().parents[1] / "config" / "target-monorepo.json"
+    directories = set(json.loads(contract_path.read_text())["required_directories"])
+    assert "artifacts/security" not in directories
+    assert "artifacts/final" not in directories
+
+
 def test_backend_structure_requires_a_complete_domain(tmp_path: Path) -> None:
     pack = Path(__file__).resolve().parents[1] / "fastapi"
     contract = json.loads((pack / "rules" / "project-structure.json").read_text())
