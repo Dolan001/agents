@@ -4614,6 +4614,16 @@ def test_client_integration_evidence_is_bound_to_live_backend_and_openapi(
     )
     assert evidence["journeys"]["fixtures_disabled"] is True
 
+    integration_path = (
+        tmp_path / ".ai" / "evidence" / "client-integration" / "frontend.json"
+    )
+    integration = json.loads(integration_path.read_text())
+    integration["dataset_version"] = "identity-journey-v2"
+    integration_path.write_text(json.dumps(integration))
+    assert validate_client_integration_evidence(
+        tmp_path, schema, "frontend", "fastapi"
+    )["dataset_version"] == "identity-journey-v2"
+
     (tmp_path / "docs" / "api" / "openapi.json").write_text(
         json.dumps({"openapi": "3.1.0", "info": {"title": "changed"}})
     )

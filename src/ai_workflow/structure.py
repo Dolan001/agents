@@ -805,10 +805,8 @@ def validate_client_integration_evidence(
     if evidence["openapi_sha256"] != expected_openapi_hash:
         raise RuntimeError(f"{phase} client integration evidence is stale for OpenAPI")
     test_data = backend.get("test_data")
-    if not isinstance(test_data, dict) or evidence["dataset_version"] != test_data.get(
-        "dataset_version"
-    ):
-        raise RuntimeError(f"{phase} client integration dataset does not match the backend")
+    if not isinstance(test_data, dict) or test_data.get("cleanup_passed") is not True:
+        raise RuntimeError(f"{phase} client integration backend cleanup is not verified")
     _reject_secret_evidence(evidence, f"{phase} client integration")
     return evidence
 
