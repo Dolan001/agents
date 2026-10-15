@@ -29,6 +29,12 @@ iOS semantics, small and large phones, tablet behavior, safe areas, keyboard ins
 and configured text scaling. Preserve valid Material/Cupertino interaction differences instead of
 forcing browser pixels onto native controls.
 
+Before Flutter repair work, probe each required native capture lane once. If an Android
+device/emulator or the iOS Simulator toolchain cannot launch, record the unavailable lane and stop
+without spending repair retries on evidence that cannot be captured. Route discovery alone is not
+screen completion: every approved screen needs route-specific behavior and live API states. Shared
+generic pages, static state galleries, and inert actions must fail the implementation check.
+
 Render the approved HTML reference and application result at exactly the declared logical viewport
 multiplied by its device scale factor. Use `./.agents/bin/ai compare-images` for every case. It
 decodes both inputs to RGBA, compares every unmasked pixel, and deterministically generates the diff

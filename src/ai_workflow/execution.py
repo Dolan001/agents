@@ -1658,6 +1658,17 @@ def _prompt(
             "product: execute all checks applicable to this client and record current backend "
             "evidence and OpenAPI hashes. Generate only this phase's client language."
         )
+        if phase == "mobile" and node["id"] == "implement-mobile-slices":
+            role_boundary += (
+                "\nEvery approved mobile screen must have a route-specific Flutter "
+                "implementation with its required controller/repository behavior and live API "
+                "states. A route inventory, shared generic screen, static state gallery, or "
+                "button with an empty callback is not implementation evidence and must block "
+                "the slice. Where the backend contract intentionally has no detail endpoint, "
+                "consume authorized typed route data and show a truthful unavailable state. "
+                "Test screen-specific loading, empty, success, validation, authorization, "
+                "offline/error, retry, and mutation behavior before accepting the checkpoint."
+            )
         if node["id"] in {"sync-frontend-design", "sync-mobile-design"}:
             role_boundary += (
                 "\nThis is a repair gate, not a findings-only report. Inventory every approved "
@@ -1667,6 +1678,15 @@ def _prompt(
                 "aligned:true and verified:true with no unresolved meaningful drift. If an "
                 "external tool blocker prevents repair or capture, report that blocker truthfully "
                 "instead."
+            )
+        if node["id"] == "sync-mobile-design":
+            role_boundary += (
+                "\nRun one native capture-environment preflight before any repair attempt. "
+                "Confirm the required Android device/emulator and iOS Simulator toolchain can "
+                "actually launch. If either required lane is unavailable, write the truthful "
+                "capture-environment evidence and stop this node immediately without repair "
+                "retries, backend revalidation, or repeated probes. Never treat route presence "
+                "or headless widget tests as a substitute for native captures."
             )
     if phase == "backend":
         compose_project = _backend_compose_project_name(project)

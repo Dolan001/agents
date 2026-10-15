@@ -3952,6 +3952,46 @@ def test_start_mobile_stops_without_building_declared_web(
     assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
 
 
+def test_mobile_prompts_reject_shared_placeholders_and_preflight_native_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Mobile account\n\n"
+        "Mobile framework: Flutter\n"
+        "Backend framework: FastAPI\n\n"
+        "- ACC-001 User can manage an account on Android and iOS.\n"
+    )
+    prompts: list[str] = []
+
+    def recording_agent(*args: object, **kwargs: object) -> dict[str, object]:
+        prompts.append(str(args[2]))
+        return _fake_agent(*args, **kwargs)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", recording_agent)
+    assert (
+        main(
+            [
+                "start-mobile",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+            ]
+        )
+        == 0
+    )
+    implementation = next(
+        prompt for prompt in prompts if "mobile/implement-mobile-slices" in prompt
+    )
+    design = next(prompt for prompt in prompts if "mobile/sync-mobile-design" in prompt)
+    assert "shared generic screen" in implementation
+    assert "button with an empty callback" in implementation
+    assert "native capture-environment preflight" in design
+    assert "stop this node immediately without repair retries" in design
+
+
 def test_start_build_requires_only_missing_framework_before_initialization(
     tmp_path: Path, capsys: object
 ) -> None:
