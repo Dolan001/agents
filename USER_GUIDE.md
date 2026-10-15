@@ -275,13 +275,14 @@ then stops after the mobile gate.
 ### `$start-backend`
 
 ```text
-$start-backend --backend <django-drf|fastapi> [client selection] [shared start flags]
+$start-backend --backend <django-drf|fastapi> [--verification-only | --full-revalidation] [shared start flags]
 ./.agents/bin/ai start-backend --project . --adapter codex \
-  --backend <django-drf|fastapi> [client selection] [shared start flags]
+  --backend <django-drf|fastapi> [--verification-only | --full-revalidation] [shared start flags]
 ```
 
-Requires at least one selected client, runs missing client prerequisites, builds the PostgreSQL
-backend, and stops before integration.
+Builds and verifies the PostgreSQL backend before client implementation, then stops at the backend
+gate. `--verification-only` reruns the final backend matrix from existing verified slices;
+`--full-revalidation` deliberately reopens every backend slice and the final matrix.
 
 ### `$start-integration`
 
