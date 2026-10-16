@@ -10,7 +10,7 @@ conversation, create `REQUIREMENTS.md` containing the non-secret requirements an
 placeholders; never write a supplied credential value. Then invoke:
 
 ```text
-./.agents/bin/ai generate-prd --project . --requirements <path> --output PRD.md --adapter codex
+./.agents/bin/ai generate-prd --project . --requirements <path> --output PRD.md
 ```
 
 If the result is `CREDENTIALS_BLOCKED`, report the finding locations without values. Tell the user to

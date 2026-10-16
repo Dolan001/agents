@@ -1853,6 +1853,8 @@ def _record_failure(
 
 
 def _run_adapter(project: Path, adapter: str, prompt: str) -> dict[str, Any]:
+    from .provider_selection import refresh_provider_projection
+
     config = read_json(workflow_root() / "config" / "agent-adapters.json")
     specification = config.get("adapters", {}).get(adapter) if isinstance(config, dict) else None
     if not isinstance(specification, dict):
@@ -1863,6 +1865,7 @@ def _run_adapter(project: Path, adapter: str, prompt: str) -> dict[str, Any]:
     executable = shutil.which(argv[0])
     if not executable:
         raise RuntimeError(f"agent adapter executable is unavailable: {argv[0]}")
+    refresh_provider_projection(project, adapter)
     completed = subprocess.run(  # noqa: S603 - repository-owned fixed adapter argv
         [executable, *argv[1:]],
         cwd=project,

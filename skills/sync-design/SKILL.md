@@ -11,7 +11,7 @@ description: Compare approved HTML with selected React, Next.js, and Flutter imp
 2. Invoke the deterministic workflow entry point:
 
    ```text
-   ./.agents/bin/ai sync-design --project . --adapter codex
+   ./.agents/bin/ai sync-design --project .
    ```
 
    Use `--target frontend`, `--target mobile`, or the default `all`. Use `--check-only` to prohibit

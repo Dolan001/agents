@@ -14,8 +14,9 @@ setup-workflow "https://github.com/Dolan001/agents.git"
 
 This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the
 repository as `.agents`, and runs the deterministic pack selector. With only requirements it
-initializes `base`, asks the user to reopen Codex, and points to `$prepare-project-docs`. With
-existing drafts it audits all of them together before selecting the required packs.
+initializes the provider bridge and `base`, asks the user to reopen Codex, and points to
+`$prepare-project-docs`. With existing drafts it audits all of them together before selecting the
+required packs.
 
 The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
 selects `nextjs`; Flutter selects `flutter`; and the backend selects exactly one of `drf` or
@@ -23,6 +24,24 @@ selects `nextjs`; Flutter selects `flutter`; and the backend selects exactly one
 only by an explicit AWS deployment workflow. Selection evidence is stored in
 `.ai/selected-packs.json`. Successful project-document preparation reconciles immediately, and
 build, token, and design-sync commands reconcile again before using project guidance.
+
+## Select an execution adapter
+
+Codex is the default when no adapter has been selected. To use another installed coding harness,
+run one command from the project root:
+
+```bash
+./.agents/use-adapter claude
+./.agents/use-adapter opencode
+./.agents/use-adapter gemini
+./.agents/use-adapter codex
+```
+
+Running `./.agents/use-adapter` with no name also selects Codex. Selection generates the native
+provider files and applies to subsequent workflow commands. Agent launches refresh those files when
+the selected behavior packs change. The small `.agents/use-adapter` wrapper delegates to the
+separately maintained `.agents/agent-bridge` submodule. `--adapter` remains available as a
+one-command override.
 
 ## Invocation model
 
@@ -37,8 +56,9 @@ Codex validates the request, reads the skill, and invokes the equivalent workflo
 Boolean flags such as `--push` do not take `true` or `false`; include the flag to enable it.
 Repeatable flags must be written once per value.
 
-The workflow supports Codex only. Therefore, `--adapter` accepts only `codex` and normally does not
-need to be written. Direct CLI commands support `-h` or `--help`.
+The workflow supports `codex`, `claude`, `opencode`, and `gemini`, plus the explicit
+`codex-reviewed` execution mode. Direct CLI commands support `-h` or `--help`. The examples below
+that include `--adapter codex` deliberately pin Codex; normally the flag can be omitted.
 
 ## Recommended command order
 

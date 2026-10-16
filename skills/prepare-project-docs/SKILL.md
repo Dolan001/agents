@@ -9,7 +9,7 @@ Use the optional requirements path when supplied; otherwise let the CLI discover
 `REQUIREMENTS.md` and canonical drafts:
 
 ```text
-./.agents/bin/ai prepare-project-docs --project . [--requirements <path>] --adapter codex
+./.agents/bin/ai prepare-project-docs --project . [--requirements <path>]
 ```
 
 The command audits every existing `PRD.md`, `TRD.md`, `UI_UX_SPEC.md`,

@@ -34,3 +34,7 @@
 	path = webscraping
 	url = https://github.com/Dolan001/webscraping.git
 	branch = dev
+[submodule "agent-bridge"]
+	path = agent-bridge
+	url = https://github.com/Dolan001/agent-bridge.git
+	branch = main

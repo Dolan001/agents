@@ -12,14 +12,14 @@ Require exactly one token path matching `frontend/<TOKEN_ID>/TOKEN.md`,
 First invoke diagnosis:
 
 ```text
-./.agents/bin/ai resolve-token --project . --token <path> --adapter codex
+./.agents/bin/ai resolve-token --project . --token <path>
 ```
 
 Present the returned plan and stop for explicit user approval. Do not infer approval.
 After approval, invoke:
 
 ```text
-./.agents/bin/ai resolve-token --project . --token <path> --adapter codex --approve
+./.agents/bin/ai resolve-token --project . --token <path> --approve
 ```
 
 The command automatically validates and orders optional sibling images named

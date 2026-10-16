@@ -1,6 +1,6 @@
 # Agents
 
-`agents` is a Codex-first control plane that turns a required PRD and optional
+`agents` is a provider-neutral control plane that turns a required PRD and optional
 design evidence into a verified full-stack monorepo. It coordinates specialized agents,
 skills, phase rules, framework behavior packs, deterministic checks, evidence gates,
 durable checkpoints, and safe Git delivery.
@@ -79,6 +79,7 @@ must:
 
    ```bash
    git submodule add -b dev https://github.com/Dolan001/agents.git .agents
+   git -C .agents submodule update --init agent-bridge
    ./.agents/bin/ai select-packs --project .
    ```
 
@@ -86,8 +87,9 @@ must:
    `$prepare-project-docs`; document completion immediately initializes the exact
    framework/capability packs. If
    a PRD reports missing framework choices, ask only for those choices and rerun `select-packs`.
-5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `base`, and every selected
-   behavior repository. Unselected submodule directories must remain uninitialized.
+5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `agent-bridge`, `base`, and
+   every selected behavior repository. Unselected behavior-pack submodules must remain
+   uninitialized.
 6. Make no application changes, commits, pushes, or remote branches during setup.
 7. Tell the user to reopen Codex so skill discovery refreshes.
 
@@ -111,8 +113,25 @@ inside `agents` itself:
 
 ```bash
 git submodule add -b dev https://github.com/Dolan001/agents.git .agents
+git -C .agents submodule update --init agent-bridge
 ./.agents/bin/ai select-packs --project . --prd PRD.md
 ```
+
+Codex remains the default and requires no adapter-selection command. To use another installed
+coding harness, select it once from the project root:
+
+```bash
+./.agents/use-adapter claude
+./.agents/use-adapter opencode
+./.agents/use-adapter gemini
+```
+
+Running `./.agents/use-adapter` without a name selects Codex. The command validates the provider
+executable, projects the canonical agents, skills, commands, and instructions into the provider's
+native project structure, and records the local selection. Normal `./.agents/bin/ai` commands then
+use that adapter automatically and refresh its projection from the currently selected packs; an
+explicit `--adapter` still overrides it for one command. The implementation is maintained in the
+separate `agent-bridge` repository pinned by the nested `.agents/agent-bridge` submodule.
 
 Add the required PRD at one of the auto-discovered locations:
 
@@ -168,6 +187,7 @@ Another developer can then clone the project without recursively downloading eve
 ```bash
 git clone <project-url>
 git submodule update --init .agents
+git -C .agents submodule update --init agent-bridge
 ./.agents/bin/ai select-packs --project .
 ```
 

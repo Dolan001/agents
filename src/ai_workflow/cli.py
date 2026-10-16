@@ -39,12 +39,14 @@ from .packs import (
 )
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
+from .provider_selection import PROVIDERS, resolve_adapter
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 from .tokens import resolve_token
 from .visual_diff import compare_pixels, parse_mask
 
 Command = Callable[[argparse.Namespace], int]
+ADAPTER_CHOICES = (*PROVIDERS, "codex-reviewed")
 
 
 def project_slug(value: str) -> str:
@@ -1332,6 +1334,11 @@ def add_project(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", default=".", help="Project root (default: current directory)")
 
 
+def add_adapter(parser: argparse.ArgumentParser, codex_default: str) -> None:
+    parser.add_argument("--adapter", choices=ADAPTER_CHOICES, default=None)
+    parser.set_defaults(_codex_adapter_default=codex_default)
+
+
 def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     add_project(command)
     command.add_argument("--prd")
@@ -1346,9 +1353,7 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
     command.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
-    command.add_argument(
-        "--adapter", choices=["codex", "codex-reviewed"], default="codex-reviewed"
-    )
+    add_adapter(command, "codex-reviewed")
     command.add_argument("--commit-verified", action="store_true")
     command.add_argument("--push", action="store_true")
     command.add_argument("--remaining", action="store_true", default=True)
@@ -1403,7 +1408,7 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
     one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
     one_shot.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
-    one_shot.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    add_adapter(one_shot, "codex")
     one_shot.add_argument("--execute", action="store_true")
     one_shot.add_argument("--commit-verified", action="store_true")
     one_shot.add_argument("--push", action="store_true")
@@ -1441,7 +1446,7 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--feature")
     build.add_argument("--remaining", action="store_true")
     build.add_argument("--execute", action="store_true")
-    build.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    add_adapter(build, "codex")
     build.add_argument("--commit-verified", action="store_true")
     build.add_argument("--push", action="store_true")
     build.set_defaults(handler=command_build)
@@ -1491,18 +1496,18 @@ def parser() -> argparse.ArgumentParser:
     prd.add_argument("--requirements", required=True)
     prd.add_argument("--output", default="PRD.md")
     prd.add_argument("--answer", action="append", default=[])
-    prd.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    add_adapter(prd, "codex")
     prd.set_defaults(handler=command_generate_prd)
     documents = commands.add_parser("prepare-project-docs")
     add_project(documents)
     documents.add_argument("--requirements")
     documents.add_argument("--answer", action="append", default=[])
-    documents.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    add_adapter(documents, "codex")
     documents.set_defaults(handler=command_prepare_project_documents)
     token = commands.add_parser("resolve-token")
     add_project(token)
     token.add_argument("--token", required=True)
-    token.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    add_adapter(token, "codex")
     token.add_argument("--approve", action="store_true")
     token.add_argument("--github-user")
     token.add_argument("--remote", default="origin")
@@ -1510,7 +1515,7 @@ def parser() -> argparse.ArgumentParser:
     design_sync = commands.add_parser("sync-design")
     add_project(design_sync)
     design_sync.add_argument("--target", choices=["all", "frontend", "mobile"], default="all")
-    design_sync.add_argument("--adapter", choices=["codex", "codex-reviewed"], default="codex")
+    add_adapter(design_sync, "codex")
     design_sync.add_argument("--check-only", action="store_true")
     design_sync.add_argument("--allow-baseline-update", action="store_true")
     design_sync.set_defaults(handler=command_sync_design)
@@ -1546,6 +1551,13 @@ def main(arguments: list[str] | None = None) -> int:
     args: argparse.Namespace | None = None
     try:
         args = parser().parse_args(arguments)
+        if hasattr(args, "adapter"):
+            project = Path(getattr(args, "project", ".")).expanduser().resolve()
+            args.adapter = resolve_adapter(
+                project,
+                args.adapter,
+                str(getattr(args, "_codex_adapter_default", "codex")),
+            )
         handler: Command = args.handler
         result = handler(args)
         if result == 0 and isinstance(getattr(args, "project", None), str):

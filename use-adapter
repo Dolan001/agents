@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+BRIDGE="$SCRIPT_DIR/agent-bridge/use-adapter"
+if [ ! -x "$BRIDGE" ]; then
+  echo "agent-bridge is not initialized; run: git -C .agents submodule update --init agent-bridge" >&2
+  exit 2
+fi
+exec "$BRIDGE" --agents-root "$SCRIPT_DIR" "$@"
