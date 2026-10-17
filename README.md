@@ -144,6 +144,9 @@ Supported values are `Codex`, `Claude`, `OpenCode`, `Gemini`, and `Cursor`. If t
 local selection are both absent, Codex is used. Precedence is explicit `--adapter`, local
 `use-adapter` selection, PRD directive, then Codex. PRD-producing commands accept
 `--project-adapter cursor` (or another supported provider) and write the canonical directive.
+For generated-document metadata, an existing PRD directive wins, followed by an exact directive in
+the requirements file, then `--project-adapter`, and finally Codex. Thus the generation flag never
+overwrites a provider already chosen in the supplied requirements or canonical PRD.
 
 Add the required PRD at one of the auto-discovered locations:
 

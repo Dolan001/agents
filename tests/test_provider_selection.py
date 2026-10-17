@@ -7,6 +7,7 @@ from ai_workflow.provider_selection import (
     prd_provider,
     refresh_provider_projection,
     resolve_adapter,
+    resolve_project_adapter,
     selected_provider,
 )
 
@@ -45,6 +46,23 @@ def test_local_selection_overrides_prd_provider(tmp_path: Path) -> None:
     selection.write_text("claude\n", encoding="utf-8")
 
     assert resolve_adapter(tmp_path, None, "codex-reviewed") == "claude"
+
+
+def test_project_adapter_prefers_prd_then_requirements_then_flag(tmp_path: Path) -> None:
+    requirements = tmp_path / "REQUIREMENTS.md"
+    requirements.write_text("AI workflow adapter: Gemini\n", encoding="utf-8")
+
+    assert resolve_project_adapter(tmp_path, "REQUIREMENTS.md", "cursor") == "gemini"
+
+    (tmp_path / "PRD.md").write_text(
+        "## Build Directives\nAI workflow adapter: Claude\n", encoding="utf-8"
+    )
+    assert resolve_project_adapter(tmp_path, "REQUIREMENTS.md", "cursor") == "claude"
+
+
+def test_project_adapter_uses_flag_then_codex_fallback(tmp_path: Path) -> None:
+    assert resolve_project_adapter(tmp_path, "REQUIREMENTS.md", "cursor") == "cursor"
+    assert resolve_project_adapter(tmp_path, None, None) == "codex"
 
 
 def test_codex_does_not_require_optional_bridge(tmp_path: Path) -> None:

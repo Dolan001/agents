@@ -39,7 +39,7 @@ from .packs import (
 )
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
-from .provider_selection import PROVIDERS, prd_provider, resolve_adapter
+from .provider_selection import PROVIDERS, resolve_adapter, resolve_project_adapter
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 from .tokens import resolve_token
@@ -1181,7 +1181,7 @@ def command_clean_state(args: argparse.Namespace) -> int:
 
 def command_generate_prd(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
-    project_adapter = args.project_adapter or prd_provider(project) or "codex"
+    project_adapter = resolve_project_adapter(project, args.requirements, args.project_adapter)
     code, payload = generate_prd(
         project,
         args.requirements,
@@ -1210,7 +1210,7 @@ def command_generate_prd(args: argparse.Namespace) -> int:
 
 def command_prepare_project_documents(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
-    project_adapter = args.project_adapter or prd_provider(project) or "codex"
+    project_adapter = resolve_project_adapter(project, args.requirements, args.project_adapter)
     code, payload = prepare_project_documents(
         project,
         args.requirements,

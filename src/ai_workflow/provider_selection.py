@@ -18,9 +18,7 @@ PROVIDER_LABELS = {
 }
 SELECTION = Path(".agent-bridge-state/selected-adapter")
 _PRD_CANDIDATES = ("docs/PRD.md", "PRD.md", "docs/prd.md", "prd.md")
-_ADAPTER_DIRECTIVE = re.compile(
-    r"(?m)^AI workflow adapter:[ \t]*(Codex|Claude|OpenCode|Gemini|Cursor)[ \t]*$"
-)
+_ADAPTER_DIRECTIVE = re.compile(r"(?mi)^AI workflow adapter:[ \t]*(.*?)[ \t]*$")
 
 
 def selected_provider(project: Path) -> str:
@@ -29,6 +27,23 @@ def selected_provider(project: Path) -> str:
         return "codex"
     provider = path.read_text(encoding="utf-8").strip()
     return provider if provider in PROVIDERS else "codex"
+
+
+def declared_provider(path: Path) -> str | None:
+    """Return one canonical adapter directive from a document."""
+    if not path.is_file():
+        return None
+    matches = _ADAPTER_DIRECTIVE.findall(path.read_text(encoding="utf-8"))
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise RuntimeError(f"document must contain at most one AI workflow adapter: {path}")
+    labels = {label.lower(): provider for provider, label in PROVIDER_LABELS.items()}
+    provider = labels.get(matches[0].lower())
+    if provider is None:
+        supported = ", ".join(PROVIDER_LABELS.values())
+        raise RuntimeError(f"unsupported AI workflow adapter in {path}: use {supported}")
+    return provider
 
 
 def prd_provider(project: Path) -> str | None:
@@ -44,11 +59,24 @@ def prd_provider(project: Path) -> str | None:
         unique[(stat.st_dev, stat.st_ino)] = candidate
     if len(unique) != 1:
         return None
-    match = _ADAPTER_DIRECTIVE.search(next(iter(unique.values())).read_text(encoding="utf-8"))
-    if not match:
-        return None
-    labels = {label: provider for provider, label in PROVIDER_LABELS.items()}
-    return labels[match.group(1)]
+    return declared_provider(next(iter(unique.values())))
+
+
+def resolve_project_adapter(
+    project: Path, requirements_value: str | None, explicit: str | None
+) -> str:
+    """Resolve generated-document metadata without overriding existing source declarations."""
+    canonical = prd_provider(project)
+    if canonical:
+        return canonical
+    if requirements_value:
+        candidate = Path(requirements_value)
+        requirements = (candidate if candidate.is_absolute() else project / candidate).resolve()
+        if requirements == project or project in requirements.parents:
+            declared = declared_provider(requirements)
+            if declared:
+                return declared
+    return explicit or "codex"
 
 
 def resolve_adapter(project: Path, explicit: str | None, codex_default: str) -> str:
