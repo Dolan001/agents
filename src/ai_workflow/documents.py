@@ -16,7 +16,14 @@ from .frameworks import detect_prd_frameworks
 from .io import read_json, write_json
 from .model import utc_now
 from .pipeline import workflow_root
-from .prd import architecture_decisions, sanitize_text, validate_decision_sources, validate_prd
+from .prd import (
+    architecture_decisions,
+    sanitize_text,
+    set_workflow_adapter,
+    validate_decision_sources,
+    validate_prd,
+)
+from .provider_selection import PROVIDER_LABELS
 
 DOCUMENT_CONTRACT_VERSION = 1
 DOCUMENTS: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -373,6 +380,7 @@ def _prompt(
     assessment: Path,
     candidates: dict[str, Path],
     failures: list[str] | None,
+    project_adapter: str,
 ) -> str:
     root = workflow_root()
     affected = _repair_targets(failures)
@@ -399,6 +407,7 @@ Skill: {root / "base" / "skills" / "prepare-project-documents" / "SKILL.md"}
 Assessment schema: {root / "schemas" / "project-documents-intake.schema.json"}
 Required assessment: {assessment}
 Required candidates: {candidate_map}
+Required AI workflow adapter: {PROVIDER_LABELS[project_adapter]}
 {repair}
 
 Read the agent, skill, its document contract, source map, every sanitized source listed by the map,
@@ -417,6 +426,8 @@ When ready, ensure all five complete candidates exist and write a ready assessme
 questions. On an initial pass, write every candidate. On a repair pass, modify only the explicitly
 named repair targets and retain the other candidates exactly. Follow the exact titles, headings,
 stable PRD identifiers, traceability, supported stack profiles, PostgreSQL and monorepo workflow.
+In the PRD `## Build Directives`, include exactly
+`AI workflow adapter: {PROVIDER_LABELS[project_adapter]}`.
 Keep unrequested deployment explicitly deferred. Write credential names, owners, environments, and
 destinations only—never values.
 """
@@ -460,6 +471,7 @@ def prepare_project_documents(
     requirements_value: str | None,
     answers: list[str],
     adapter: str,
+    project_adapter: str = "codex",
 ) -> tuple[int, dict[str, Any]]:
     """Audit/generate every canonical document, pausing only for user-owned decisions."""
     requirements = _discover_requirements(project, requirements_value)
@@ -508,6 +520,7 @@ def prepare_project_documents(
         isinstance(prior_state, dict)
         and prior_state.get("source_signature") == source_signature
         and prior_state.get("contract_version") == DOCUMENT_CONTRACT_VERSION
+        and prior_state.get("workflow_adapter") == project_adapter
     )
     if not answers and same_source and prior_state.get("status") == "ready":
         validation = validate_document_set(project)
@@ -542,6 +555,7 @@ def prepare_project_documents(
         "contract_version": DOCUMENT_CONTRACT_VERSION,
         "source_signature": source_signature,
         "requirements": requirements.relative_to(project).as_posix() if requirements else None,
+        "workflow_adapter": project_adapter,
         "updated_at": utc_now(),
     }
     if findings:
@@ -576,6 +590,7 @@ def prepare_project_documents(
                 assessment_path,
                 candidates,
                 failures,
+                project_adapter,
             ),
         )
         if result["returncode"] != 0:
@@ -621,6 +636,9 @@ def prepare_project_documents(
                     candidates["PRD.md"].read_text(encoding="utf-8"), assessment
                 )
             )
+        if not failures and candidates["PRD.md"].is_file():
+            set_workflow_adapter(candidates["PRD.md"], project_adapter)
+            failures = validate_document_candidates(candidates)
         write_json(
             root / "validation.json",
             {"passed": not failures, "attempt": attempt + 1, "failures": failures},

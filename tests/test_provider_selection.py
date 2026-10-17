@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from ai_workflow.provider_selection import (
+    prd_provider,
     refresh_provider_projection,
     resolve_adapter,
     selected_provider,
@@ -22,6 +23,27 @@ def test_saved_provider_is_selected(tmp_path: Path) -> None:
     selection.write_text("claude\n", encoding="utf-8")
 
     assert selected_provider(tmp_path) == "claude"
+    assert resolve_adapter(tmp_path, None, "codex-reviewed") == "claude"
+
+
+def test_prd_provider_is_used_without_local_selection(tmp_path: Path) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Product Requirements Document\n\n## Build Directives\nAI workflow adapter: Cursor\n",
+        encoding="utf-8",
+    )
+
+    assert prd_provider(tmp_path) == "cursor"
+    assert resolve_adapter(tmp_path, None, "codex-reviewed") == "cursor"
+
+
+def test_local_selection_overrides_prd_provider(tmp_path: Path) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "## Build Directives\nAI workflow adapter: Cursor\n", encoding="utf-8"
+    )
+    selection = tmp_path / ".agent-bridge-state/selected-adapter"
+    selection.parent.mkdir()
+    selection.write_text("claude\n", encoding="utf-8")
+
     assert resolve_adapter(tmp_path, None, "codex-reviewed") == "claude"
 
 

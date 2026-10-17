@@ -39,7 +39,7 @@ from .packs import (
 )
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
-from .provider_selection import PROVIDERS, resolve_adapter
+from .provider_selection import PROVIDERS, prd_provider, resolve_adapter
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 from .tokens import resolve_token
@@ -1181,12 +1181,14 @@ def command_clean_state(args: argparse.Namespace) -> int:
 
 def command_generate_prd(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    project_adapter = args.project_adapter or prd_provider(project) or "codex"
     code, payload = generate_prd(
         project,
         args.requirements,
         args.output,
         args.answer,
         args.adapter,
+        project_adapter,
     )
     if code == 0 and payload.get("status") == "READY":
         prd = require_prd(project, str(payload["output"]))
@@ -1208,11 +1210,13 @@ def command_generate_prd(args: argparse.Namespace) -> int:
 
 def command_prepare_project_documents(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
+    project_adapter = args.project_adapter or prd_provider(project) or "codex"
     code, payload = prepare_project_documents(
         project,
         args.requirements,
         args.answer,
         args.adapter,
+        project_adapter,
     )
     if code == 0 and payload.get("status") == "READY":
         prd_entry = next(item for item in payload["documents"] if item["name"] == "PRD.md")
@@ -1496,12 +1500,14 @@ def parser() -> argparse.ArgumentParser:
     prd.add_argument("--requirements", required=True)
     prd.add_argument("--output", default="PRD.md")
     prd.add_argument("--answer", action="append", default=[])
+    prd.add_argument("--project-adapter", choices=PROVIDERS)
     add_adapter(prd, "codex")
     prd.set_defaults(handler=command_generate_prd)
     documents = commands.add_parser("prepare-project-docs")
     add_project(documents)
     documents.add_argument("--requirements")
     documents.add_argument("--answer", action="append", default=[])
+    documents.add_argument("--project-adapter", choices=PROVIDERS)
     add_adapter(documents, "codex")
     documents.set_defaults(handler=command_prepare_project_documents)
     token = commands.add_parser("resolve-token")

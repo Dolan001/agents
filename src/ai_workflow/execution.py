@@ -1865,11 +1865,19 @@ def _run_adapter(project: Path, adapter: str, prompt: str) -> dict[str, Any]:
     executable = shutil.which(argv[0])
     if not executable:
         raise RuntimeError(f"agent adapter executable is unavailable: {argv[0]}")
+    prompt_transport = specification.get("prompt_transport", "stdin")
+    command = [executable, *argv[1:]]
+    prompt_input: str | None = prompt
+    if prompt_transport == "argument":
+        command.append(prompt)
+        prompt_input = None
+    elif prompt_transport != "stdin":
+        raise RuntimeError(f"invalid adapter prompt transport: {adapter}")
     refresh_provider_projection(project, adapter)
     completed = subprocess.run(  # noqa: S603 - repository-owned fixed adapter argv
-        [executable, *argv[1:]],
+        command,
         cwd=project,
-        input=prompt,
+        input=prompt_input,
         text=True,
         capture_output=True,
         timeout=int(config.get("timeout_seconds", 3600)),

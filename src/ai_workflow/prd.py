@@ -15,6 +15,7 @@ from .io import read_json, write_json
 from .issues import resolve_build_issues, try_track_build_issue
 from .model import utc_now
 from .pipeline import workflow_root
+from .provider_selection import PROVIDER_LABELS
 
 INTAKE_CONTRACT_VERSION = 2
 REQUIRED_HEADINGS = (
@@ -60,6 +61,7 @@ _TOKEN_PREFIX = re.compile(
     re.I,
 )
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
+_WORKFLOW_ADAPTER = re.compile(r"(?mi)^AI workflow adapter:[ \t]*(.*?)[ \t]*$")
 
 _CORE_DECISIONS = (
     "repository layout",
@@ -614,6 +616,14 @@ def validate_prd(path: Path) -> list[str]:
         errors.append("ready PRD contains TODO, TBD, or unknown")
 
     directives = _section(text, "Build Directives")
+    adapter_lines = _WORKFLOW_ADAPTER.findall(directives)
+    canonical_adapters = set(PROVIDER_LABELS.values())
+    if len(adapter_lines) > 1:
+        errors.append("exactly one AI workflow adapter directive is allowed")
+    elif adapter_lines and adapter_lines[0] not in canonical_adapters:
+        errors.append(
+            "AI workflow adapter must be Codex, Claude, OpenCode, Gemini, or Cursor"
+        )
     if re.search(r"(?mi)^\s*(?:Frontend|Mobile|Backend) framework:\s*None\s*$", directives):
         errors.append("unused framework directives must be omitted, not set to None")
     try:
@@ -682,6 +692,25 @@ def validate_prd(path: Path) -> list[str]:
     return errors
 
 
+def set_workflow_adapter(path: Path, provider: str) -> None:
+    """Set the canonical project adapter directive in a generated PRD candidate."""
+    label = PROVIDER_LABELS.get(provider)
+    if not label:
+        raise RuntimeError(f"unsupported project workflow adapter: {provider}")
+    if not path.is_file():
+        raise RuntimeError("candidate PRD is missing")
+    text = path.read_text(encoding="utf-8")
+    heading = re.search(r"(?m)^## Build Directives\s*$", text)
+    if not heading:
+        return
+    section_end = re.search(r"(?m)^## ", text[heading.end() :])
+    end = heading.end() + (section_end.start() if section_end else len(text[heading.end() :]))
+    section = text[heading.end() : end]
+    section = re.sub(r"(?mi)^AI workflow adapter:.*(?:\n|$)", "", section)
+    section = f"\nAI workflow adapter: {label}\n" + section.lstrip("\n")
+    path.write_text(text[: heading.end()] + section + text[end:], encoding="utf-8")
+
+
 def _assessment(path: Path) -> dict[str, Any]:
     value = read_json(path)
     schema = read_json(workflow_root() / "schemas" / "prd-intake.schema.json")
@@ -741,6 +770,7 @@ def _prompt(
     candidate: Path,
     assessment: Path,
     validation_failures: list[str] | None,
+    project_adapter: str,
 ) -> str:
     root = workflow_root()
     repair = (
@@ -760,6 +790,7 @@ Skill: {root / "base" / "skills" / "create-build-ready-prd" / "SKILL.md"}
 Assessment schema: {root / "schemas" / "prd-intake.schema.json"}
 Required assessment output: {assessment}
 Required candidate output: {candidate}
+Required AI workflow adapter: {PROVIDER_LABELS[project_adapter]}
 {repair}
 
 Read the primary agent, skill, its complete PRD contract, monorepo profile, and only the backend,
@@ -774,7 +805,9 @@ only for user-owned outcomes, not implementation internals. Every question must 
 plain language, and include two to four concise choices plus one safe recommended answer. Technical
 details belong in visible assumptions. Do not claim readiness while a user-owned blocker remains.
 When status is ready, write the complete candidate Markdown at the required path and use an empty
-question list. Never place a credential value in either output.
+question list. In `## Build Directives`, include exactly
+`AI workflow adapter: {PROVIDER_LABELS[project_adapter]}`. Never place a credential value in either
+output.
 """
 
 
@@ -784,6 +817,7 @@ def generate_prd(
     output_value: str,
     answers: list[str],
     adapter: str,
+    project_adapter: str = "codex",
 ) -> tuple[int, dict[str, Any]]:
     requirements = _relative_path(project, requirements_value, "requirements", True)
     output = _relative_path(project, output_value, "PRD output", False)
@@ -809,6 +843,7 @@ def generate_prd(
         isinstance(prior_state, dict)
         and prior_state.get("source_sha256") == source_sha256
         and prior_state.get("intake_contract_version") == INTAKE_CONTRACT_VERSION
+        and prior_state.get("workflow_adapter") == project_adapter
     )
     if (
         not answers
@@ -850,6 +885,7 @@ def generate_prd(
         "source_sha256": source_sha256,
         "sanitized_sha256": hashlib.sha256(sanitized_text.encode()).hexdigest(),
         "credential_findings": all_findings,
+        "workflow_adapter": project_adapter,
         "updated_at": utc_now(),
     }
     state: dict[str, Any]
@@ -885,6 +921,7 @@ def generate_prd(
                 candidate_path,
                 assessment_path,
                 validation_failures,
+                project_adapter,
             ),
         )
         if result["returncode"] != 0:
@@ -908,6 +945,8 @@ def generate_prd(
                 "decision_sources": assessment["decision_sources"],
                 "resume": f"$generate-prd --requirements {requirements.relative_to(project)}",
             }
+        if candidate_path.is_file():
+            set_workflow_adapter(candidate_path, project_adapter)
         validation_failures = validate_prd(candidate_path)
         if candidate_path.is_file():
             validation_failures.extend(
@@ -927,6 +966,7 @@ def generate_prd(
                 "questions": [],
                 "assumptions": assessment["assumptions"],
                 "decision_sources": assessment["decision_sources"],
+                "workflow_adapter": project_adapter,
                 "validation": {"passed": True, "attempts": attempt + 1},
             }
             write_json(state_path, state)

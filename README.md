@@ -124,6 +124,7 @@ coding harness, select it once from the project root:
 ./.agents/use-adapter claude
 ./.agents/use-adapter opencode
 ./.agents/use-adapter gemini
+./.agents/use-adapter cursor
 ```
 
 Running `./.agents/use-adapter` without a name selects Codex. The command validates the provider
@@ -132,6 +133,17 @@ native project structure, and records the local selection. Normal `./.agents/bin
 use that adapter automatically and refresh its projection from the currently selected packs; an
 explicit `--adapter` still overrides it for one command. The implementation is maintained in the
 separate `agent-bridge` repository pinned by the nested `.agents/agent-bridge` submodule.
+
+A project can also declare its normal harness in the PRD `## Build Directives` section:
+
+```text
+AI workflow adapter: Cursor
+```
+
+Supported values are `Codex`, `Claude`, `OpenCode`, `Gemini`, and `Cursor`. If the directive and a
+local selection are both absent, Codex is used. Precedence is explicit `--adapter`, local
+`use-adapter` selection, PRD directive, then Codex. PRD-producing commands accept
+`--project-adapter cursor` (or another supported provider) and write the canonical directive.
 
 Add the required PRD at one of the auto-discovered locations:
 
