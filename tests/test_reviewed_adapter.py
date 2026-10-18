@@ -30,6 +30,7 @@ def test_lifecycle_commands_default_to_reviewed_adapter(
     assert cli.parse_args([*arguments, "--adapter", "claude"]).adapter == "claude"
     assert cli.parse_args([*arguments, "--adapter", "opencode"]).adapter == "opencode"
     assert cli.parse_args([*arguments, "--adapter", "gemini"]).adapter == "gemini"
+    assert cli.parse_args([*arguments, "--adapter", "cursor"]).adapter == "cursor"
     with pytest.raises(SystemExit):
         cli.parse_args([*arguments, "--adapter", "unrestricted"])
 

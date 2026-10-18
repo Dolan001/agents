@@ -35,6 +35,7 @@ run one command from the project root:
 ./.agents/use-adapter claude
 ./.agents/use-adapter opencode
 ./.agents/use-adapter gemini
+./.agents/use-adapter cursor
 ./.agents/use-adapter codex
 ```
 
@@ -43,6 +44,11 @@ provider files and applies to subsequent workflow commands. Agent launches refre
 the selected behavior packs change. The small `.agents/use-adapter` wrapper delegates to the
 separately maintained `.agents/agent-bridge` submodule. `--adapter` remains available as a
 one-command override.
+
+The bridge makes provider-native agents, skills, commands, and rules discoverable. Lifecycle hooks,
+evidence gates, checkpoints, and Git safety still run through `./.agents/bin/ai`; opening a direct
+provider chat does not run those controls automatically. Invoke the generated command or skill for
+a controlled build. Gemini and Cursor require their respective CLI executables before selection.
 
 ## Invocation model
 

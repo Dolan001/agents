@@ -137,6 +137,11 @@ use that adapter automatically and refresh its projection from the currently sel
 explicit `--adapter` still overrides it for one command. The implementation is maintained in the
 separate `agent-bridge` repository pinned by the nested `.agents/agent-bridge` submodule.
 
+The projected provider files make agents, skills, commands, and rules discoverable; they do not
+install equivalent native event hooks. Controlled build lifecycle hooks, evidence gates,
+checkpoints, and Git boundaries run through `./.agents/bin/ai` with any selected adapter. A direct
+free-form provider chat does not execute that workflow lifecycle on its own.
+
 A project can also declare its normal harness in the PRD `## Build Directives` section:
 
 ```text

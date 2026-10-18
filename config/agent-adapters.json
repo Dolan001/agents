@@ -4,7 +4,7 @@
     "codex": {"argv": ["codex", "exec", "--sandbox", "workspace-write", "--ephemeral", "-"], "prompt_transport": "stdin"},
     "codex-reviewed": {"argv": ["codex", "exec", "--approve-for-me", "-"], "prompt_transport": "stdin"},
     "claude": {"argv": ["claude", "--print", "--permission-mode", "auto", "--no-session-persistence"], "prompt_transport": "stdin"},
-    "opencode": {"argv": ["opencode", "run"], "prompt_transport": "stdin"},
+    "opencode": {"argv": ["opencode", "run"], "prompt_transport": "argument"},
     "gemini": {"argv": ["gemini", "--prompt", "Follow the workflow instructions supplied on standard input."], "prompt_transport": "stdin"},
     "cursor": {"argv": ["agent", "-p", "--force", "--output-format", "text"], "prompt_transport": "argument"}
   },
