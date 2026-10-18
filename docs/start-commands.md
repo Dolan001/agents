@@ -43,6 +43,15 @@ The pack READMEs explain what each selection generates: `drf`, `fastapi`, `react
 `flutter`, `desktop`, `rag`, `webscraping`, and `aws`. These directories are instructions, not
 application templates. Generated code belongs in the target project's `apps/` or `packages/`
 directories. `$workflow-status` reports a failed gate and its evidence without changing the build.
+It also reports overall verified progress as a percentage. `start-build` and `resume-build`
+return that same overall percentage and print updates after each phase; an individual
+stage command reports the requested stage's percentage only. Run
+`./.agents/bin/ai status --project .` (or add `--json`) during a build to inspect
+current node-level progress. The percentage counts current verified node artifacts and
+accepted phase gates, not elapsed time or estimated remaining time. Disabled phases
+and deployment are excluded from the ordinary build total; explicit `start-deployment`
+tracks deployment separately. Before task planning, the percentage is unavailable.
+Revalidation can lower it when a checkpoint becomes stale.
 
 `start-build`, `resume-build`, and legacy `one-shot` always skip deployment. An explicit
 `Deployment provider: AWS` declaration is retained for a later `$start-deployment --deployment aws`

@@ -45,6 +45,10 @@ These entrypoints execute work; they are not explanatory prompt templates.
    agent repair or repeat the verifier. HTML approval belongs to the independent
    verifier and finishes within the same invocation; no user HTML review is required.
 9. Report the requested stopping point and the next optional command after success.
+   Include the CLI's `progress` percentage and scope: overall for `start-build` and
+   `resume-build`, requested stage for an individual start command. Do not call it an
+   elapsed-time estimate. If the build stops early, use `ai status --json` to report
+   the latest durable checkpoint percentage.
    Backend completion requires disposable PostgreSQL, deterministic synthetic seed data, live HTTP
    success/negative/auth/authorization checks, persistence round-trip, OpenAPI verification, and
    cleanup. Frontend and mobile completion require hash-bound live integration evidence; fixture-only

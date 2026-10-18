@@ -39,6 +39,7 @@ from .packs import (
 )
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
+from .progress import progress_snapshot
 from .provider_selection import PROVIDERS, resolve_adapter, resolve_project_adapter
 from .quality_loop import approve_lesson, evaluate_manifest, propose_lessons
 from .requirements import parse_prd, save_requirement_outputs
@@ -450,7 +451,7 @@ def command_one_shot(args: argparse.Namespace) -> int:
             refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
             queue = refreshed
             selected = refreshed["tasks"]
-    print_json({"status": "complete", "phases": results})
+    print_json({"status": "complete", "phases": results, "progress": progress_snapshot(project)})
     return 0
 
 
@@ -941,6 +942,15 @@ def command_start(args: argparse.Namespace) -> int:
     completed = set(StateStore(project).load().get("completed_phases", []))
     results = []
     terminal_phase = "design" if target in {"design-spec", "html"} else target
+    progress_scope = "overall" if defer_deployment else terminal_phase
+    initial_progress = progress_snapshot(project, progress_scope)
+    if initial_progress["percent"] is not None:
+        print(
+            f"progress ({progress_scope}): {initial_progress['percent']}% "
+            f"({initial_progress['completed_units']}/{initial_progress['total_units']} "
+            "verified units)",
+            file=sys.stderr,
+        )
     for phase in ("frontend",) if frontend_only else PHASES[1:]:
         if target == "mobile" and phase == "frontend" and phase not in completed:
             continue
@@ -1012,6 +1022,13 @@ def command_start(args: argparse.Namespace) -> int:
             verification_only=verification_only and phase == "backend",
         )
         results.append(phase_result)
+        progress = progress_snapshot(project, progress_scope)
+        if progress["percent"] is not None:
+            print(
+                f"progress ({progress_scope}): {progress['percent']}% "
+                f"({progress['completed_units']}/{progress['total_units']} verified units)",
+                file=sys.stderr,
+            )
         if phase == "backend" and not phase_result.get("partial"):
             _record_backend_prerequisite_snapshot(project)
         if phase == "requirements":
@@ -1027,6 +1044,9 @@ def command_start(args: argparse.Namespace) -> int:
             "requested_stage": target,
             "results": results,
             "html_approval": html_approval,
+            "progress": progress_snapshot(
+                project, "overall" if defer_deployment else terminal_phase
+            ),
         }
     )
     return 0
@@ -1122,6 +1142,7 @@ def command_status(args: argparse.Namespace) -> int:
     packs = selected_pack_status(project)
     payload = {
         "state": state,
+        "progress": progress_snapshot(project),
         "task_count": len(queue["tasks"]),
         "tasks": queue["tasks"],
         "issues": issues,
@@ -1131,6 +1152,14 @@ def command_status(args: argparse.Namespace) -> int:
         print_json(payload)
     else:
         print(f"{state['project_id']}: {state['status']} / {state['current_phase']}")
+        progress = payload["progress"]
+        if progress["percent"] is None:
+            print("progress: planning (task plan not ready)")
+        else:
+            print(
+                f"progress: {progress['percent']}% overall "
+                f"({progress['completed_units']}/{progress['total_units']} verified units)"
+            )
         print(f"tasks: {len(queue['tasks'])}")
         print(f"issues: {issues['unresolved']} unresolved / {issues['resolved']} resolved")
         if packs:

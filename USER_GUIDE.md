@@ -463,6 +463,10 @@ $workflow-status [--project <directory>]
 The only user-selectable flag is `--project` (default `.`). JSON mode is always used internally.
 This command is read-only. Its output includes build-issue totals and links to
 `.ai/issues/REPORT.md` and the append-only `.ai/issues/events.jsonl` history.
+It also includes `progress`: an overall percentage and per-phase breakdown based on
+current verified node artifacts and accepted phase gates. Run it while a build is active
+for the latest saved checkpoint. The percentage is unavailable until tasks are planned;
+it can decrease if inputs invalidate an earlier checkpoint. It is not a time estimate.
 
 ### `$resume-build`
 
@@ -472,7 +476,8 @@ $resume-build [shared start flags]
 ```
 
 Resumes only invalid or incomplete nodes from durable checkpoints. Preserve saved framework and Git
-choices. `--push` remains opt-in.
+choices. Its result reports the overall non-deployment percentage, as does `$start-build`.
+Individual stage commands report only their requested stage's percentage. `--push` remains opt-in.
 
 ### `$sync-design`
 

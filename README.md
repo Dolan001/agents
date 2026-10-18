@@ -365,6 +365,10 @@ orchestration. For web/mobile, the normal order is requirements and contracts, v
 design specification, approved HTML, live-integrated clients, system testing, and delivery. A
 local-only Python package skips backend and UI design; a desktop GUI uses its selected design and
 desktop gates. A stage command runs only its missing prerequisites and stops at its named gate.
+`$start-build` and `$resume-build` report overall verified progress; individual stage commands
+report only their requested stage. Use `$workflow-status` during a build for the current overall
+percentage and phase breakdown. Progress counts verified checkpoints and phase gates, not time;
+it is unavailable until the task plan exists and can decrease if inputs invalidate prior work.
 
 For a web/mobile project, a practical stage-by-stage command sequence is:
 
