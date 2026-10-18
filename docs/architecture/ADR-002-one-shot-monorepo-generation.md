@@ -14,11 +14,12 @@ the separate target monorepo.
 
 1. Validate the PRD and target location.
 2. Discover supplied code and design evidence without mutation.
-3. Select web and/or Flutter mobile behavior packs plus one backend behavior pack.
+3. Select PRD-declared web, Flutter mobile, desktop GUI, Python package, and capability packs;
+   select a backend for web/mobile or when the product explicitly needs an API.
 4. Reconcile requirements and current implementation state.
 5. Create architecture decisions, a feature plan, and task contracts.
 6. Acquire target path leases.
-7. Generate or modify requirement-backed vertical slices under `apps/`.
+7. Generate or modify requirement-backed vertical slices under `apps/` or `packages/python/`.
 8. Generate contracts and shared packages only when requirements need them.
 9. Run project-owned checks and independent verification.
 10. Record durable evidence and create safe feature commits.

@@ -4,7 +4,7 @@ One-shot development operates on a user-supplied target, never inside a framewor
 pack and never inside this orchestration repository.
 
 The orchestrator validates the PRD, detects new versus brownfield mode, selects the
-configured web, Flutter mobile, and backend behavior packs, performs discovery and reconciliation,
+PRD-selected web, Flutter mobile, Python GUI/package, backend, and capability packs, performs discovery and reconciliation,
 creates vertical-slice task contracts, and dispatches specialized agents. Agents write
 only to leased target-monorepo paths. Framework-pack files are read-only behavioral
 context and are never copied into the application.

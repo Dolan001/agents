@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -38,6 +39,7 @@ from .io import append_jsonl, read_json, write_json
 from .issues import resolve_build_issues, resolve_matching_build_issues, try_track_build_issue
 from .model import PHASES, StateStore, utc_now
 from .pipeline import node_cache_key, workflow_root
+from .quality_loop import approved_guidance, record_attempt
 from .structure import (
     validate_backend_evidence,
     validate_client_integration_evidence,
@@ -220,16 +222,13 @@ def _client_foundation_ready(project: Path, phase: str, payload: Any) -> bool:
         gui_selected = frameworks.get("desktop", "unknown") != "unknown"
         package_mode = frameworks.get("python_package", "unknown")
         if gui_selected and (
-            not (app / "pyproject.toml").is_file()
-            or not any((app / "src").glob("*/__main__.py"))
+            not (app / "pyproject.toml").is_file() or not any((app / "src").glob("*/__main__.py"))
         ):
             return False
         if package_mode != "unknown":
             package_root = project / "packages" / "python"
             pyproject = package_root / "pyproject.toml"
-            if not pyproject.is_file() or not any(
-                (package_root / "src").glob("*/__init__.py")
-            ):
+            if not pyproject.is_file() or not any((package_root / "src").glob("*/__init__.py")):
                 return False
             try:
                 metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -237,8 +236,7 @@ def _client_foundation_ready(project: Path, phase: str, payload: Any) -> bool:
                 return False
             project_metadata = metadata.get("project", {})
             if not isinstance(project_metadata, dict) or not all(
-                isinstance(project_metadata.get(key), str)
-                for key in ("name", "version")
+                isinstance(project_metadata.get(key), str) for key in ("name", "version")
             ):
                 return False
             if package_mode in {"cli", "both"} and not project_metadata.get("scripts"):
@@ -266,9 +264,12 @@ def _implementation_blocker(payload: Any) -> str | None:
             continue
         blockers = item.get("blockers")
         if str(item.get("status", "")).upper() in {"BLOCKED", "FAILED", "NEEDS_INPUT"} or blockers:
-            message = "Implementation blocked: " + json.dumps(
-                blockers or item.get("reason") or item.get("status"), ensure_ascii=False
-            )[:2000]
+            message = (
+                "Implementation blocked: "
+                + json.dumps(
+                    blockers or item.get("reason") or item.get("status"), ensure_ascii=False
+                )[:2000]
+            )
             recovery = payload.get("recovery", {})
             if isinstance(recovery, dict) and recovery.get("next_action"):
                 message += "; next action: " + str(recovery["next_action"])
@@ -284,7 +285,11 @@ def _evidence_format_errors(path: Path) -> list[str]:
     except json.JSONDecodeError as error:
         return [f"Invalid JSON: {error}"]
     if not isinstance(payload, dict) or not {
-        "feature_id", "requirement_ids", "changed_files", "checks", "reviews"
+        "feature_id",
+        "requirement_ids",
+        "changed_files",
+        "checks",
+        "reviews",
     } <= set(payload):
         return []
     return [
@@ -410,20 +415,26 @@ def evaluate_phase_gate(project: Path, phase: str) -> dict[str, Any]:
 
 
 _RAG_SCOPE_TERMS = (
-    "rag", "retrieval", "semantic", "knowledge base", "knowledge-base",
-    "grounded answer", "citation", "embedding", "vector search",
+    "rag",
+    "retrieval",
+    "semantic",
+    "knowledge base",
+    "knowledge-base",
+    "grounded answer",
+    "citation",
+    "embedding",
+    "vector search",
 )
 
 
-def _phase_requires_capability_evidence(
-    project: Path, phase: str, terms: tuple[str, ...]
-) -> bool:
+def _phase_requires_capability_evidence(project: Path, phase: str, terms: tuple[str, ...]) -> bool:
     """Scope capability gates to the phase tasks that actually implement them."""
     queue = read_json(project / ".ai" / "task-queue.json", {})
     tasks = queue.get("tasks", []) if isinstance(queue, dict) else []
     scoped = phase_tasks(tasks, phase) if isinstance(tasks, list) else []
     if not scoped:
         return True
+
     def mentions(text: str, term: str) -> bool:
         if term.isalnum():
             return re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text) is not None
@@ -471,7 +482,8 @@ def phase_checkpoint_current(
                 or not _artifact_ok(_inside(project, output), node["verification"])
             ):
                 if (
-                    phase == "design" and node["id"] == "verify-html-baseline"
+                    phase == "design"
+                    and node["id"] == "verify-html-baseline"
                     and verified_baseline_update_current(project)
                 ):
                     continue
@@ -514,9 +526,7 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             if state["frameworks"].get("desktop") != "unknown":
                 structure = validate_structure(project, pack, phase)
             if state["frameworks"].get("python_package", "unknown") != "unknown":
-                validate_structure(
-                    project, pack, "python-package", "python-package-structure.json"
-                )
+                validate_structure(project, pack, "python-package", "python-package-structure.json")
         elif phase != "backend":
             structure = validate_structure(project, pack, phase)
         if phase in {"frontend", "mobile"}:
@@ -558,11 +568,12 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             )
     if (
         state.get("capabilities", {}).get("rag")
-        and phase in {
-        "frontend",
-        "mobile",
-        "backend",
-        "integration",
+        and phase
+        in {
+            "frontend",
+            "mobile",
+            "backend",
+            "integration",
         }
         and _phase_requires_capability_evidence(project, phase, _RAG_SCOPE_TERMS)
     ):
@@ -833,7 +844,8 @@ def _skill_paths(
             gui_selected = frameworks.get("desktop", "unknown") != "unknown"
             package_selected = frameworks.get("python_package", "unknown") != "unknown"
             selected_skills = [
-                path for path in selected_skills
+                path
+                for path in selected_skills
                 if ("python-package" in path.parent.name and package_selected)
                 or ("python-package" not in path.parent.name and gui_selected)
             ]
@@ -1097,12 +1109,9 @@ def _node_input_files(
         canonical = project / "docs/api/openapi.json"
         interim = project / "docs/api/openapi.interim.json"
         versioned = project / "docs/api/openapi.v1.json"
-        if (
-            canonical.is_file()
-            and any(
-                candidate.is_file() and canonical.read_bytes() == candidate.read_bytes()
-                for candidate in (interim, versioned)
-            )
+        if canonical.is_file() and any(
+            candidate.is_file() and canonical.read_bytes() == candidate.read_bytes()
+            for candidate in (interim, versioned)
         ):
             # Client foundation materializes this alias without changing the API.
             files.discard("docs/api/openapi.json")
@@ -1166,9 +1175,7 @@ def _node_input_files(
                 ]
             )
         if node == "repair-html-baseline":
-            design_paths.append(
-                project / ".ai" / "evidence" / "design" / "verification.json"
-            )
+            design_paths.append(project / ".ai" / "evidence" / "design" / "verification.json")
         files.update(
             path.relative_to(project).as_posix()
             for path in design_paths
@@ -1180,9 +1187,7 @@ def _node_input_files(
         approved = project / "HTML" / "approved"
         generated = project / "HTML" / "generated"
         baseline_root = (
-            approved
-            if node == "verify-html-baseline" and approval.is_file()
-            else generated
+            approved if node == "verify-html-baseline" and approval.is_file() else generated
         )
         if baseline_root.is_dir():
             files.update(
@@ -1204,18 +1209,12 @@ def _node_input_files(
     return sorted(files)
 
 
-def _client_phase_verification_current(
-    project: Path, phase: str, nodes: dict[str, Any]
-) -> bool:
+def _client_phase_verification_current(project: Path, phase: str, nodes: dict[str, Any]) -> bool:
     """Treat a current whole-client verifier as the durable phase checkpoint."""
     node_id = f"verify-{phase}"
     identity = f"{phase}/{node_id}/phase"
     output = f".ai/evidence/{phase}-verification.json"
-    inputs = [
-        path
-        for path in _node_input_files(project, phase, node_id)
-        if path != output
-    ]
+    inputs = [path for path in _node_input_files(project, phase, node_id) if path != output]
     checkpoint = nodes.get(identity, {})
     return bool(
         isinstance(checkpoint, dict)
@@ -1398,8 +1397,12 @@ def _complete_task_contract(
         allowed_paths = _safe_strings(scope.get("allowed_paths"))
     if "/prepare-client-foundation/" in identity:
         allowed_paths = [
-            f"apps/{phase}/**", "packages/api-client/**", "docs/api/**",
-            f"tests/{phase}/**", "tests/contracts/**", ".ai/test-commands.json",
+            f"apps/{phase}/**",
+            "packages/api-client/**",
+            "docs/api/**",
+            f"tests/{phase}/**",
+            "tests/contracts/**",
+            ".ai/test-commands.json",
             f".ai/evidence/{phase}-foundation.json",
         ]
         if phase == "frontend":
@@ -1448,7 +1451,8 @@ def _complete_task_contract(
         "performance_review_required": bool(source.get("performance_review_required", False)),
         "retry_policy": {"maximum_attempts": 3},
         "completion_evidence": (
-            [required_output] if required_output
+            [required_output]
+            if required_output
             else _safe_strings(source.get("completion_evidence")) or expected_outputs
         ),
         "priority": int(source.get("priority", 1)),
@@ -1679,6 +1683,8 @@ def _prompt(
         if retry_context
         else ""
     )
+    reviewed_lessons = approved_guidance(project, phase)
+    lessons_line = "\n".join(f"- {lesson}" for lesson in reviewed_lessons) or "None."
     design_line = (
         str(project / ".ai" / "design-inputs.json")
         if phase in {"design", "frontend", "mobile", "desktop"}
@@ -1887,6 +1893,8 @@ Resolved skill instructions (read only those relevant to this node):
 {skills}
 Required lifecycle and evaluation controls:
 {controls}
+Human-reviewed local lessons (advisory; never override the PRD or gate):
+{lessons_line}
 {retry}
 
 Read the primary agent instruction, any applicable capability agent instruction, manifest, gate,
@@ -2112,8 +2120,14 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
         }.get(
             phase,
             (
-                "backend", "frontend", "mobile", "desktop", "generate-client", "contract",
-                "integration", "e2e",
+                "backend",
+                "frontend",
+                "mobile",
+                "desktop",
+                "generate-client",
+                "contract",
+                "integration",
+                "e2e",
             ),
         )
         groups = [
@@ -2154,10 +2168,17 @@ def _execute_phase_unlocked(
         raise RuntimeError(f"unknown phase: {phase}")
     selected_features = phase_tasks(selected_features, phase)
     if phase in {"frontend", "mobile", "desktop", "backend"}:
-        write_json(project / f".ai/phase-plans/{phase}.json", {
-            "phase": phase, "tasks": selected_features,
-            "note": "Phase-scoped implementation; final integration verification remains required.",
-        })
+        write_json(
+            project / f".ai/phase-plans/{phase}.json",
+            {
+                "phase": phase,
+                "tasks": selected_features,
+                "note": (
+                    "Phase-scoped implementation; final integration verification "
+                    "remains required."
+                ),
+            },
+        )
     store = StateStore(project)
     state = store.load()
     blueprint = read_json(workflow_root() / "blueprints" / f"{phase}.json")
@@ -2189,9 +2210,7 @@ def _execute_phase_unlocked(
         missing = []
         for identity, checkpoint in implementations.items():
             feature_id = identity.removeprefix(prefix)
-            output = (
-                project / ".ai" / "evidence" / "features" / feature_id / "backend.json"
-            )
+            output = project / ".ai" / "evidence" / "features" / feature_id / "backend.json"
             if checkpoint.get("status") != "VERIFIED" or not _artifact_ok(
                 output, "evidence-schema"
             ):
@@ -2336,7 +2355,18 @@ def _execute_phase_unlocked(
                     repair_prompt_path.write_text(repair_prompt, encoding="utf-8")
                     _acquire_path_lease(project, repair_contract)
                     try:
+                        started = time.monotonic()
                         repair_result = _run_adapter(project, adapter, repair_prompt)
+                        record_attempt(
+                            project,
+                            identity=f"{identity}/repair-{attempt}",
+                            adapter=adapter,
+                            agent=repair_node["agent"],
+                            skills=[],
+                            prompt=repair_prompt,
+                            elapsed_ms=round((time.monotonic() - started) * 1000),
+                            result=repair_result,
+                        )
                     finally:
                         _release_path_lease(project, repair_contract["task_id"])
                     repair_log = (
@@ -2413,7 +2443,30 @@ def _execute_phase_unlocked(
                 prompt_path.write_text(prompt, encoding="utf-8")
                 _acquire_path_lease(project, contract)
                 try:
+                    started = time.monotonic()
                     result = _run_adapter(project, adapter, prompt)
+                    record_attempt(
+                        project,
+                        identity=identity,
+                        adapter=adapter,
+                        agent=node["agent"],
+                        skills=[
+                            str(path)
+                            for path in _skill_paths(
+                                workflow_root(),
+                                phase,
+                                node["id"],
+                                state["frameworks"],
+                                retrying=bool(retry_context),
+                                project=project,
+                                feature=feature,
+                                capabilities=state.get("capabilities", {}),
+                            )
+                        ],
+                        prompt=prompt,
+                        elapsed_ms=round((time.monotonic() - started) * 1000),
+                        result=result,
+                    )
                 finally:
                     _release_path_lease(project, contract["task_id"])
                 log_path = project / ".ai" / "logs" / f"{identity.replace('/', '--')}{suffix}.json"
@@ -2589,11 +2642,23 @@ def execute_phase(
 ) -> dict[str, Any]:
     if phase != "backend":
         return _execute_phase_unlocked(
-            project, phase, adapter, selected_features, commit_verified, push, stop_after_node,
+            project,
+            phase,
+            adapter,
+            selected_features,
+            commit_verified,
+            push,
+            stop_after_node,
             verification_only,
         )
     with _backend_run_lock(project):
         return _execute_phase_unlocked(
-            project, phase, adapter, selected_features, commit_verified, push, stop_after_node,
+            project,
+            phase,
+            adapter,
+            selected_features,
+            commit_verified,
+            push,
+            stop_after_node,
             verification_only,
         )

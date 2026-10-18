@@ -35,19 +35,19 @@ def test_user_guide_covers_catalog_and_cli_flags_in_workflow_order() -> None:
 
     ordered = [
         "$prepare-project-docs",
+        "$start-backend",
         "$start-design",
         "$start-generatehtml",
         "$start-frontend",
         "$start-mobile",
-        "$start-backend",
         "$start-integration",
         "$start-testing",
         "$start-deployment",
         "$start-delivery",
     ]
-    order_section = document.split("For deliberate stage-by-stage execution", 1)[1].split(
-        "Afterward,", 1
-    )[0]
+    order_section = document.split(
+        "For deliberate web/mobile stage-by-stage execution", 1
+    )[1].split("Afterward,", 1)[0]
     positions = [order_section.index(name) for name in ordered]
     assert positions == sorted(positions)
     table_section = document.split("## All available skills", 1)[1].split(

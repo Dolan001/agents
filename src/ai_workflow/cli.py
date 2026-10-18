@@ -40,6 +40,7 @@ from .packs import (
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
 from .provider_selection import PROVIDERS, resolve_adapter, resolve_project_adapter
+from .quality_loop import approve_lesson, evaluate_manifest, propose_lessons
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
 from .tokens import resolve_token
@@ -373,8 +374,13 @@ def command_one_shot(args: argparse.Namespace) -> int:
     if not state_exists:
         prd = require_prd(project, args.prd)
         resolved = resolve_frameworks(
-            prd, args.frontend, args.mobile, args.desktop, args.python_package,
-            args.backend, args.deployment
+            prd,
+            args.frontend,
+            args.mobile,
+            args.desktop,
+            args.python_package,
+            args.backend,
+            args.deployment,
         )
         resolved["deployment"] = "unknown"
         _require_frameworks("delivery", resolved)
@@ -528,20 +534,17 @@ def _skip_disabled_client_phase(project: Path, phase: str, force: bool = False) 
 def _optional_phase_skipped(frameworks: dict[str, str], phase: str) -> bool:
     if phase == "desktop":
         return all(
-            frameworks.get(side, "unknown") == "unknown"
-            for side in ("desktop", "python_package")
+            frameworks.get(side, "unknown") == "unknown" for side in ("desktop", "python_package")
         )
     if phase == "design":
-        return (
-            frameworks.get("python_package", "unknown") != "unknown"
-            and all(
-                frameworks.get(side, "unknown") == "unknown"
-                for side in ("frontend", "mobile", "desktop")
-            )
+        return frameworks.get("python_package", "unknown") != "unknown" and all(
+            frameworks.get(side, "unknown") == "unknown"
+            for side in ("frontend", "mobile", "desktop")
         )
-    return phase in {"frontend", "mobile", "backend", "deployment"} and frameworks.get(
-        phase, "unknown"
-    ) == "unknown"
+    return (
+        phase in {"frontend", "mobile", "backend", "deployment"}
+        and frameworks.get(phase, "unknown") == "unknown"
+    )
 
 
 def _defer_deployment_selection(project: Path) -> None:
@@ -668,20 +671,15 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         if backend_current and design_current:
             write_json(snapshot_path, current)
             return
-        nodes = read_json(project / ".ai" / "node-state.json", {"nodes": {}}).get(
-            "nodes", {}
-        )
+        nodes = read_json(project / ".ai" / "node-state.json", {"nodes": {}}).get("nodes", {})
         frontend_started = isinstance(nodes, dict) and any(
             key.startswith("frontend/") and value.get("status") == "VERIFIED"
-            for key, value in nodes.items() if isinstance(value, dict)
+            for key, value in nodes.items()
+            if isinstance(value, dict)
         )
         backend_gate = read_json(project / ".ai/evidence/gates/backend.json", {})
-        backend_evidence = read_json(
-            project / ".ai/evidence/backend-verification.json", {}
-        )
-        database_evidence = read_json(
-            project / ".ai/evidence/database-verification.json", {}
-        )
+        backend_evidence = read_json(project / ".ai/evidence/backend-verification.json", {})
+        database_evidence = read_json(project / ".ai/evidence/database-verification.json", {})
         source_code, source_changes = run_git(
             project, "status", "--porcelain", "--", "apps/backend", "docs/api/openapi.v1.json"
         )
@@ -734,20 +732,14 @@ def _frontend_prerequisite_fingerprint(project: Path) -> dict[str, Any]:
     return {"version": 1, "sha256": digest.hexdigest(), "recorded_at": utc_now()}
 
 
-_IGNORED_FINGERPRINT_PARTS = {
-    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"
-}
+_IGNORED_FINGERPRINT_PARTS = {"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"}
 
 
 def _verified_backend_evidence_available(project: Path) -> bool:
     """Return whether the durable backend gate and verification artifacts are usable."""
     gate = read_json(project / ".ai" / "evidence" / "gates" / "backend.json", {})
-    verification = read_json(
-        project / ".ai" / "evidence" / "backend-verification.json", {}
-    )
-    database = read_json(
-        project / ".ai" / "evidence" / "database-verification.json", {}
-    )
+    verification = read_json(project / ".ai" / "evidence" / "backend-verification.json", {})
+    database = read_json(project / ".ai" / "evidence" / "database-verification.json", {})
     return bool(
         isinstance(gate, dict)
         and gate.get("passed") is True
@@ -873,8 +865,13 @@ def command_start(args: argparse.Namespace) -> int:
         prd = discover_prd(project, args.prd)
         args.prd = prd.relative_to(project).as_posix()
         resolved = resolve_frameworks(
-            prd, args.frontend, args.mobile, args.desktop, args.python_package,
-            args.backend, args.deployment
+            prd,
+            args.frontend,
+            args.mobile,
+            args.desktop,
+            args.python_package,
+            args.backend,
+            args.deployment,
         )
         if defer_deployment:
             resolved["deployment"] = "unknown"
@@ -922,8 +919,7 @@ def command_start(args: argparse.Namespace) -> int:
         command_plan(args)
     queue = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
     backend_prerequisite_current = (
-        args.command != "start-backend"
-        and _backend_prerequisite_current(project, queue["tasks"])
+        args.command != "start-backend" and _backend_prerequisite_current(project, queue["tasks"])
     )
     if backend_prerequisite_current:
         state_store = StateStore(project)
@@ -945,7 +941,7 @@ def command_start(args: argparse.Namespace) -> int:
     completed = set(StateStore(project).load().get("completed_phases", []))
     results = []
     terminal_phase = "design" if target in {"design-spec", "html"} else target
-    for phase in (("frontend",) if frontend_only else PHASES[1:]):
+    for phase in ("frontend",) if frontend_only else PHASES[1:]:
         if target == "mobile" and phase == "frontend" and phase not in completed:
             continue
         if phase in completed:
@@ -973,9 +969,7 @@ def command_start(args: argparse.Namespace) -> int:
             )
         else:
             phase_index = PHASES.index(phase)
-            later_completed = {
-                item for item in completed if PHASES.index(item) > phase_index
-            }
+            later_completed = {item for item in completed if PHASES.index(item) > phase_index}
             if later_completed:
                 completed -= later_completed
                 state_store = StateStore(project)
@@ -1074,8 +1068,14 @@ def command_test(args: argparse.Namespace) -> int:
         groups = [
             group
             for group in (
-                "backend", "frontend", "mobile", "desktop", "generate-client", "contract",
-                "integration", "e2e",
+                "backend",
+                "frontend",
+                "mobile",
+                "desktop",
+                "generate-client",
+                "contract",
+                "integration",
+                "e2e",
             )
             if isinstance(configured, dict) and configured.get(group)
         ]
@@ -1139,6 +1139,24 @@ def command_status(args: argparse.Namespace) -> int:
             print(f"packs: {selected}")
             print(f"missing selected packs: {missing}")
         print(f"issue report: {issues['report']}")
+    return 0
+
+
+def command_evaluate_adapters(args: argparse.Namespace) -> int:
+    report = evaluate_manifest(Path(args.manifest).expanduser().resolve())
+    print_json(report)
+    return 0 if report["all_checkpoint_parity"] else 2
+
+
+def command_propose_lessons(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json({"proposals": propose_lessons(project)})
+    return 0
+
+
+def command_approve_lesson(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json({"approved": approve_lesson(project, args.proposal, args.guidance)})
     return 0
 
 
@@ -1367,11 +1385,7 @@ def command_deployment_operation(args: argparse.Namespace) -> int:
     approved = bool(
         getattr(args, "approve_production", False) or getattr(args, "approve_rollback", False)
     )
-    print_json(
-        execute_operation(
-            project, environment, operation, args.execute, approved
-        )
-    )
+    print_json(execute_operation(project, environment, operation, args.execute, approved))
     return 0
 
 
@@ -1444,8 +1458,7 @@ def parser() -> argparse.ArgumentParser:
             "--desktop", choices=["python", "pyside6", "unknown"], default="unknown"
         )
         command.add_argument(
-            "--python-package", choices=["library", "cli", "both", "unknown"],
-            default="unknown"
+            "--python-package", choices=["library", "cli", "both", "unknown"], default="unknown"
         )
         command.add_argument(
             "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
@@ -1535,6 +1548,17 @@ def parser() -> argparse.ArgumentParser:
     add_project(status)
     status.add_argument("--json", action="store_true")
     status.set_defaults(handler=command_status)
+    evaluation = commands.add_parser("evaluate-adapters")
+    evaluation.add_argument("--manifest", required=True)
+    evaluation.set_defaults(handler=command_evaluate_adapters)
+    proposals = commands.add_parser("propose-lessons")
+    add_project(proposals)
+    proposals.set_defaults(handler=command_propose_lessons)
+    approval = commands.add_parser("approve-lesson")
+    add_project(approval)
+    approval.add_argument("--proposal", required=True)
+    approval.add_argument("--guidance", required=True)
+    approval.set_defaults(handler=command_approve_lesson)
     select_packs = commands.add_parser("select-packs")
     add_pack_selection_arguments(select_packs)
     select_packs.set_defaults(handler=command_select_packs)

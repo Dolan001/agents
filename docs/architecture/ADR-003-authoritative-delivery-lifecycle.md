@@ -4,24 +4,25 @@ Status: accepted
 
 The workflow repositories contain behavior and control logic, never a demonstration
 application. A user supplies a separate target monorepo with a required PRD and
-optional design evidence. `base` is private shared behavior; `drf`, `fastapi`,
-`flutter`, `reactjs`, `nextjs`, `rag`, `webscraping`, and `aws` describe exact generated structures and
+optional design evidence. `base` is shared behavior; `drf`, `fastapi`,
+`flutter`, `desktop`, `reactjs`, `nextjs`, `rag`, `webscraping`, and `aws` describe exact generated structures and
 production decisions; `agents` links them as pinned submodules and executes the lifecycle.
 
 The default lifecycle is strictly sequential:
 
 ```text
-bootstrap -> requirements/contracts -> approved static HTML -> optional web
-          -> optional Flutter mobile -> backend -> typed integration
+bootstrap -> requirements/contracts -> optional backend -> optional approved static HTML
+          -> optional web -> optional Flutter mobile -> optional Python GUI/package -> integration
           -> independent test/security -> feature Git delivery
 
 explicit later command: start-deployment -> AWS asset readiness
 ```
 
-Static HTML is the reviewable design contract. Supplied HTML is validated and
-preserved; when absent, static HTML is generated from screenshots/design evidence or,
-last, the PRD. Web or Flutter implementation cannot begin until this baseline is
-approved. Backend follows every selected client to eliminate contract and UX drift.
+Static HTML is the reviewable design contract for web/mobile and GUI flows that need it. Supplied
+HTML is validated and preserved; when absent, it can be generated from screenshots/design evidence
+or the PRD. Web or Flutter implementation cannot begin until this baseline is approved. A
+package-only run skips UI design, and local Python deliverables do not invent a backend. Where a
+backend is selected, it is verified before client integration.
 
 Production knowledge uses progressive disclosure: concise agents and skills route to
 framework references only when relevant. Accuracy comes from executable project-owned

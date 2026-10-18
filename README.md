@@ -19,6 +19,7 @@ The supported application combinations are:
 | Web frontend | React or Next.js | `apps/frontend` |
 | Mobile | Flutter for Android and iOS | `apps/mobile` |
 | Desktop | Python Desktop (PySide6) | `apps/desktop` |
+| Python package | Library, CLI, or both (no GUI) | `packages/python` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
 | AI capability | RAG (optional, requirement-triggered) | Selected backend and clients |
 | Deployment | AWS (optional) | `infra`, `.github/workflows`, `ops` |
@@ -27,8 +28,9 @@ Both backend choices use PostgreSQL. Generated tables and schema changes are own
 reviewed Django migrations or Alembic revisions; neither backend may fall back to SQLite
 or create production tables directly during application startup.
 
-Projects may be web, mobile, desktop, or a combination. Web and mobile require a supported
-backend; a local-only desktop application does not. The first selected client phase creates the
+Projects may be web, mobile, desktop GUI, standalone Python package, or a combination. Web and
+mobile require a supported backend; local-only GUI and package projects do not. The first selected
+application phase creates the
 monorepo root contract when needed:
 
 ```text
@@ -41,7 +43,8 @@ target-project/
 │   ├── desktop/
 │   └── backend/
 ├── packages/
-│   └── api-client/
+│   ├── api-client/             # when a backend-connected client is selected
+│   └── python/                 # when a standalone library or CLI is selected
 ├── HTML/
 │   ├── source/
 │   └── approved/
@@ -195,8 +198,8 @@ equivalent CLI invocation, see [`USER_GUIDE.md`](USER_GUIDE.md).
 ### 1. Install and pin the workflow
 
 The real project stores `agents` directly at `.agents`. `base` is always initialized. The selector
-initializes only the PRD-selected DRF or FastAPI backend, React or Next.js web client, optional
-Flutter client, and explicit RAG or web-scraping capabilities. AWS stays uninitialized until an
+initializes only the PRD-selected DRF or FastAPI backend, React or Next.js web client, Flutter
+mobile app, Python desktop GUI or package pack, and explicit RAG or web-scraping capabilities. AWS stays uninitialized until an
 explicit deployment workflow requests it. Commit `.gitmodules` and the `.agents` gitlink so every
 collaborator gets the same reviewed workflow version:
 
@@ -279,9 +282,10 @@ Inputs are preserved under `HTML/source/`, hashed, and treated as untrusted desi
 
 ### 3. Resolve frameworks before building
 
-The workflow accepts only React or Next.js for web, Flutter for Android/iOS mobile, PySide6 for
-desktop, and Django REST Framework or FastAPI for backend. AWS is the only deployment provider
-currently accepted. At least one client is required.
+The workflow accepts React or Next.js for web, Flutter for Android/iOS mobile, PySide6 for a
+desktop GUI, a no-GUI Python library or CLI package, and Django REST Framework or FastAPI for a
+backend. AWS is the only deployment provider currently accepted. At least one deliverable is
+required; web/mobile require a backend, while local Python deliverables do not.
 
 - If the PRD explicitly declares a supported framework, Codex uses it without asking.
 - If a framework required by the requested stopping point is absent, Codex asks only
@@ -293,7 +297,9 @@ currently accepted. At least one client is required.
   legacy `one-shot` always defer it, even when the PRD declares AWS; incidental AWS references also
   remain inactive.
 
-Design specification and HTML generation do not require framework choices.
+Standalone `start-design` and `start-generatehtml` commands currently require a backend choice;
+`start-build` handles local desktop design without requiring one and skips UI design for a
+package-only project.
 `start-frontend` requires a web selection; `start-mobile` requires Flutter; `start-desktop`
 requires Python Desktop, `Python package: library|CLI|both`, or both. The package lives in
 `packages/python/` and has no GUI dependency; the GUI lives in `apps/desktop/`. Web and mobile
@@ -355,11 +361,12 @@ that verified baseline and runs only frontend work. Missing or stale prerequisit
 produce a recovery command; frontend does not regenerate HTML automatically.
 
 `$start-build` runs the combined lifecycle. Other stage commands retain prerequisite
-orchestration. The normal order is requirements and contracts, verified backend,
-design specification, approved HTML, live-integrated clients, system testing, and
-delivery. A stage command runs only its missing prerequisites and stops at its named gate.
+orchestration. For web/mobile, the normal order is requirements and contracts, verified backend,
+design specification, approved HTML, live-integrated clients, system testing, and delivery. A
+local-only Python package skips backend and UI design; a desktop GUI uses its selected design and
+desktop gates. A stage command runs only its missing prerequisites and stops at its named gate.
 
-For a new project, the practical command sequence is:
+For a web/mobile project, a practical stage-by-stage command sequence is:
 
 ```bash
 ./.agents/bin/ai prepare-project-docs --project . --requirements REQUIREMENTS.md --adapter codex
@@ -368,7 +375,7 @@ For a new project, the practical command sequence is:
 ./.agents/bin/ai start-generatehtml --project . --adapter codex-reviewed
 ./.agents/bin/ai start-frontend --project . --adapter codex-reviewed     # when web is selected
 ./.agents/bin/ai start-mobile --project . --adapter codex-reviewed       # when mobile is selected
-./.agents/bin/ai start-desktop --project . --adapter codex-reviewed      # when desktop is selected
+./.agents/bin/ai start-desktop --project . --adapter codex-reviewed      # when a Python deliverable is selected
 ./.agents/bin/ai start-integration --project . --adapter codex-reviewed
 ./.agents/bin/ai start-testing --project . --adapter codex-reviewed
 ./.agents/bin/ai start-delivery --project . --adapter codex-reviewed
@@ -377,6 +384,10 @@ For a new project, the practical command sequence is:
 Framework and GitHub arguments are optional when the project documents or saved state
 already resolve them, so a normal resumed backend run can be simply
 `./.agents/bin/ai start-backend`.
+
+For a package-only project, `prepare-project-docs` followed by `start-build` is enough. Declare
+`Python package: library`, `Python package: CLI`, or `Python package: both` in the PRD. Add
+`Desktop framework: Python Desktop` only when a PySide6 GUI is also wanted.
 
 `$sync-design` is also available after implementation. By default it repairs selected web/mobile
 targets; `--check-only` reports localized drift without application edits. Approved HTML remains
@@ -807,7 +818,7 @@ failed artifact and resume after correcting the actual cause.
 
 - Every agentic node has a required artifact contract and a phase evidence gate.
 - The scheduler runs phases sequentially to prevent client/backend contract drift.
-- Only selected web, mobile, backend, and optional AWS behavior packs are loaded.
+- Only selected web, mobile, Python-deliverable, backend, and optional AWS behavior packs are loaded.
 - `build-context-bundle` creates an auditable manifest capped at 12 files and 60,000
   characters for phase work and 10 files/45,000 characters for feature work,
   prioritizing requirement anchors, contracts, affected code, and tests while excluding
@@ -927,8 +938,8 @@ available at `./.agents/bin/ai`:
 ```
 
 The lower-level `one-shot` command is a dry run unless `--execute` is supplied. It requires at
-least one client. A backend is required for web/mobile, but not for a local-only PySide6 desktop
-application:
+least one deliverable. A backend is required for web/mobile, but not for a local-only PySide6 app or
+standalone Python package:
 
 ```bash
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
@@ -942,6 +953,10 @@ application:
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
   --desktop python --github-user dolan --branch-feature floating-cat \
   --adapter codex --execute
+
+./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
+  --python-package cli --github-user dolan --branch-feature conversion-tool \
+  --adapter codex --execute
 ```
 
 `clean-state --yes` permanently removes `.ai`, including the build-issue history, and
@@ -950,11 +965,9 @@ retained. It is not a normal recovery step.
 
 ## Linked repositories
 
-The workflow catalogs ten behavior repositories, including the `desktop` pack as a pinned
-submodule. Each project initializes only its selected subset. The desktop submodule currently uses
-a provisional relative URL while its remote repository is pending; confirm or update that URL
-before publishing the agents repository. The submodules record `branch = dev` for explicit update
-operations:
+The workflow catalogs ten behavior repositories, including the pinned
+[`desktop` pack](https://github.com/Dolan001/desktop). Each project initializes only its selected
+subset. The behavior submodules record `branch = dev` for explicit update operations:
 
 ```text
 .agents/
@@ -978,7 +991,7 @@ operations:
 └── webscraping/             # backend-only scraping capability pack
 ```
 
-The linked repositories are `Dolan001/base`, `Dolan001/drf`,
+The linked repositories are `Dolan001/base`, `Dolan001/desktop`, `Dolan001/drf`,
 `Dolan001/fastapi`, `Dolan001/flutter`, `Dolan001/nextjs`,
 `Dolan001/reactjs`, `Dolan001/rag`, `Dolan001/aws`, and `Dolan001/webscraping`.
 
@@ -989,8 +1002,8 @@ second `.agents` directory.
 ## Pipeline contract
 
 ```text
-bootstrap → requirements/contracts → optional backend → design/approved HTML
-          → optional web → optional Flutter mobile → optional PySide6 desktop
+bootstrap → requirements/contracts → optional backend → optional design/approved HTML
+          → optional web → optional Flutter mobile → optional Python GUI/package
           → integration → testing
           → application delivery
 

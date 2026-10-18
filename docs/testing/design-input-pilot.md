@@ -23,6 +23,7 @@ Every scenario must finish all phases and produce:
 - the selected framework structure under `apps/frontend/`;
 - the selected Flutter structure under `apps/mobile/` when mobile is enabled;
 - the selected PySide6 package structure under `apps/desktop/` when desktop is enabled;
+- the standalone library/CLI structure under `packages/python/` when selected;
 - the selected framework structure under `apps/backend/`;
 - `packages/api-client/`;
 - deterministic test-command results;
@@ -36,7 +37,8 @@ application paths, and fail-closed behavior for incomplete structures.
 
 The current control plane contains 11 sequential phases and 50 nodes, including 35
 agentic nodes with required output contracts. Flutter-only, web-plus-Flutter, and local-only
-PySide6 routes are covered by deterministic workflow tests.
+PySide6, standalone Python package, and combined GUI/package routes are covered by deterministic
+workflow tests.
 
 This proves the workflow engine and contracts. It does not substitute for a real-model
 acceptance pilot, because generated application quality, package installation, runtime

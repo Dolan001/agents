@@ -67,6 +67,51 @@ The workflow supports `codex`, `claude`, `opencode`, `gemini`, and `cursor`, plu
 `codex-reviewed` execution mode. Direct CLI commands support `-h` or `--help`. The examples below
 that include `--adapter codex` deliberately pin Codex; normally the flag can be omitted.
 
+## Measure adapter consistency and review lessons
+
+Every agent attempt writes metadata to `.ai/telemetry/attempts.jsonl`: selected adapter, agent,
+skill paths, prompt character count, elapsed time, exit code, and provider-reported usage when
+available. It does not copy prompt text or adapter output. Character count is a size proxy, not
+an exact token or cost measurement.
+
+To compare the same small PRD built separately with different adapters, create a local manifest
+outside the run folders:
+
+```json
+{
+  "cases": [{
+    "id": "sample-prd",
+    "required_nodes": ["backend/verify-backend/phase"],
+    "runs": [
+      {"adapter": "codex", "project": "runs/codex"},
+      {"adapter": "claude", "project": "runs/claude"}
+    ]
+  }]
+}
+```
+
+Run `./.agents/bin/ai evaluate-adapters --manifest comparison.json`. The command is read-only and
+returns 0 only when PRD content, framework/capability selections, adapter routing, required verified
+nodes, and complete verified-node sets agree. Use additional cases for other PRDs or adapters.
+Compare failure counts, prompt characters, and elapsed time to identify regressions. Matching
+checkpoints do not prove identical behavior; inspect the evidence and resulting app as well.
+Missing telemetry or an empty verified-node set fails the comparison.
+
+After a failure, run `./.agents/bin/ai propose-lessons --project .`. This groups local failure
+records by phase and failure class into `.ai/learning/proposals.json`; it does not alter agent
+instructions. Review the evidence, then explicitly approve a concise corrective instruction:
+
+```bash
+./.agents/bin/ai approve-lesson --project . \
+  --proposal LESSON-<id> \
+  --guidance "Check the backend verification contract before retrying."
+```
+
+Only approved guidance appears in later prompts for the matching phase (up to three lessons).
+It is advisory and cannot override the PRD or verification gate. Do not approve secrets, log
+fragments, or untested fixes. The workflow never edits shared skills or rules automatically; a
+proven reusable fix should be reviewed and committed to the appropriate repository separately.
+
 ## Recommended command order
 
 With existing requirements or any project-document drafts, use:
@@ -87,20 +132,26 @@ setup-workflow "<workflow-git-url>"
     -> $start-build
 ```
 
-For deliberate stage-by-stage execution, use:
+For deliberate web/mobile stage-by-stage execution, use:
 
 ```text
 $prepare-project-docs         # generates missing and completes user-written documents
+    -> $start-backend         # when web/mobile needs an API
     -> $start-design
     -> $start-generatehtml
-    -> $start-frontend and/or $start-mobile and/or $start-desktop
+    -> $start-frontend and/or $start-mobile
        (design synchronization runs automatically)
-    -> $start-backend
     -> $start-integration
     -> $start-testing
     -> $start-deployment      # only when AWS preparation is required
     -> $start-delivery
 ```
+
+For a local Python deliverable, declare `Desktop framework: Python Desktop` for a GUI and/or
+`Python package: library|CLI|both` for a standalone distribution. Then use
+`$prepare-project-docs -> $start-build`; the one-shot command runs the selected desktop phase and
+skips unneeded backend or UI-design phases. `$start-desktop` stops after that phase if you want a
+smaller checkpoint.
 
 Afterward, use `$workflow-status` or `$resume-build` for recovery, `$sync-design` for an explicit
 design recheck, `$resolve-token` for a scoped change, and the deployment operation skills only for
@@ -255,7 +306,8 @@ $start-design [shared start flags]
 Runs missing bootstrap and requirements work, creates `HTML/design-specification.md`, and stops
 before approved HTML or application source. API contracts are first reconciled from the PRD, TRD,
 and backend/data specification. Design then receives the PRD, TRD, UI/UX specification, normalized
-requirements, and those API contracts.
+requirements, and those API contracts. This standalone stage currently requires a selected backend;
+for a local desktop-only product, use `$start-build` or `$start-desktop` instead.
 
 ### `$start-generatehtml`
 
@@ -265,7 +317,8 @@ $start-generatehtml [shared start flags]
 ```
 
 Runs missing design prerequisites, generates or validates approved static HTML, and stops before
-frontend or mobile implementation.
+frontend or mobile implementation. This standalone stage currently requires a selected backend;
+package-only builds skip it.
 
 Generation, independent verification, and approval complete in the same invocation.
 No user HTML review or second approval command is required. After verification passes,
@@ -462,7 +515,7 @@ $resolve-token --token <path> --approve [--github-user <user>] [--remote <name>]
 | Flag | Value | Default | Meaning |
 |---|---|---|---|
 | `--project` | project directory | `.` | Target project. |
-| `--token` | supported `TOKEN.md` path | required | Exactly one frontend, mobile, or backend token. |
+| `--token` | supported `TOKEN.md` path | required | Exactly one frontend, mobile, desktop-GUI, or backend token. |
 | `--adapter` | `codex` | `codex` | Execution adapter. |
 | `--approve` | no value | off | Approve the diagnosed plan and begin implementation. Never inferred. |
 | `--github-user` | GitHub user/owner string | saved/current context | Used when constructing the token branch. |

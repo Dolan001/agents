@@ -39,6 +39,11 @@ delivery requires a web, mobile, desktop GUI, or Python package deliverable. Web
 a backend; a local GUI or Python package does not. Unsupported, conflicting, or multiple
 declarations fail before build work.
 
+The pack READMEs explain what each selection generates: `drf`, `fastapi`, `reactjs`, `nextjs`,
+`flutter`, `desktop`, `rag`, `webscraping`, and `aws`. These directories are instructions, not
+application templates. Generated code belongs in the target project's `apps/` or `packages/`
+directories. `$workflow-status` reports a failed gate and its evidence without changing the build.
+
 `start-build`, `resume-build`, and legacy `one-shot` always skip deployment. An explicit
 `Deployment provider: AWS` declaration is retained for a later `$start-deployment --deployment aws`
 run; it never activates AWS work inside one-shot application development. Live operations remain
@@ -64,7 +69,7 @@ No start command pushes by default. Add `--commit-verified` or `--push` only whe
 Git mutation is explicitly intended; protected branches remain rejected.
 
 For a scoped post-build bug or change, create `frontend/TKN001/TOKEN.md`,
-`mobile/TKN001/TOKEN.md`, or `backend/TKN001/TOKEN.md`, optionally add consecutive sibling `currentN` and
+`mobile/TKN001/TOKEN.md`, `desktop/TKN001/TOKEN.md` for a GUI, or `backend/TKN001/TOKEN.md`, optionally add consecutive sibling `currentN` and
 `expectedN` PNG/JPEG/WebP images, and invoke:
 
 ```text

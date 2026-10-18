@@ -7,8 +7,8 @@ Status: accepted
 Keep `base`, each code-free framework behavior pack, and `agents` as
 independently versioned repository directories.
 `agents/base`, `agents/drf`, `agents/fastapi`,
-`agents/flutter`, `agents/nextjs`, `agents/reactjs`, `agents/rag`,
-`agents/webscraping`, and `agents/aws` are
+`agents/flutter`, `agents/desktop`, `agents/nextjs`, `agents/reactjs`, `agents/rag`,
+`agents/webscraping`, `agents/aws`, and `agents/agent-bridge` are
 root-level Git submodules pinned to reviewed revisions. Their `.gitmodules` entries use the GitHub
 repositories and declare `branch = dev`. A target project initially checks out only the `agents`
 superproject; deterministic PRD selection initializes `base` and the required subset. Unselected
@@ -25,11 +25,13 @@ separate target monorepo with `apps`, `packages`, `HTML`, `docs`, `tests`, `arti
 - `drf`: Django/DRF agents, skills, commands, hooks, and rules.
 - `fastapi`: FastAPI agents, skills, commands, hooks, and rules.
 - `flutter`: Flutter Android/iOS agents, skills, commands, hooks, structures, and rules.
+- `desktop`: PySide6 GUI and standalone Python library/CLI behavior.
 - `reactjs`: React agents, skills, commands, hooks, and rules.
 - `nextjs`: Next.js agents, skills, commands, hooks, and rules.
 - `rag`: requirement-triggered retrieval-augmented generation behavior.
 - `webscraping`: backend-only website discovery, selector, extraction, and verification behavior.
 - `aws`: separately invoked AWS architecture and deployment behavior.
+- `agent-bridge`: provider-native projection for Codex, Claude, OpenCode, Gemini, and Cursor.
 - `agents`: commands, manifests, blueprints, gates, rules, hooks, user CLI,
   discovery, reconciliation, state, framework-pack selection, reporting, and recovery.
 
