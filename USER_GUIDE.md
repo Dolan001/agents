@@ -19,7 +19,8 @@ initializes the provider bridge and `base`, asks the user to reopen Codex, and p
 required packs.
 
 The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
-selects `nextjs`; Flutter selects `flutter`; and the backend selects exactly one of `drf` or
+selects `nextjs`; Flutter selects `flutter`; Python Desktop and a standalone Python package both
+select the `desktop` pack; and the backend selects exactly one of `drf` or
 `fastapi`. `rag` and `webscraping` are selected only by explicit PRD requirements. `aws` is loaded
 only by an explicit AWS deployment workflow. Selection evidence is stored in
 `.ai/selected-packs.json`. Successful project-document preparation reconciles immediately, and
@@ -56,7 +57,7 @@ Codex validates the request, reads the skill, and invokes the equivalent workflo
 Boolean flags such as `--push` do not take `true` or `false`; include the flag to enable it.
 Repeatable flags must be written once per value.
 
-The workflow supports `codex`, `claude`, `opencode`, and `gemini`, plus the explicit
+The workflow supports `codex`, `claude`, `opencode`, `gemini`, and `cursor`, plus the explicit
 `codex-reviewed` execution mode. Direct CLI commands support `-h` or `--help`. The examples below
 that include `--adapter codex` deliberately pin Codex; normally the flag can be omitted.
 
@@ -86,7 +87,7 @@ For deliberate stage-by-stage execution, use:
 $prepare-project-docs         # generates missing and completes user-written documents
     -> $start-design
     -> $start-generatehtml
-    -> $start-frontend and/or $start-mobile
+    -> $start-frontend and/or $start-mobile and/or $start-desktop
        (design synchronization runs automatically)
     -> $start-backend
     -> $start-integration
@@ -109,6 +110,7 @@ explicitly authorized live AWS work.
 | `$start-generatehtml` | Generate and approve static HTML | Approved HTML |
 | `$start-frontend` | Build React or Next.js | Frontend gate |
 | `$start-mobile` | Build Flutter for Android and iOS | Mobile gate |
+| `$start-desktop` | Build a PySide6 desktop app, a standalone Python package, or both | Desktop gate |
 | `$sync-design` | Explicitly recheck or repair client design fidelity | Verified web/mobile design evidence |
 | `$start-backend` | Build Django DRF or FastAPI | Backend gate |
 | `$start-integration` | Connect selected clients and backend | Integration gate |
@@ -199,7 +201,7 @@ live discovery or smoke testing requires an explicitly approved domain/account/p
 ## Shared flags for start and resume skills
 
 The following flags are accepted by `$start-design`, `$start-generatehtml`, `$start-frontend`,
-`$start-mobile`, `$start-backend`, `$start-integration`, `$start-testing`, `$start-deployment`,
+`$start-mobile`, `$start-desktop`, `$start-backend`, `$start-integration`, `$start-testing`, `$start-deployment`,
 `$start-delivery`, `$start-build`, and `$resume-build`.
 In command patterns below, `[shared start flags]` means any applicable flag from this table that is
 not already shown; do not repeat the same flag.
@@ -215,6 +217,8 @@ not already shown; do not repeat the same flag.
 | `--screenshot` | in-project PNG/JPEG/WebP path | none | Optional screenshot input. Repeat once per file. |
 | `--frontend` | `react`, `nextjs`, or `unknown` | `unknown` | Web selection. Do not explicitly pass `unknown` when the requested stage requires web. |
 | `--mobile` | `flutter` or `unknown` | `unknown` | Mobile selection. Do not explicitly pass `unknown` when the requested stage requires mobile. |
+| `--desktop` | `python` or `pyside6` | `unknown` | GUI desktop application selection. |
+| `--python-package` | `library`, `cli`, or `both` | `unknown` | Standalone, no-GUI Python package selection. |
 | `--backend` | `django-drf`, `fastapi`, or `unknown` | `unknown` | Backend selection. Do not explicitly pass `unknown` when the requested stage requires backend. |
 | `--deployment` | `aws` or `unknown` | `unknown` | Deployment selection. Pass `aws` only to `$start-deployment`; complete-build commands reject it. |
 | `--adapter` | `codex` | `codex` | Execution adapter. |
@@ -223,8 +227,8 @@ not already shown; do not repeat the same flag.
 | `--remaining` | no value | already enabled | Compatibility flag; commands already resume only remaining work. |
 | `--approve-html` | no value | off | Deprecated compatibility flag; approval now follows independent verification automatically. |
 
-Frameworks explicitly declared in the PRD take precedence and do not need to be repeated. At least
-one client—React, Next.js, or Flutter—is required for backend and later complete-build stages.
+Frameworks explicitly declared in the PRD take precedence and do not need to be repeated. Select
+at least one deliverable: web, mobile, desktop GUI, or standalone Python package.
 `--html` and `--screenshot` can be combined and repeated:
 
 ```text
@@ -291,6 +295,20 @@ $start-mobile --mobile flutter [shared start flags]
 
 Builds Flutter for Android and iOS, runs design synchronization and independent mobile verification,
 then stops after the mobile gate.
+
+### `$start-desktop`
+
+```text
+$start-desktop [--desktop python] [--python-package <library|cli|both>] [shared start flags]
+./.agents/bin/ai start-desktop --project . --adapter codex \
+  --python-package cli [shared start flags]
+```
+
+Builds whichever deliverables are selected. `Desktop framework: Python Desktop` creates an
+installable PySide6 GUI under `apps/desktop/`. `Python package: library`, `CLI`, or `both` creates a
+separate importable/command-line distribution under `packages/python/`, with no Qt requirement.
+Declare both to build both in one run. The workflow checks wheel and source distributions plus
+isolated installation; native GUI bundles require evidence from each target operating system.
 
 ### `$start-backend`
 

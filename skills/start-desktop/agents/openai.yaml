@@ -1,0 +1,4 @@
+interface:
+  display_name: "start-desktop"
+  short_description: "Build and verify a PySide6 desktop app"
+  default_prompt: "Use $start-desktop to build the selected PySide6 desktop application and installable Python package."

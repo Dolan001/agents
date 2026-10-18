@@ -10,7 +10,7 @@
       "minProperties": 1,
       "additionalProperties": false,
       "patternProperties": {
-        "^(frontend|mobile|backend|generate-client|contract|integration|e2e)$": {
+        "^(frontend|mobile|desktop|backend|generate-client|contract|integration|e2e)$": {
           "type": "array",
           "minItems": 1,
           "items": {

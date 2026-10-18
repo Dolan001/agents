@@ -136,13 +136,19 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
     frameworks = {
         "frontend": args.frontend,
         "mobile": getattr(args, "mobile", "unknown"),
+        "desktop": (
+            "pyside6"
+            if getattr(args, "desktop", "unknown") == "python"
+            else getattr(args, "desktop", "unknown")
+        ),
+        "python_package": getattr(args, "python_package", "unknown"),
         "backend": args.backend,
         "deployment": getattr(args, "deployment", "unknown"),
     }
     if mode == "brownfield":
         report = inventory(project)
         detected = report["framework_detection"]
-        for side in ("frontend", "mobile", "backend"):
+        for side in ("frontend", "mobile", "desktop", "backend"):
             if frameworks[side] == "unknown":
                 frameworks[side] = detected[side]
     capabilities = detect_prd_capabilities(prd)
@@ -158,6 +164,8 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
             "Local work is allowed; remote push requires explicit configuration.",
         ],
         mobile=frameworks["mobile"],
+        desktop=frameworks["desktop"],
+        python_package=frameworks["python_package"],
         deployment=frameworks["deployment"],
         capabilities=capabilities,
     )
@@ -365,12 +373,15 @@ def command_one_shot(args: argparse.Namespace) -> int:
     if not state_exists:
         prd = require_prd(project, args.prd)
         resolved = resolve_frameworks(
-            prd, args.frontend, args.mobile, args.backend, args.deployment
+            prd, args.frontend, args.mobile, args.desktop, args.python_package,
+            args.backend, args.deployment
         )
         resolved["deployment"] = "unknown"
         _require_frameworks("delivery", resolved)
         args.frontend = resolved["frontend"]
         args.mobile = resolved["mobile"]
+        args.desktop = resolved["desktop"]
+        args.python_package = resolved["python_package"]
         args.backend = resolved["backend"]
         args.deployment = resolved["deployment"]
         initialize(args, "new")
@@ -401,9 +412,7 @@ def command_one_shot(args: argparse.Namespace) -> int:
     for phase in PHASES[1:]:
         if phase in completed:
             frameworks = StateStore(project).load()["frameworks"]
-            optional_skipped = (
-                phase in {"frontend", "mobile", "deployment"} and frameworks[phase] == "unknown"
-            )
+            optional_skipped = _optional_phase_skipped(frameworks, phase)
             if optional_skipped or phase_checkpoint_current(project, phase, queue["tasks"]):
                 continue
             phase_index = PHASES.index(phase)
@@ -442,8 +451,10 @@ def command_one_shot(args: argparse.Namespace) -> int:
 def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None:
     store = StateStore(project)
     state = store.load()
-    for side in ("frontend", "mobile", "backend", "deployment"):
+    for side in ("frontend", "mobile", "desktop", "python_package", "backend", "deployment"):
         selected = getattr(args, side, "unknown")
+        if side == "desktop" and selected == "python":
+            selected = "pyside6"
         current = state["frameworks"][side]
         if selected == "unknown":
             continue
@@ -451,8 +462,9 @@ def _apply_framework_selections(project: Path, args: argparse.Namespace) -> None
             raise RuntimeError(f"cannot change {side} framework from {current} to {selected}")
         state["frameworks"][side] = selected
         completed = state.get("completed_phases", [])
-        if current == "unknown" and side in completed:
-            phase_index = PHASES.index(side)
+        phase_name = "desktop" if side == "python_package" else side
+        if current == "unknown" and phase_name in completed:
+            phase_index = PHASES.index(phase_name)
             state["completed_phases"] = [
                 phase for phase in completed if PHASES.index(phase) < phase_index
             ]
@@ -475,10 +487,18 @@ def _require_frameworks(target: str, frameworks: dict[str, str]) -> None:
             missing.append("mobile: flutter")
         if frameworks["backend"] == "unknown":
             missing.append("backend: django-drf or fastapi")
+    elif target == "desktop":
+        if frameworks["desktop"] == "unknown" and frameworks["python_package"] == "unknown":
+            missing.append("desktop app or Python package selection")
     else:
-        if frameworks["frontend"] == "unknown" and frameworks["mobile"] == "unknown":
-            missing.append("client: react, nextjs, or flutter")
-        if frameworks["backend"] == "unknown":
+        if all(
+            frameworks[side] == "unknown"
+            for side in ("frontend", "mobile", "desktop", "python_package")
+        ):
+            missing.append("deliverable: web, mobile, desktop app, or Python package")
+        if frameworks["backend"] == "unknown" and any(
+            frameworks[side] != "unknown" for side in ("frontend", "mobile")
+        ):
             missing.append("backend: django-drf or fastapi")
     if target == "deployment" and frameworks["deployment"] == "unknown":
         missing.append("deployment provider: aws")
@@ -487,12 +507,11 @@ def _require_frameworks(target: str, frameworks: dict[str, str]) -> None:
 
 
 def _skip_disabled_client_phase(project: Path, phase: str, force: bool = False) -> bool:
-    side = phase if phase in {"frontend", "mobile", "deployment"} else None
-    if side is None:
+    if phase not in {"design", "frontend", "mobile", "desktop", "backend", "deployment"}:
         return False
     store = StateStore(project)
     state = store.load()
-    if not force and state["frameworks"][side] != "unknown":
+    if not force and not _optional_phase_skipped(state["frameworks"], phase):
         return False
     completed = state.setdefault("completed_phases", [])
     if phase not in completed:
@@ -504,6 +523,25 @@ def _skip_disabled_client_phase(project: Path, phase: str, force: bool = False) 
         {"at": utc_now(), "decision": "optional_phase_skipped", "phase": phase},
     )
     return True
+
+
+def _optional_phase_skipped(frameworks: dict[str, str], phase: str) -> bool:
+    if phase == "desktop":
+        return all(
+            frameworks.get(side, "unknown") == "unknown"
+            for side in ("desktop", "python_package")
+        )
+    if phase == "design":
+        return (
+            frameworks.get("python_package", "unknown") != "unknown"
+            and all(
+                frameworks.get(side, "unknown") == "unknown"
+                for side in ("frontend", "mobile", "desktop")
+            )
+        )
+    return phase in {"frontend", "mobile", "backend", "deployment"} and frameworks.get(
+        phase, "unknown"
+    ) == "unknown"
 
 
 def _defer_deployment_selection(project: Path) -> None:
@@ -566,6 +604,8 @@ def _reconcile_state_packs(project: Path, *, include_deployment: bool) -> dict[s
         prd,
         current["frontend"],
         current["mobile"],
+        current["desktop"],
+        current["python_package"],
         current["backend"],
         current["deployment"],
     )
@@ -833,12 +873,15 @@ def command_start(args: argparse.Namespace) -> int:
         prd = discover_prd(project, args.prd)
         args.prd = prd.relative_to(project).as_posix()
         resolved = resolve_frameworks(
-            prd, args.frontend, args.mobile, args.backend, args.deployment
+            prd, args.frontend, args.mobile, args.desktop, args.python_package,
+            args.backend, args.deployment
         )
         if defer_deployment:
             resolved["deployment"] = "unknown"
         args.frontend = resolved["frontend"]
         args.mobile = resolved["mobile"]
+        args.desktop = resolved["desktop"]
+        args.python_package = resolved["python_package"]
         args.backend = resolved["backend"]
         args.deployment = resolved["deployment"]
         args._include_deployment_packs = target == "deployment" and not defer_deployment
@@ -907,9 +950,7 @@ def command_start(args: argparse.Namespace) -> int:
             continue
         if phase in completed:
             frameworks = StateStore(project).load()["frameworks"]
-            optional_skipped = (
-                phase in {"frontend", "mobile", "deployment"} and frameworks[phase] == "unknown"
-            )
+            optional_skipped = _optional_phase_skipped(frameworks, phase)
             if (
                 optional_skipped
                 or (phase == "backend" and backend_prerequisite_current)
@@ -1033,7 +1074,7 @@ def command_test(args: argparse.Namespace) -> int:
         groups = [
             group
             for group in (
-                "backend", "frontend", "mobile", "generate-client", "contract",
+                "backend", "frontend", "mobile", "desktop", "generate-client", "contract",
                 "integration", "e2e",
             )
             if isinstance(configured, dict) and configured.get(group)
@@ -1192,7 +1233,7 @@ def command_generate_prd(args: argparse.Namespace) -> int:
     )
     if code == 0 and payload.get("status") == "READY":
         prd = require_prd(project, str(payload["output"]))
-        frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
+        frameworks = resolve_frameworks(prd)
         selection = reconcile_selected_packs(
             project,
             prd,
@@ -1221,7 +1262,7 @@ def command_prepare_project_documents(args: argparse.Namespace) -> int:
     if code == 0 and payload.get("status") == "READY":
         prd_entry = next(item for item in payload["documents"] if item["name"] == "PRD.md")
         prd = require_prd(project, prd_entry["path"])
-        frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
+        frameworks = resolve_frameworks(prd)
         selection = reconcile_selected_packs(
             project,
             prd,
@@ -1262,7 +1303,7 @@ def command_sync_design(args: argparse.Namespace) -> int:
         _reconcile_state_packs(project, include_deployment=False)
     else:
         prd = discover_prd(project, None)
-        frameworks = resolve_frameworks(prd, "unknown", "unknown", "unknown", "unknown")
+        frameworks = resolve_frameworks(prd)
         reconcile_selected_packs(
             project,
             prd,
@@ -1353,6 +1394,10 @@ def add_start_arguments(command: argparse.ArgumentParser, until: str) -> None:
     command.add_argument("--screenshot", action="append", default=[])
     command.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
     command.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
+    command.add_argument("--desktop", choices=["python", "pyside6", "unknown"], default="unknown")
+    command.add_argument(
+        "--python-package", choices=["library", "cli", "both", "unknown"], default="unknown"
+    )
     command.add_argument(
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
@@ -1396,6 +1441,13 @@ def parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
         command.add_argument(
+            "--desktop", choices=["python", "pyside6", "unknown"], default="unknown"
+        )
+        command.add_argument(
+            "--python-package", choices=["library", "cli", "both", "unknown"],
+            default="unknown"
+        )
+        command.add_argument(
             "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
         )
         command.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
@@ -1410,7 +1462,13 @@ def parser() -> argparse.ArgumentParser:
     one_shot.add_argument("--screenshot", action="append", default=[])
     one_shot.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
     one_shot.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
-    one_shot.add_argument("--backend", choices=["django-drf", "fastapi"], required=True)
+    one_shot.add_argument("--desktop", choices=["python", "pyside6", "unknown"], default="unknown")
+    one_shot.add_argument(
+        "--python-package", choices=["library", "cli", "both", "unknown"], default="unknown"
+    )
+    one_shot.add_argument(
+        "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
+    )
     one_shot.add_argument("--deployment", choices=["aws", "unknown"], default="unknown")
     add_adapter(one_shot, "codex")
     one_shot.add_argument("--execute", action="store_true")
@@ -1423,6 +1481,7 @@ def parser() -> argparse.ArgumentParser:
         "start-generatehtml": "html",
         "start-frontend": "frontend",
         "start-mobile": "mobile",
+        "start-desktop": "desktop",
         "start-backend": "backend",
         "start-integration": "integration",
         "start-testing": "testing",
@@ -1464,7 +1523,8 @@ def parser() -> argparse.ArgumentParser:
     selection = test.add_mutually_exclusive_group(required=True)
     selection.add_argument("--all", action="store_true")
     selection.add_argument(
-        "--scope", choices=["backend", "frontend", "mobile", "contract", "integration", "e2e"]
+        "--scope",
+        choices=["backend", "frontend", "mobile", "desktop", "contract", "integration", "e2e"],
     )
     test.set_defaults(handler=command_test)
     test.add_argument("--execute", action="store_true")

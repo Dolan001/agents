@@ -8,6 +8,8 @@ from pathlib import Path
 ALLOWED_FRAMEWORKS = {
     "frontend": ("react", "nextjs"),
     "mobile": ("flutter",),
+    "desktop": ("pyside6",),
+    "python_package": ("library", "cli", "both"),
     "backend": ("django-drf", "fastapi"),
     "deployment": ("aws",),
 }
@@ -16,6 +18,7 @@ _PATTERNS = {
     "react": re.compile(r"(?:\bReact\b|\breact(?:\.js|js)\b)"),
     "nextjs": re.compile(r"\bnext(?:\.js|js)\b", re.IGNORECASE),
     "flutter": re.compile(r"\bflutter\b", re.IGNORECASE),
+    "pyside6": re.compile(r"\b(?:pyside\s*6|qt\s*for\s*python)\b", re.IGNORECASE),
     "django-drf": re.compile(
         r"\b(?:django\s+rest\s+framework|django[- ]?drf|drf)\b", re.IGNORECASE
     ),
@@ -25,7 +28,7 @@ _PATTERNS = {
 
 _DECLARATION = re.compile(
     r"^\s*(?:[-*]\s*)?(?:\*{1,2})?"
-    r"(?P<side>frontend|mobile|backend)\s+(?:framework|technology|stack)"
+    r"(?P<side>frontend|mobile|desktop|backend)\s+(?:framework|technology|stack)"
     r"(?:\*{1,2})?\s*:\s*(?P<value>.+?)\s*$",
     re.IGNORECASE,
 )
@@ -38,10 +41,24 @@ _DEPLOYMENT_DECLARATION = re.compile(
 )
 
 _AWS_PROVIDER_VALUE = re.compile(r"^\s*(?:aws|amazon\s+web\s+services)\s*[.!]?\s*$", re.I)
+_PYTHON_DESKTOP_VALUE = re.compile(r"^\s*python(?:\s+desktop)?\s*[.!]?\s*$", re.I)
+_PACKAGE_DECLARATION = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*{1,2})?Python\s+package(?:\*{1,2})?\s*:\s*(.+?)\s*$",
+    re.I,
+)
+_PACKAGE_VALUES = {
+    "library": "library",
+    "cli": "cli",
+    "command-line": "cli",
+    "both": "both",
+    "library and cli": "both",
+}
 
 
 def validate_framework(side: str, value: str) -> str:
     """Return a supported canonical value or fail with the complete allowlist."""
+    if side == "desktop" and value == "python":
+        return "pyside6"
     allowed = ALLOWED_FRAMEWORKS[side]
     if value not in allowed:
         raise RuntimeError(
@@ -55,12 +72,27 @@ def detect_prd_frameworks(prd: Path) -> dict[str, str]:
     text = prd.read_text(encoding="utf-8")
     detected: dict[str, str] = {}
     for line in text.splitlines():
+        package = _PACKAGE_DECLARATION.match(line)
+        if package:
+            value = package.group(1).strip().lower().rstrip(".! ")
+            selected = _PACKAGE_VALUES.get(value)
+            if selected is None:
+                raise RuntimeError(
+                    f"unsupported Python package declaration {value!r}; "
+                    "choose library, CLI, or both"
+                )
+            if "python_package" in detected and detected["python_package"] != selected:
+                raise RuntimeError("PRD declares conflicting Python package modes")
+            detected["python_package"] = selected
+            continue
         declaration = _DECLARATION.match(line)
         if not declaration:
             continue
         side = declaration.group("side").lower()
         value = declaration.group("value")
         side_matches = [name for name in ALLOWED_FRAMEWORKS[side] if _PATTERNS[name].search(value)]
+        if side == "desktop" and _PYTHON_DESKTOP_VALUE.fullmatch(value):
+            side_matches = ["pyside6"]
         if not side_matches:
             raise RuntimeError(
                 f"unsupported {side} framework declaration {value!r}; choose one of: "
@@ -78,7 +110,7 @@ def detect_prd_frameworks(prd: Path) -> dict[str, str]:
         detected[side] = side_matches[0]
 
     for side, allowed in ALLOWED_FRAMEWORKS.items():
-        if side in {"deployment", *detected}:
+        if side in {"deployment", "python_package", *detected}:
             continue
         matches = [name for name in allowed if _PATTERNS[name].search(text)]
         if len(matches) > 1:
@@ -104,6 +136,8 @@ def resolve_frameworks(
     prd: Path,
     frontend: str = "unknown",
     mobile: str = "unknown",
+    desktop: str = "unknown",
+    python_package: str = "unknown",
     backend: str = "unknown",
     deployment: str = "unknown",
 ) -> dict[str, str]:
@@ -111,15 +145,17 @@ def resolve_frameworks(
     provided = {
         "frontend": frontend,
         "mobile": mobile,
+        "desktop": desktop,
+        "python_package": python_package,
         "backend": backend,
         "deployment": deployment,
     }
     declared = detect_prd_frameworks(prd)
     resolved: dict[str, str] = {}
-    for side in ("frontend", "mobile", "backend", "deployment"):
+    for side in ("frontend", "mobile", "desktop", "python_package", "backend", "deployment"):
         selected = provided[side]
         if selected != "unknown":
-            validate_framework(side, selected)
+            selected = validate_framework(side, selected)
         from_prd = declared.get(side)
         if selected != "unknown" and from_prd and selected != from_prd:
             raise RuntimeError(

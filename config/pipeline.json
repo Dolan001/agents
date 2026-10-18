@@ -8,6 +8,7 @@
     "design",
     "frontend",
     "mobile",
+    "desktop",
     "integration",
     "testing",
     "deployment",
@@ -20,6 +21,7 @@
     ["design"],
     ["frontend"],
     ["mobile"],
+    ["desktop"],
     ["integration"],
     ["testing"],
     ["deployment"],
@@ -56,6 +58,12 @@
       "blueprint": "blueprints/mobile.json",
       "gate": "gates/contracts/mobile.json"
     },
+    "desktop": {
+      "dependencies": ["design"],
+      "manifest": "pipeline/manifests/desktop.json",
+      "blueprint": "blueprints/desktop.json",
+      "gate": "gates/contracts/desktop.json"
+    },
     "backend": {
       "dependencies": ["requirements"],
       "manifest": "pipeline/manifests/backend.json",
@@ -63,7 +71,7 @@
       "gate": "gates/contracts/backend.json"
     },
     "integration": {
-      "dependencies": ["frontend", "mobile", "backend"],
+      "dependencies": ["frontend", "mobile", "desktop", "backend"],
       "manifest": "pipeline/manifests/integration.json",
       "blueprint": "blueprints/integration.json",
       "gate": "gates/contracts/integration.json"

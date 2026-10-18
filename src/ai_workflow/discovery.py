@@ -39,6 +39,7 @@ def detect(files: list[str]) -> dict[str, Any]:
     file_set = set(files)
     frontend = "unknown"
     mobile = "unknown"
+    desktop = "unknown"
     backend = "unknown"
     reasons: list[str] = []
     package_files = [name for name in files if name.endswith("package.json")]
@@ -55,13 +56,24 @@ def detect(files: list[str]) -> dict[str, Any]:
     ):
         mobile = "flutter"
         reasons.append("Flutter pubspec.yaml detected")
+    desktop_pyproject = "apps/desktop/pyproject.toml" in file_set
+    desktop_sources = [name for name in files if name.startswith("apps/desktop/src/")]
+    if desktop_pyproject and desktop_sources:
+        desktop = "pyside6"
+        reasons.append("PySide6 desktop package shape detected")
     if "manage.py" in file_set or any(name.endswith("/manage.py") for name in files):
         backend = "django-drf"
         reasons.append("Django manage.py detected")
     elif any(name.endswith("/app/main.py") or name == "app/main.py" for name in files):
         backend = "fastapi"
         reasons.append("FastAPI app/main.py shape detected")
-    return {"frontend": frontend, "mobile": mobile, "backend": backend, "reasons": reasons}
+    return {
+        "frontend": frontend,
+        "mobile": mobile,
+        "desktop": desktop,
+        "backend": backend,
+        "reasons": reasons,
+    }
 
 
 def inventory(project: Path) -> dict[str, Any]:

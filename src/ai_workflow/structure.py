@@ -528,8 +528,10 @@ def _module_organization_violations(
     return violations
 
 
-def validate_structure(project: Path, pack: Path, phase: str) -> dict[str, Any]:
-    contract = read_json(pack / "rules" / "project-structure.json")
+def validate_structure(
+    project: Path, pack: Path, phase: str, contract_name: str = "project-structure.json"
+) -> dict[str, Any]:
+    contract = read_json(pack / "rules" / contract_name)
     if not isinstance(contract, dict):
         raise RuntimeError(f"framework structure contract is missing: {pack}")
     target_value = contract.get("target_root")

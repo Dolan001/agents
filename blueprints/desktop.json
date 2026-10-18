@@ -1,0 +1,10 @@
+{
+  "name": "desktop",
+  "nodes": [
+    {"id": "scaffold-target-monorepo", "type": "agentic", "agent": "solution-architect", "required_output": ".ai/evidence/monorepo-bootstrap.json", "verification": "evidence-schema"},
+    {"id": "load-desktop-pack", "type": "deterministic", "action": "resolve_selected_framework_pack"},
+    {"id": "prepare-client-foundation", "type": "agentic", "agent": "selected-desktop-agent", "required_output": ".ai/evidence/desktop-foundation.json", "verification": "evidence-schema"},
+    {"id": "implement-desktop-slices", "type": "agentic", "agent": "selected-desktop-agent", "fanout": "ready_feature_slices", "required_output": ".ai/evidence/features/{feature_id}/desktop.json", "verification": "evidence-schema"},
+    {"id": "verify-desktop", "type": "agentic", "agent": "selected-desktop-verifier", "required_output": ".ai/evidence/desktop-verification.json", "verification": "verified-true", "repair": {"id": "repair-desktop-verification", "agent": "selected-desktop-agent", "required_output": ".ai/evidence/desktop-repair.json", "verification": "evidence-schema"}}
+  ]
+}

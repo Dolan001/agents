@@ -39,6 +39,17 @@ from ai_workflow.packs import (
             {"base", "flutter", "drf"},
         ),
         (
+            {
+                "frontend": "unknown",
+                "mobile": "unknown",
+                "desktop": "pyside6",
+                "backend": "unknown",
+            },
+            {},
+            False,
+            {"base", "desktop"},
+        ),
+        (
             {"frontend": "react", "mobile": "flutter", "backend": "fastapi"},
             {},
             False,
@@ -97,7 +108,7 @@ def test_missing_choices_are_exact() -> None:
             "mobile": "unknown",
             "backend": "unknown",
         }
-    ) == ["client: react, nextjs, or flutter", "backend: django-drf or fastapi"]
+    ) == ["deliverable: web, mobile, desktop app, or Python package"]
 
 
 def _fake_workflow(root: Path) -> None:

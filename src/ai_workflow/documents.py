@@ -153,6 +153,12 @@ def _document_targets(project: Path) -> dict[str, Path]:
     return targets
 
 
+def _next_build_command(project: Path, prd: Path) -> str:
+    declared = detect_prd_frameworks(prd)
+    command = "start-design" if {"frontend", "mobile"} & declared.keys() else "start-desktop"
+    return f"${command} --prd {prd.relative_to(project).as_posix()}"
+
+
 def _section(text: str, heading: str) -> str:
     match = re.search(rf"(?ms)^## {re.escape(heading)}\s*$\n(?P<body>.*?)(?=^## |\Z)", text)
     return match.group("body").strip() if match else ""
@@ -215,28 +221,31 @@ def validate_document_candidates(paths: dict[str, Path]) -> list[str]:
     backend = paths["BACKEND_SPEC.md"].read_text(encoding="utf-8")
     delivery = paths["DELIVERY_SPEC.md"].read_text(encoding="utf-8")
 
-    _require_terms(
-        trd,
-        "TRD.md",
-        (r"monorepo", r"PostgreSQL", r"OpenAPI", r"/api/v1", r"security", r"observ"),
-        errors,
-    )
-    _require_terms(
-        backend,
-        "BACKEND_SPEC.md",
-        (
-            r"PostgreSQL",
-            r"migration",
-            r"constraint",
-            r"index",
-            r"transaction",
-            r"authoriz",
-            r"OpenAPI",
-            r"/api/v1",
-            r"query",
-        ),
-        errors,
-    )
+    trd_terms = [r"monorepo", r"security", r"observ"]
+    if "backend" in declared:
+        trd_terms.extend((r"PostgreSQL", r"OpenAPI", r"/api/v1"))
+        _require_terms(
+            backend,
+            "BACKEND_SPEC.md",
+            (
+                r"PostgreSQL",
+                r"migration",
+                r"constraint",
+                r"index",
+                r"transaction",
+                r"authoriz",
+                r"OpenAPI",
+                r"/api/v1",
+                r"query",
+            ),
+            errors,
+        )
+    elif not re.search(r"not required|defer|local-only", backend, re.I):
+        errors.append(
+            "BACKEND_SPEC.md must explicitly defer a backend for a local desktop app "
+            "or Python package"
+        )
+    _require_terms(trd, "TRD.md", tuple(trd_terms), errors)
     if "frontend" in declared or "mobile" in declared:
         _require_terms(
             ui,
@@ -258,17 +267,36 @@ def validate_document_candidates(paths: dict[str, Path]) -> list[str]:
             ),
             errors,
         )
+    elif "desktop" in declared:
+        _require_terms(
+            ui,
+            "UI_UX_SPEC.md",
+            (r"desktop", r"keyboard", r"error", r"exit", r"accessib"),
+            errors,
+        )
+    elif "python_package" in declared:
+        _require_terms(
+            ui,
+            "UI_UX_SPEC.md",
+            (r"package|library|CLI", r"install", r"error"),
+            errors,
+        )
     framework_terms = {
         "react": r"React",
         "nextjs": r"Next\.js",
         "flutter": r"Flutter",
+        "pyside6": r"PySide6",
         "django-drf": r"Django REST Framework",
         "fastapi": r"FastAPI",
     }
     for side, framework in declared.items():
         if side == "deployment":
             continue
-        term = framework_terms[framework]
+        term = (
+            r"Python.*(?:package|library|CLI)"
+            if side == "python_package"
+            else framework_terms[framework]
+        )
         if not re.search(term, trd, re.I):
             errors.append(f"TRD.md does not name selected {side}: {framework}")
         target = backend if side == "backend" else ui
@@ -425,9 +453,15 @@ orchestrator perform schema and cross-document validation.
 When ready, ensure all five complete candidates exist and write a ready assessment with no
 questions. On an initial pass, write every candidate. On a repair pass, modify only the explicitly
 named repair targets and retain the other candidates exactly. Follow the exact titles, headings,
-stable PRD identifiers, traceability, supported stack profiles, PostgreSQL and monorepo workflow.
+stable PRD identifiers, traceability, supported stack profiles, and monorepo workflow. Require
+PostgreSQL only when a backend is selected.
 In the PRD `## Build Directives`, include exactly
 `AI workflow adapter: {PROVIDER_LABELS[project_adapter]}`.
+When the product is a Python desktop application, use `Desktop framework: Python Desktop`. For a
+reusable Python library or command-line tool, add `Python package: library`, `Python package: CLI`,
+or `Python package: both`. Use the base PRD skill's Python-deliverables profile while drafting;
+the desktop behavior pack is selected only after the PRD is ready. Use PySide6 only for a requested
+GUI, and do not invent a backend for local-only work.
 Keep unrequested deployment explicitly deferred. Write credential names, owners, environments, and
 destinations only—never values.
 """
@@ -529,10 +563,7 @@ def prepare_project_documents(
                 "status": "READY",
                 "documents": prior_state["documents"],
                 "cached": True,
-                "next": (
-                    "$start-design --prd "
-                    f"{targets['PRD.md'].relative_to(project).as_posix()}"
-                ),
+                "next": _next_build_command(project, targets["PRD.md"]),
             }
     if not answers and same_source and prior_state.get("status") == "needs_input":
         return 2, {
@@ -700,9 +731,6 @@ def prepare_project_documents(
                 "documents": manifest["documents"],
                 "assumptions": assessment["assumptions"],
                 "changes": assessment["changes"],
-                "next": (
-                    "$start-design --prd "
-                    f"{targets['PRD.md'].relative_to(project).as_posix()}"
-                ),
+                "next": _next_build_command(project, targets["PRD.md"]),
             }
     raise RuntimeError(f"project document preparation failed validation: {failures}")

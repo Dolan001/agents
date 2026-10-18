@@ -1,0 +1,5 @@
+{
+  "phase": "desktop",
+  "required": [".ai/test-commands.json", ".ai/evidence/monorepo-bootstrap.json", ".ai/evidence/desktop-foundation.json", ".ai/evidence/desktop-verification.json"],
+  "assertions": ["selected_deliverable_structures_valid", "desktop_gui_tests_pass_when_selected", "python_package_tests_pass_when_selected", "wheel_and_sdist_build_verified_for_each", "isolated_install_smoke_tested", "native_packaging_plan_evidenced_when_gui_selected"]
+}

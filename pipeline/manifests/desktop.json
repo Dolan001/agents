@@ -1,0 +1,10 @@
+{
+  "name": "desktop",
+  "prerequisites": ["design"],
+  "agents": ["selected-desktop-agent", "selected-desktop-verifier"],
+  "rules": ["rules/common.md", "rules/phases/desktop.md"],
+  "inputs": ["PRD.md", "docs/PRD.md", "TRD.md", "docs/TRD.md", "UI_UX_SPEC.md", "docs/UI_UX_SPEC.md", "docs/generated/requirements.json", "HTML/approved/**", "apps/desktop/**", "packages/python/**"],
+  "outputs": ["apps/desktop/**", "packages/python/**", ".ai/test-commands.json", ".ai/evidence/monorepo-bootstrap.json", ".ai/evidence/desktop-foundation.json", ".ai/evidence/desktop-verification.json", "artifacts/desktop/**"],
+  "scope": {"allowed_paths": ["README.md", ".gitignore", ".env.example", "Makefile", "apps/desktop/**", "packages/python/**", "tests/desktop/**", "docs/**", ".ai/**", "artifacts/desktop/**"]},
+  "gate": "gates/contracts/desktop.json"
+}

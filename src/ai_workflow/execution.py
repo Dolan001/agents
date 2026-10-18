@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -145,7 +146,11 @@ def _artifact_ok(path: Path, verification: str) -> bool:
             or payload.get("output_hashes") != expected
         ):
             return False
-    if path.name in {"frontend-foundation.json", "mobile-foundation.json"}:
+    if path.name in {
+        "frontend-foundation.json",
+        "mobile-foundation.json",
+        "desktop-foundation.json",
+    }:
         if not _client_foundation_ready(path.parents[2], path.stem.split("-")[0], payload):
             return False
     if verification == "evidence-schema":
@@ -206,8 +211,42 @@ def _client_foundation_ready(project: Path, phase: str, payload: Any) -> bool:
             return False
         if not any(app.rglob("*.tsx")) and not any(app.rglob("*.jsx")):
             return False
-    elif not (app / "pubspec.yaml").is_file() or not (app / "lib/main.dart").is_file():
-        return False
+    elif phase == "mobile":
+        if not (app / "pubspec.yaml").is_file() or not (app / "lib/main.dart").is_file():
+            return False
+    elif phase == "desktop":
+        state = read_json(project / ".ai" / "state.json", {})
+        frameworks = state.get("frameworks", {}) if isinstance(state, dict) else {}
+        gui_selected = frameworks.get("desktop", "unknown") != "unknown"
+        package_mode = frameworks.get("python_package", "unknown")
+        if gui_selected and (
+            not (app / "pyproject.toml").is_file()
+            or not any((app / "src").glob("*/__main__.py"))
+        ):
+            return False
+        if package_mode != "unknown":
+            package_root = project / "packages" / "python"
+            pyproject = package_root / "pyproject.toml"
+            if not pyproject.is_file() or not any(
+                (package_root / "src").glob("*/__init__.py")
+            ):
+                return False
+            try:
+                metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return False
+            project_metadata = metadata.get("project", {})
+            if not isinstance(project_metadata, dict) or not all(
+                isinstance(project_metadata.get(key), str)
+                for key in ("name", "version")
+            ):
+                return False
+            if package_mode in {"cli", "both"} and not project_metadata.get("scripts"):
+                return False
+        return isinstance(payload, dict) and any(
+            isinstance(check, dict) and check.get("status") == "passed"
+            for check in payload.get("checks", [])
+        )
     client = project / "packages/api-client"
     suffix = "*.dart" if phase == "mobile" else "*.ts"
     if not any(client.rglob(suffix)) or not (project / "docs/api/openapi.json").is_file():
@@ -405,7 +444,7 @@ def phase_checkpoint_current(
     nodes = checkpoints.get("nodes", {}) if isinstance(checkpoints, dict) else {}
     if not isinstance(blueprint, dict) or not isinstance(nodes, dict):
         return False
-    if phase in {"frontend", "mobile"} and _client_phase_verification_current(
+    if phase in {"frontend", "mobile", "desktop"} and _client_phase_verification_current(
         project, phase, nodes
     ):
         return True
@@ -460,8 +499,8 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
             raise RuntimeError("design phase lacks a valid deterministic input mode")
         if (project / ".ai" / "evidence" / "design" / "owner-approval.json").is_file():
             validate_html_approval(project)
-    if phase in {"frontend", "mobile", "backend", "deployment"}:
-        if phase in {"frontend", "mobile"}:
+    if phase in {"frontend", "mobile", "desktop", "backend", "deployment"}:
+        if phase in {"frontend", "mobile", "desktop"}:
             validate_monorepo(project, workflow_root() / "config" / "target-monorepo.json")
         pack = _selected_pack(workflow_root(), phase, state["frameworks"])
         if pack is None:
@@ -470,7 +509,16 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
         # evidence. Reapplying the generator's complete template contract here would reject
         # valid implementations that selected a smaller or differently organized capability set.
         # Client and deployment phases still consume generated scaffold contracts directly.
-        structure = None if phase == "backend" else validate_structure(project, pack, phase)
+        structure = None
+        if phase == "desktop":
+            if state["frameworks"].get("desktop") != "unknown":
+                structure = validate_structure(project, pack, phase)
+            if state["frameworks"].get("python_package", "unknown") != "unknown":
+                validate_structure(
+                    project, pack, "python-package", "python-package-structure.json"
+                )
+        elif phase != "backend":
+            structure = validate_structure(project, pack, phase)
         if phase in {"frontend", "mobile"}:
             assert structure is not None
             validate_realtime_evidence(
@@ -542,6 +590,12 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     selected = {
         "frontend": {"nextjs": "nextjs", "react": "reactjs"}.get(frameworks["frontend"]),
         "mobile": {"flutter": "flutter"}.get(frameworks["mobile"]),
+        "desktop": (
+            "desktop"
+            if frameworks.get("desktop", "unknown") != "unknown"
+            or frameworks.get("python_package", "unknown") != "unknown"
+            else None
+        ),
         "backend": {"django-drf": "drf", "fastapi": "fastapi"}.get(frameworks["backend"]),
         "deployment": {"aws": "aws"}.get(frameworks["deployment"]),
     }
@@ -561,6 +615,8 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
             if "deployment" in name
             else "backend"
             if "backend" in name
+            else "desktop"
+            if "desktop" in name
             else "mobile"
             if "mobile" in name
             else "frontend"
@@ -584,12 +640,15 @@ def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path |
     mapping = {
         "frontend": {"nextjs": "nextjs", "react": "reactjs"},
         "mobile": {"flutter": "flutter"},
+        "desktop": {"pyside6": "desktop"},
         "backend": {"django-drf": "drf", "fastapi": "fastapi"},
         "deployment": {"aws": "aws"},
     }
     if phase not in mapping:
         return None
-    value = frameworks[phase]
+    if phase == "desktop" and frameworks.get("python_package", "unknown") != "unknown":
+        return root / "desktop"
+    value = frameworks.get(phase, "unknown")
     pack = mapping[phase].get(value)
     if not pack:
         raise RuntimeError(f"{phase} framework must be resolved before execution: {value}")
@@ -619,6 +678,7 @@ def _skill_paths(
         "design": ["prepare-design-baseline"],
         "frontend": [framework_task_skill],
         "mobile": [framework_task_skill],
+        "desktop": [framework_task_skill],
         "backend": [framework_task_skill],
         "integration": ["execute-task-contract"],
         "testing": ["verify-feature"],
@@ -769,6 +829,14 @@ def _skill_paths(
             selected_skills = [
                 path for path in available if path.parent.name.startswith("inspect-")
             ]
+        if phase == "desktop":
+            gui_selected = frameworks.get("desktop", "unknown") != "unknown"
+            package_selected = frameworks.get("python_package", "unknown") != "unknown"
+            selected_skills = [
+                path for path in selected_skills
+                if ("python-package" in path.parent.name and package_selected)
+                or ("python-package" not in path.parent.name and gui_selected)
+            ]
         if not selected_skills:
             raise RuntimeError(f"no framework skill is routed for {phase}/{node}")
         paths.extend(selected_skills)
@@ -831,7 +899,7 @@ def _control_paths(
                     root / "schemas" / "backend-verification.schema.json",
                 ]
             )
-        if phase in {"frontend", "mobile", "backend"} and verifying:
+        if phase in {"frontend", "mobile", "desktop", "backend"} and verifying:
             paths.append(root / "schemas" / "realtime-verification.schema.json")
         if phase in {"frontend", "mobile"} and verifying:
             paths.append(root / "schemas" / "client-integration-verification.schema.json")
@@ -1060,18 +1128,19 @@ def _node_input_files(
         test_matrix = project / "artifacts" / "tests" / "command-results.json"
         if phase == "testing" and test_matrix.is_file():
             files.add(test_matrix.relative_to(project).as_posix())
-        if phase in {"frontend", "mobile", "backend"}:
+        if phase in {"frontend", "mobile", "desktop", "backend"}:
             foundation = project / f".ai/evidence/{phase}-foundation.json"
             if foundation.is_file():
                 files.add(foundation.relative_to(project).as_posix())
-            client_names = {
-                "backend": {"generate.py"},
-                "frontend": {"generate.py", "client.ts"},
-                "mobile": {"generate.py", "client.dart"},
-            }[phase]
-            for path in (project / "packages/api-client").rglob("*"):
-                if path.name in client_names and _context_file_allowed(project, path):
-                    files.add(path.relative_to(project).as_posix())
+            if phase != "desktop":
+                client_names = {
+                    "backend": {"generate.py"},
+                    "frontend": {"generate.py", "client.ts"},
+                    "mobile": {"generate.py", "client.dart"},
+                }[phase]
+                for path in (project / "packages/api-client").rglob("*"):
+                    if path.name in client_names and _context_file_allowed(project, path):
+                        files.add(path.relative_to(project).as_posix())
     if phase == "design" and node in {
         "establish-html-baseline",
         "repair-html-baseline",
@@ -1612,7 +1681,7 @@ def _prompt(
     )
     design_line = (
         str(project / ".ai" / "design-inputs.json")
-        if phase in {"design", "frontend", "mobile"}
+        if phase in {"design", "frontend", "mobile", "desktop"}
         else "Not applicable to this phase."
     )
     role_boundary = (
@@ -1720,11 +1789,12 @@ def _prompt(
                 "only dangling images carrying the exact "
                 f"`ai.workflow.project={compose_project}` label. Confirm no project containers, "
                 "networks, or volumes remain, and retain at most the one current tagged dependency "
-                "image for later frontend/mobile integration. Never use an unfiltered or global "
+                "image for later frontend/mobile/desktop integration. Never use an unfiltered or "
+                "global "
                 "Docker prune. If verification fails, remove one-off containers and "
                 "disposable databases but keep the single shared runtime available for resume."
             )
-    if node["id"] == "prepare-client-foundation":
+    if node["id"] == "prepare-client-foundation" and phase in {"frontend", "mobile"}:
         role_boundary += (
             f"\nCreate an executable {phase} application using the selected framework's create "
             "skill, not README placeholders. Install/lock dependencies, configure routing, "
@@ -1747,6 +1817,43 @@ def _prompt(
                 "groups rather than inventing passing commands. Diagnose registry, peer "
                 "resolution and Docker disk failures separately; follow the selected create "
                 "skill's recovery guidance instead of repeating an unchanged install."
+            )
+    if phase == "desktop":
+        gui_selected = state["frameworks"].get("desktop", "unknown") != "unknown"
+        package_mode = state["frameworks"].get("python_package", "unknown")
+        role_boundary += (
+            "\nSelected Python deliverables: "
+            f"GUI app={'yes' if gui_selected else 'no'}, standalone package={package_mode}. "
+            "Implement only the selected deliverables. A standalone library or CLI has no Qt, "
+            "GUI launcher, tray, or native bundle requirement. Do not invent an API, backend, "
+            "database, Docker service, or generated client unless the PRD requires one."
+        )
+        if gui_selected:
+            role_boundary += (
+                "\nKeep domain and motion logic independent from Qt widgets, keep the event "
+                "loop responsive, package resources, and preserve a reliable tray or context-"
+                "menu exit. For floating companions, test animation state, screen-bound movement, "
+                "dragging, always-on-top and transparency flags, and platform fallbacks."
+            )
+        if package_mode != "unknown":
+            role_boundary += (
+                "\nCreate a separate installable project at packages/python with PEP 621 metadata. "
+                "Library mode needs an importable public API; CLI mode needs [project.scripts]; "
+                "both mode needs both. Test wheel and sdist, isolated installation, and the "
+                "import or command entry point. Do not add PySide6 unless the package itself "
+                "explicitly needs it."
+            )
+        if node["id"] == "prepare-client-foundation":
+            if gui_selected:
+                role_boundary += (
+                    "\nCreate an executable package-first PySide6 application, not README "
+                    "placeholders. Define PEP 621 metadata and a [project.gui-scripts] launcher, "
+                    "install and lock dependencies. Build wheel and sdist and smoke-test the "
+                    "launcher from an isolated installation environment."
+                )
+            role_boundary += (
+                "\nRegister the selected checks in the desktop test command group and write "
+                "truthful foundation evidence for every selected deliverable."
             )
     if node["id"] == "prepare-backend-verification":
         role_boundary += (
@@ -1906,12 +2013,13 @@ def _validate_project_test_commands(project: Path, phase: str | None = None) -> 
             for failure in failures[:8]
         ]
         raise RuntimeError(f"test-command manifest is invalid: {details}")
-    required_groups = {
+    required_groups: set[str] = {
         "backend": {"backend", "generate-client", "contract"},
         "frontend": {"frontend", "generate-client", "contract"},
         "mobile": {"mobile", "generate-client", "contract"},
+        "desktop": {"desktop"},
         "integration": {"generate-client", "contract", "integration"},
-    }.get(phase, set())
+    }.get(phase or "", set())
     missing_groups = sorted(required_groups - set(manifest["commands"]))
     if missing_groups:
         raise RuntimeError(f"test-command manifest is missing {phase} groups: {missing_groups}")
@@ -1990,7 +2098,8 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
         if pack is None or not (pack / "rules" / "project-structure.json").is_file():
             raise RuntimeError(f"selected framework pack is incomplete for {phase}")
     elif action == "run_project_owned_openapi_client_command":
-        run_command_groups(project, ["generate-client"])
+        if state["frameworks"].get("backend") != "unknown":
+            run_command_groups(project, ["generate-client"])
     elif action == "run_project_owned_test_commands":
         manifest = read_json(project / ".ai" / "test-commands.json", {"commands": {}})
         configured = manifest.get("commands", {}) if isinstance(manifest, dict) else {}
@@ -1998,11 +2107,12 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
             "backend": ("backend", "generate-client", "contract"),
             "frontend": ("frontend", "generate-client", "contract"),
             "mobile": ("mobile", "generate-client", "contract"),
+            "desktop": ("desktop",),
             "integration": ("generate-client", "contract", "integration"),
         }.get(
             phase,
             (
-                "backend", "frontend", "mobile", "generate-client", "contract",
+                "backend", "frontend", "mobile", "desktop", "generate-client", "contract",
                 "integration", "e2e",
             ),
         )
@@ -2043,7 +2153,7 @@ def _execute_phase_unlocked(
     if phase not in PHASES:
         raise RuntimeError(f"unknown phase: {phase}")
     selected_features = phase_tasks(selected_features, phase)
-    if phase in {"frontend", "mobile", "backend"}:
+    if phase in {"frontend", "mobile", "desktop", "backend"}:
         write_json(project / f".ai/phase-plans/{phase}.json", {
             "phase": phase, "tasks": selected_features,
             "note": "Phase-scoped implementation; final integration verification remains required.",
@@ -2055,7 +2165,7 @@ def _execute_phase_unlocked(
         raise RuntimeError(f"missing blueprint: {phase}")
     checkpoints = read_json(project / ".ai" / "node-state.json", {"version": 1, "nodes": {}})
     node_state = checkpoints.setdefault("nodes", {})
-    client_phase_verified = phase in {"frontend", "mobile"} and (
+    client_phase_verified = phase in {"frontend", "mobile", "desktop"} and (
         _client_phase_verification_current(project, phase, node_state)
     )
     if verification_only:

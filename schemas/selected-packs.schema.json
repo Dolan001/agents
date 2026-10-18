@@ -41,10 +41,12 @@
     "frameworks": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["frontend", "mobile", "backend", "deployment"],
+      "required": ["frontend", "mobile", "desktop", "python_package", "backend", "deployment"],
       "properties": {
         "frontend": {"enum": ["react", "nextjs", "unknown"]},
         "mobile": {"enum": ["flutter", "unknown"]},
+        "desktop": {"enum": ["pyside6", "unknown"]},
+        "python_package": {"enum": ["library", "cli", "both", "unknown"]},
         "backend": {"enum": ["django-drf", "fastapi", "unknown"]},
         "deployment": {"enum": ["aws", "unknown"]}
       }

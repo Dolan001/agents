@@ -17,6 +17,11 @@
       "role": "mobile",
       "target": "apps/mobile"
     },
+    "pyside6": {
+      "path": "desktop",
+      "role": "desktop",
+      "target": "apps/desktop"
+    },
     "nextjs": {
       "path": "nextjs",
       "role": "frontend",

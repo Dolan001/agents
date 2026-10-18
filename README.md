@@ -6,7 +6,7 @@ skills, phase rules, framework behavior packs, deterministic checks, evidence ga
 durable checkpoints, and safe Git delivery.
 
 The workflow repository contains no demonstration application or framework source to
-copy. Its linked framework repositories are code-free behavior packs. During execution,
+copy. Its linked or colocated framework directories are code-free behavior packs. During execution,
 agents use the selected guidance to create original application code in the user's
 separate target repository.
 
@@ -18,6 +18,7 @@ The supported application combinations are:
 |---|---|---|
 | Web frontend | React or Next.js | `apps/frontend` |
 | Mobile | Flutter for Android and iOS | `apps/mobile` |
+| Desktop | Python Desktop (PySide6) | `apps/desktop` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
 | AI capability | RAG (optional, requirement-triggered) | Selected backend and clients |
 | Deployment | AWS (optional) | `infra`, `.github/workflows`, `ops` |
@@ -26,8 +27,9 @@ Both backend choices use PostgreSQL. Generated tables and schema changes are own
 reviewed Django migrations or Alembic revisions; neither backend may fall back to SQLite
 or create production tables directly during application startup.
 
-Projects may be web only, mobile only, or web plus mobile; every mode includes one
-supported backend. The backend phase creates the monorepo root contract when needed:
+Projects may be web, mobile, desktop, or a combination. Web and mobile require a supported
+backend; a local-only desktop application does not. The first selected client phase creates the
+monorepo root contract when needed:
 
 ```text
 target-project/
@@ -36,6 +38,7 @@ target-project/
 ├── apps/
 │   ├── frontend/
 │   ├── mobile/
+│   ├── desktop/
 │   └── backend/
 ├── packages/
 │   └── api-client/
@@ -54,8 +57,8 @@ target-project/
 └── Makefile
 ```
 
-Design-only commands stop before this monorepo is created. `start-frontend` or
-`start-mobile` is the first command allowed to scaffold the application structure.
+Design-only commands stop before this monorepo is created. `start-frontend`, `start-mobile`, or
+`start-desktop` is the first command allowed to scaffold the application structure.
 
 ## Setup for a user who knows only Codex
 
@@ -250,6 +253,8 @@ and records it as an assumption. To force a selection, use explicit declarations
 ```markdown
 Frontend framework: Next.js
 Mobile framework: Flutter
+Desktop framework: Python Desktop
+Python package: CLI
 Backend framework: Django REST Framework
 Deployment provider: AWS
 ```
@@ -269,9 +274,9 @@ Inputs are preserved under `HTML/source/`, hashed, and treated as untrusted desi
 
 ### 3. Resolve frameworks before building
 
-The workflow accepts only React or Next.js for web, Flutter for Android/iOS mobile,
-and Django REST Framework or FastAPI for backend. AWS is the only deployment provider currently
-accepted. At least one client is required.
+The workflow accepts only React or Next.js for web, Flutter for Android/iOS mobile, PySide6 for
+desktop, and Django REST Framework or FastAPI for backend. AWS is the only deployment provider
+currently accepted. At least one client is required.
 
 - If the PRD explicitly declares a supported framework, Codex uses it without asking.
 - If a framework required by the requested stopping point is absent, Codex asks only
@@ -284,9 +289,12 @@ accepted. At least one client is required.
   remain inactive.
 
 Design specification and HTML generation do not require framework choices.
-`start-frontend` requires a web selection; `start-mobile` requires Flutter. Backend and
-later stages require one or both clients plus a backend. An absent optional client is
-recorded as a skipped phase and loads no behavior-pack context.
+`start-frontend` requires a web selection; `start-mobile` requires Flutter; `start-desktop`
+requires Python Desktop, `Python package: library|CLI|both`, or both. The package lives in
+`packages/python/` and has no GUI dependency; the GUI lives in `apps/desktop/`. Web and mobile
+stages require a backend. A local desktop app or standalone package may continue through delivery
+without one. An absent optional client or backend is recorded as a skipped phase
+and loads no behavior-pack context.
 
 ### 4. Establish a safe Git boundary
 
@@ -324,6 +332,7 @@ Use a narrower command when only part of the lifecycle is required:
 | `$start-generatehtml` | Approved static HTML | No |
 | `$start-frontend` | Frontend only; requires current verified HTML | Yes |
 | `$start-mobile` | Flutter Android/iOS gate | Yes |
+| `$start-desktop` | Installable PySide6 GUI and/or no-GUI Python package gate | Yes |
 | `$sync-design` | Approved HTML comparison, repair, and independent verification | No new monorepo |
 | `$start-backend` | Backend gate | Yes |
 | `$start-integration` | Typed integration gate | Yes |
@@ -354,6 +363,7 @@ For a new project, the practical command sequence is:
 ./.agents/bin/ai start-generatehtml --project . --adapter codex-reviewed
 ./.agents/bin/ai start-frontend --project . --adapter codex-reviewed     # when web is selected
 ./.agents/bin/ai start-mobile --project . --adapter codex-reviewed       # when mobile is selected
+./.agents/bin/ai start-desktop --project . --adapter codex-reviewed      # when desktop is selected
 ./.agents/bin/ai start-integration --project . --adapter codex-reviewed
 ./.agents/bin/ai start-testing --project . --adapter codex-reviewed
 ./.agents/bin/ai start-delivery --project . --adapter codex-reviewed
@@ -576,21 +586,22 @@ focused tests, and golden evidence.
 
 ### 12. Integrate selected clients and backend
 
-Each frontend and mobile phase already generates its typed API boundary and connects its
-flows to the verified live backend. The integration phase rechecks those completed
-connections together, exercises cross-client and end-to-end behavior, and catches contract
-drift. Project-owned OpenAPI/client generation commands run without shell evaluation. The
-gate requires every selected client, backend, and contract to agree.
+Each frontend and mobile phase already generates its typed API boundary and connects its flows to
+the verified live backend. A local-only desktop phase verifies its package and behavior without
+inventing an API. The integration phase rechecks all applicable completed connections and local
+flows, exercises cross-client and end-to-end behavior, and catches contract drift. Project-owned
+OpenAPI/client generation commands run without shell evaluation when a backend is selected. The
+gate requires every selected component and applicable contract to agree.
 
 ### 13. Run independent testing and security review
 
 The testing phase runs configured project-owned commands from
-`.ai/test-commands.json`, including applicable backend, frontend, mobile, contract,
+`.ai/test-commands.json`, including applicable backend, frontend, mobile, desktop, contract,
 integration, and end-to-end lanes. Independent agents verify:
 
 - PRD acceptance criteria and complete user journeys;
 - API success responses, validation, exceptions, and error behavior;
-- web/mobile/backend integration, browser behavior, and Android/iOS journeys;
+- web/mobile/backend integration, desktop behavior, browser behavior, and Android/iOS journeys;
 - approved-HTML or screenshot design fidelity;
 - responsiveness and accessibility;
 - security controls and high-risk findings; and
@@ -711,6 +722,7 @@ Create exactly one scoped token at:
 ```text
 frontend/TKN001/TOKEN.md
 mobile/TKN001/TOKEN.md
+desktop/TKN001/TOKEN.md
 backend/TKN001/TOKEN.md
 ```
 
@@ -880,6 +892,7 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai start-generatehtml --project . --adapter codex
 ./.agents/bin/ai start-frontend --project . --adapter codex --frontend nextjs
 ./.agents/bin/ai start-mobile --project . --adapter codex --mobile flutter
+./.agents/bin/ai start-desktop --project . --adapter codex --desktop python
 ./.agents/bin/ai sync-design --project . --target all --adapter codex
 ./.agents/bin/ai sync-design --project . --target frontend --check-only --adapter codex
 # Internal deterministic primitive used by the resolver and independent verifier
@@ -908,8 +921,9 @@ available at `./.agents/bin/ai`:
 ./.agents/bin/ai push --project . --execute
 ```
 
-The lower-level `one-shot` command is a dry run unless `--execute` is supplied. It
-requires at least one web/mobile client and one backend:
+The lower-level `one-shot` command is a dry run unless `--execute` is supplied. It requires at
+least one client. A backend is required for web/mobile, but not for a local-only PySide6 desktop
+application:
 
 ```bash
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
@@ -919,6 +933,10 @@ requires at least one web/mobile client and one backend:
 ./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
   --frontend nextjs --mobile flutter --backend django-drf --github-user dolan \
   --branch-feature initial-build --adapter codex --execute
+
+./.agents/bin/ai one-shot --project . --prd docs/PRD.md \
+  --desktop python --github-user dolan --branch-feature floating-cat \
+  --adapter codex --execute
 ```
 
 `clean-state --yes` permanently removes `.ai`, including the build-issue history, and
@@ -927,8 +945,11 @@ retained. It is not a normal recovery step.
 
 ## Linked repositories
 
-The workflow catalogs nine pinned behavior repositories while each project initializes only its
-selected subset. Every submodule records `branch = dev` for explicit update operations:
+The workflow catalogs ten behavior repositories, including the `desktop` pack as a pinned
+submodule. Each project initializes only its selected subset. The desktop submodule currently uses
+a provisional relative URL while its remote repository is pending; confirm or update that URL
+before publishing the agents repository. The submodules record `branch = dev` for explicit update
+operations:
 
 ```text
 .agents/
@@ -945,6 +966,7 @@ selected subset. Every submodule records `branch = dev` for explicit update oper
 ├── drf/                     # Django DRF behavior pack
 ├── fastapi/                 # FastAPI behavior pack
 ├── flutter/                 # Flutter Android/iOS behavior pack
+├── desktop/                 # Python Desktop behavior pack submodule
 ├── nextjs/                  # Next.js behavior pack
 ├── rag/                     # Cross-stack RAG capability pack
 ├── reactjs/                 # React behavior pack
@@ -962,8 +984,9 @@ second `.agents` directory.
 ## Pipeline contract
 
 ```text
-bootstrap → requirements/contracts → design/approved HTML → optional web
-          → optional Flutter mobile → backend → integration → testing
+bootstrap → requirements/contracts → optional backend → design/approved HTML
+          → optional web → optional Flutter mobile → optional PySide6 desktop
+          → integration → testing
           → application delivery
 
 explicit later command: start-deployment → AWS asset readiness

@@ -25,5 +25,6 @@ to five questions per round; large projects may require multiple rounds.
 
 Do not ask the user to choose low-level implementation details. On `READY`, report the
 five validated document paths, material changes, assumptions, selected packs, and the
-next command `$start-backend --prd <actual PRD path>`. Do not start backend or later
+next command reported by the CLI (typically `$start-design` for web/mobile or `$start-desktop`
+for local Python deliverables). Do not start implementation or later
 work unless separately requested.

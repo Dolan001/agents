@@ -22,16 +22,19 @@ These entrypoints execute work; they are not explanatory prompt templates.
 4. A fresh target requires `--github-user` so initialization creates a protected
    `ai/<github-user>/<feature>` branch. Resolve it from explicit user context when
    available; otherwise ask for it.
-5. Resolve explicit PRD framework declarations first. The only valid selections are
-   React or Next.js for web, Flutter for Android/iOS mobile, and Django REST Framework
-   or FastAPI for backend. Require a backend for backend, design, HTML, and client commands;
-   require at least one client only for client or complete-build commands. If
+5. Resolve explicit PRD framework declarations first. Valid selections are React or Next.js
+   for web, Flutter for Android/iOS mobile, Python Desktop for a PySide6 GUI,
+   `Python package: library|CLI|both` for a standalone no-GUI distribution, and Django REST
+   Framework or FastAPI for backend. Require a backend for web/mobile builds and explicit
+   backend/design/HTML commands, but not for a complete local desktop GUI or standalone package
+   build. Require at least one
+   deliverable for a complete build. If
    the PRD declares a supported framework, use it without asking. Reject unsupported,
    conflicting, or multiple declarations.
-6. Ask only for choices still missing for the requested terminal stage. If the client
-   and backend are missing, ask once: `Client: React, Next.js, or Flutter (web plus
-   Flutter is allowed)? Backend: Django REST Framework or FastAPI?` Never choose based
-   on implicit PRD requirements.
+6. Ask only for choices still missing for the requested terminal stage. If no deliverable is
+   selected, ask whether the user wants web, mobile, desktop GUI, a Python library, a CLI, or a
+   combination. Ask for Django REST Framework or FastAPI only when a backend is required by the
+   selected work. Never choose based on implicit PRD requirements.
    Do not invoke the CLI with a required framework set to `unknown`.
 7. Pass arguments directly to the Codex workflow CLI. Never add `--push`,
    `--commit-verified`, live deployment, cloud mutation, or merge behavior

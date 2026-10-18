@@ -22,6 +22,7 @@ FRAMEWORK_PACKS = {
     "react": "reactjs",
     "nextjs": "nextjs",
     "flutter": "flutter",
+    "pyside6": "desktop",
     "django-drf": "drf",
     "fastapi": "fastapi",
 }
@@ -52,11 +53,15 @@ def select_pack_names(
 ) -> dict[str, str]:
     """Return ordered pack names and requirement-backed selection reasons."""
     selected = {"base": "required shared workflow behavior"}
-    for side in ("frontend", "mobile", "backend"):
+    for side in ("frontend", "mobile", "desktop", "backend"):
         framework = frameworks.get(side, "unknown")
         pack = FRAMEWORK_PACKS.get(framework)
         if pack:
             selected[pack] = f"{side} framework: {framework}"
+    if frameworks.get("python_package", "unknown") != "unknown":
+        selected["desktop"] = (
+            "Python package deliverable: " + frameworks["python_package"]
+        )
     for capability, pack in CAPABILITY_PACKS.items():
         if capabilities.get(capability) is True:
             selected[pack] = f"PRD capability: {capability}"
@@ -68,9 +73,15 @@ def select_pack_names(
 def missing_framework_choices(frameworks: dict[str, str]) -> list[str]:
     """Report choices that block a complete application build."""
     missing: list[str] = []
-    if frameworks.get("frontend") == "unknown" and frameworks.get("mobile") == "unknown":
-        missing.append("client: react, nextjs, or flutter")
-    if frameworks.get("backend") == "unknown":
+    if all(
+        frameworks.get(side, "unknown") == "unknown"
+        for side in ("frontend", "mobile", "desktop", "python_package")
+    ):
+        missing.append("deliverable: web, mobile, desktop app, or Python package")
+    if frameworks.get("backend") == "unknown" and any(
+        frameworks.get(side, "unknown") != "unknown"
+        for side in ("frontend", "mobile")
+    ):
         missing.append("backend: django-drf or fastapi")
     return missing
 
@@ -130,6 +141,10 @@ def _validate_manifest(payload: Any, repository: Path | None = None) -> dict[str
     """Validate the selection manifest without requiring bootstrap dependencies."""
     if not isinstance(payload, dict):
         raise RuntimeError("selected-pack manifest must be a JSON object")
+    frameworks = payload.get("frameworks")
+    if isinstance(frameworks, dict):
+        frameworks.setdefault("desktop", "unknown")
+        frameworks.setdefault("python_package", "unknown")
     required = {
         "version": int,
         "status": str,
@@ -262,6 +277,15 @@ def _manifest(
     pack_status: list[dict[str, Any]],
     runner: GitRunner,
 ) -> dict[str, Any]:
+    normalized_frameworks = {
+        "frontend": "unknown",
+        "mobile": "unknown",
+        "desktop": "unknown",
+        "python_package": "unknown",
+        "backend": "unknown",
+        "deployment": "unknown",
+        **frameworks,
+    }
     source_evidence = {
         "path": source.relative_to(project).as_posix(),
         "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
@@ -274,7 +298,7 @@ def _manifest(
         "workflow_commit": _workflow_commit(repository, runner),
         "source": {"kind": source_kind, **source_evidence},
         "prd": source_evidence if source_kind == "prd" else None,
-        "frameworks": dict(frameworks),
+        "frameworks": normalized_frameworks,
         "capabilities": dict(capabilities),
         "deployment_included": include_deployment,
         "selected_packs": selected,
@@ -463,6 +487,10 @@ def add_pack_selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--requirements")
     parser.add_argument("--frontend", choices=["react", "nextjs", "unknown"], default="unknown")
     parser.add_argument("--mobile", choices=["flutter", "unknown"], default="unknown")
+    parser.add_argument("--desktop", choices=["python", "pyside6", "unknown"], default="unknown")
+    parser.add_argument(
+        "--python-package", choices=["library", "cli", "both", "unknown"], default="unknown"
+    )
     parser.add_argument(
         "--backend", choices=["django-drf", "fastapi", "unknown"], default="unknown"
     )
@@ -496,7 +524,8 @@ def select_from_inputs(args: argparse.Namespace) -> dict[str, Any]:
         }
     deployment_requested = args.deployment == "aws"
     frameworks = resolve_frameworks(
-        prd, args.frontend, args.mobile, args.backend, args.deployment
+        prd, args.frontend, args.mobile, args.desktop, args.python_package,
+        args.backend, args.deployment
     )
     selection = reconcile_selected_packs(
         project,

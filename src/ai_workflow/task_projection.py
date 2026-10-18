@@ -7,7 +7,7 @@ from typing import Any
 
 
 def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]:
-    if phase not in {"frontend", "mobile", "backend"}:
+    if phase not in {"frontend", "mobile", "desktop", "backend"}:
         return tasks
     by_id = {task["task_id"]: task for task in tasks}
     if len(by_id) != len(tasks):
@@ -20,10 +20,15 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
             raise RuntimeError(f"duplicate implementation feature: {task['feature_id']}")
         implementations[task["feature_id"]] = task
 
-    prefixes = [f"apps/{phase}/", "packages/", "docs/api/"]
+    prefixes = (
+        ["apps/desktop/", "packages/python/"]
+        if phase == "desktop"
+        else [f"apps/{phase}/", "packages/", "docs/api/"]
+    )
     test_prefixes = {
         "frontend": ["tests/frontend/", "tests/web/", "tests/contracts/"],
         "mobile": ["tests/mobile/", "tests/contracts/"],
+        "desktop": ["tests/desktop/"],
         "backend": [
             "tests/backend/", "tests/contracts/", "tests/rag/", "tests/security/",
             "tests/integration/",
@@ -147,10 +152,17 @@ def phase_tasks(tasks: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]
                 (
                     "Implement the backend portion, publish authoritative OpenAPI, and run real "
                     "PostgreSQL and HTTP checks; cross-application verification follows. "
-                    if phase == "backend" else
+                    if phase == "backend"
+                    else (
+                        "Implement the selected Python desktop app and/or standalone package. "
+                        "Do not invent backend or API dependencies; final product verification "
+                        "remains a later-phase obligation. "
+                        if phase == "desktop"
+                        else
                     f"Implement the {phase} portion against the verified live backend and current "
                     "OpenAPI. Complete real API integration in this slice; final cross-application "
                     "verification remains a later-phase obligation. "
+                    )
                 )
                 + str(projected.get("description") or task.get("description", ""))
             )

@@ -479,6 +479,66 @@ def _generated_decision_sources(prd: str) -> dict[str, str]:
     return {key: "requirements" for key in decisions}
 
 
+def _valid_python_package_prd(mode: str = "CLI", gui: bool = False) -> str:
+    template = _valid_generated_prd()
+    parts = re.split(r"(?m)^## (.+)\n\n", template)
+    sections = dict(zip(parts[1::2], parts[2::2], strict=True))
+    directives = f"Python package: {mode}"
+    applications = f"Python {mode} package"
+    if gui:
+        directives += "\nDesktop framework: Python Desktop"
+        applications += " and PySide6 desktop GUI"
+    sections["Build Directives"] = directives + "\n\n"
+    decisions = [
+        "Repository layout: Standard application monorepo",
+        f"Applications: {applications}",
+        "Background jobs: Not required",
+        "Scheduled jobs: Not required",
+        "Realtime: Not required",
+        "RAG: Not required",
+        "Web scraping: Not required",
+        "File uploads: Not required",
+        "Object storage: Not required",
+        "External integrations: None",
+        "Multi-tenancy: Not required",
+        "Audit logging: Not required",
+        "Localization: Not required",
+        "Data retention and deletion: Local files are retained until the user deletes them",
+    ]
+    sections["Architecture and Capability Decisions"] = (
+        "\n".join(f"- {item}" for item in decisions) + "\n\n"
+    )
+    sections["Product Summary"] = "Reusable local conversion tool.\n\n"
+    sections["Goals and Non-Goals"] = "Convert local text; no network service.\n\n"
+    sections["Users, Roles, and Permissions"] = "Local users run their own tool.\n\n"
+    sections["User Journeys"] = "Install the package, then convert local input.\n\n"
+    sections["Functional Requirements"] = "- FR-001: Convert local text on request.\n\n"
+    sections["Acceptance Criteria"] = (
+        "- AC-001 (FR-001): Given installed tools, when the user converts valid text, "
+        "then the result is returned.\n\n"
+    )
+    sections["Business Rules and Edge Cases"] = "- BR-001: Empty input is rejected.\n\n"
+    sections["Data Entities and Relationships"] = "Only local input and output exist.\n\n"
+    sections["APIs and Integrations"] = "No network API or integration is required.\n\n"
+    sections["Client Experience"] = "The package reports actionable errors.\n\n"
+    sections["Authentication and Authorization"] = "No account or authentication is required.\n\n"
+    sections["Security, Privacy, and Compliance"] = "Input stays on the device.\n\n"
+    sections["Non-Functional Requirements"] = "- NFR-001: Convert input within 2 seconds.\n\n"
+    sections["Observability and Audit"] = "Errors go to standard error without input.\n\n"
+    sections["Deployment and Environments"] = (
+        "Install a wheel locally; cloud deployment is deferred.\n\n"
+    )
+    sections["Credential Inventory"] = "No credentials are required.\n\n"
+    sections["Testing and Release Gates"] = (
+        "Build wheel and sdist and test isolated installation.\n\n"
+    )
+    sections["Assumptions, Dependencies, and Risks"] = "Python is installed locally.\n\n"
+    sections["Traceability"] = "FR-001, NFR-001 -> AC-001 -> package installation tests.\n"
+    return "# Product Requirements Document\n\n" + "\n\n".join(
+        f"## {heading}\n\n{content.strip()}" for heading, content in sections.items()
+    ) + "\n"
+
+
 def _valid_supplemental_document(name: str) -> str:
     title, headings = DOCUMENTS[name]
     coverage = (
@@ -493,6 +553,20 @@ def _valid_supplemental_document(name: str) -> str:
     for heading in headings:
         content = "Status: READY" if heading == "Document Status" else coverage
         sections.append(f"## {heading}\n\n{content}")
+    return f"# {title}\n\n" + "\n\n".join(sections) + "\n"
+
+
+def _valid_python_supplemental_document(name: str) -> str:
+    title, headings = DOCUMENTS[name]
+    coverage = (
+        "Source: PRD.md. FR-001, BR-001, NFR-001. Python CLI package install and error "
+        "behavior are specified. The monorepo records security and observability. "
+        "A backend is not required and is deferred. Cloud deployment is deferred."
+    )
+    sections = [
+        f"## {heading}\n\n{'Status: READY' if heading == 'Document Status' else coverage}"
+        for heading in headings
+    ]
     return f"# {title}\n\n" + "\n\n".join(sections) + "\n"
 
 
@@ -848,15 +922,54 @@ def test_generate_prd_asks_once_then_resumes_to_ready(
     selection = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
     assert selection["status"] == "ready"
     assert {item["name"] for item in selection["selected_packs"]} == {
-        "base",
-        "fastapi",
-        "reactjs",
+        "base", "fastapi", "reactjs",
     }
     ready = json.loads((tmp_path / ".ai" / "prd-intake" / "state.json").read_text())
     assert ready["status"] == "ready"
     assert ready["workflow_adapter"] == "cursor"
     assert main(command) == 0
     assert calls == 3
+
+
+def test_generate_prd_selects_python_package_then_builds_from_prd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text(
+        "Build a local Python CLI package for text conversion; no GUI or backend.\n"
+    )
+
+    def fake_prd_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del project, adapter
+        assert "python-deliverables-profile.md" in prompt
+        assert "selected only after the\nPRD is ready" in prompt
+        assessment = Path(re.search(r"Required assessment output: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        candidate = Path(re.search(r"Required candidate output: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        generated = _valid_python_package_prd("CLI")
+        assessment.write_text(json.dumps({
+            "status": "ready", "questions": [], "assumptions": [],
+            "decision_sources": _generated_decision_sources(generated),
+        }))
+        candidate.write_text(generated)
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.prd._run_adapter", fake_prd_agent)
+    assert main([
+        "generate-prd", "--project", str(tmp_path),
+        "--requirements", "REQUIREMENTS.md",
+    ]) == 0
+    assert validate_prd(tmp_path / "PRD.md") == []
+    selection = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
+    assert {item["name"] for item in selection["selected_packs"]} == {"base", "desktop"}
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert main([
+        "start-build", "--project", str(tmp_path), "--github-user", "test-user",
+        "--adapter", "codex",
+    ]) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"]["python_package"] == "cli"
+    assert state["frameworks"]["desktop"] == "unknown"
+    assert (tmp_path / "packages" / "python" / "pyproject.toml").is_file()
+    assert not (tmp_path / "apps" / "desktop").exists()
 
 
 def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
@@ -999,6 +1112,46 @@ def test_prepare_project_docs_asks_up_to_five_simple_questions_then_updates_all(
     capsys.readouterr()
     assert main(["build", "--project", str(tmp_path), "--execute", "--adapter", "codex"]) == 1
     assert "$prepare-project-docs" in capsys.readouterr().err
+
+
+def test_prepare_project_docs_supports_python_package_without_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "REQUIREMENTS.md").write_text(
+        "Build a local Python CLI package; no GUI or backend.\n"
+    )
+
+    def fake_document_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del project, adapter
+        assert "Require\nPostgreSQL only when a backend is selected" in prompt
+        assessment = Path(re.search(r"Required assessment: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        candidates = json.loads(re.search(r"Required candidates: (.+)", prompt).group(1))  # type: ignore[union-attr]
+        generated = _valid_python_package_prd("CLI")
+        assessment.write_text(json.dumps({
+            "status": "ready", "questions": [], "assumptions": [],
+            "preserved_decisions": [], "changes": [],
+            "decision_sources": _generated_decision_sources(generated),
+        }))
+        for name, candidate in candidates.items():
+            Path(candidate).write_text(
+                generated if name == "PRD.md" else _valid_python_supplemental_document(name)
+            )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.documents._run_adapter", fake_document_agent)
+    assert main([
+        "prepare-project-docs", "--project", str(tmp_path),
+        "--requirements", "REQUIREMENTS.md",
+    ]) == 0
+    assert validate_document_set(tmp_path) == []
+    selection = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
+    assert {item["name"] for item in selection["selected_packs"]} == {"base", "desktop"}
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert main([
+        "start-build", "--project", str(tmp_path), "--github-user", "test-user",
+        "--adapter", "codex",
+    ]) == 0
+    assert (tmp_path / "packages" / "python" / "pyproject.toml").is_file()
 
 
 def test_prepare_project_docs_blocks_secrets_in_user_written_drafts(
@@ -1556,6 +1709,7 @@ def test_detects_frameworks() -> None:
     assert detect(["apps/frontend/next.config.ts", "apps/backend/manage.py"]) == {
         "frontend": "nextjs",
         "mobile": "unknown",
+        "desktop": "unknown",
         "backend": "django-drf",
         "reasons": ["Django manage.py detected"],
     }
@@ -1570,6 +1724,8 @@ def test_resolves_supported_frameworks_declared_in_prd(tmp_path: Path) -> None:
     assert resolve_frameworks(prd) == {
         "frontend": "nextjs",
         "mobile": "unknown",
+        "desktop": "unknown",
+        "python_package": "unknown",
         "backend": "django-drf",
         "deployment": "unknown",
     }
@@ -1582,9 +1738,57 @@ def test_resolves_flutter_mobile_declared_in_prd(tmp_path: Path) -> None:
     assert resolve_frameworks(prd) == {
         "frontend": "unknown",
         "mobile": "flutter",
+        "desktop": "unknown",
+        "python_package": "unknown",
         "backend": "fastapi",
         "deployment": "unknown",
     }
+
+
+def test_resolves_pyside6_desktop_without_backend(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Desktop pet\n\nDesktop framework: Qt for Python (PySide6)\n")
+    assert detect_prd_frameworks(prd) == {"desktop": "pyside6"}
+    assert resolve_frameworks(prd) == {
+        "frontend": "unknown",
+        "mobile": "unknown",
+        "desktop": "pyside6",
+        "python_package": "unknown",
+        "backend": "unknown",
+        "deployment": "unknown",
+    }
+
+    prd.write_text("# Desktop pet\n\nDesktop framework: Python Desktop\n")
+    assert detect_prd_frameworks(prd) == {"desktop": "pyside6"}
+    assert resolve_frameworks(prd, desktop="python")["desktop"] == "pyside6"
+
+
+@pytest.mark.parametrize("mode", ["library", "CLI", "both"])
+def test_resolves_standalone_python_package(tmp_path: Path, mode: str) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(f"# Tool\n\nPython package: {mode}\n")
+    assert resolve_frameworks(prd)["python_package"] == mode.lower()
+    assert resolve_frameworks(prd)["desktop"] == "unknown"
+
+
+def test_resolves_gui_and_package_together(tmp_path: Path) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text("# Companion\n\nDesktop framework: Python Desktop\nPython package: both\n")
+    assert resolve_frameworks(prd)["desktop"] == "pyside6"
+    assert resolve_frameworks(prd)["python_package"] == "both"
+
+
+@pytest.mark.parametrize("gui", [False, True])
+def test_validates_generated_python_package_prd_without_backend(
+    tmp_path: Path, gui: bool
+) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(_valid_python_package_prd("CLI", gui=gui))
+    assert validate_prd(prd) == []
+    resolved = resolve_frameworks(prd)
+    assert resolved["python_package"] == "cli"
+    assert resolved["desktop"] == ("pyside6" if gui else "unknown")
+    assert resolved["backend"] == "unknown"
 
 
 def test_rejects_unsupported_prd_framework_declaration(tmp_path: Path) -> None:
@@ -1609,6 +1813,8 @@ def test_plain_frontend_description_is_not_treated_as_framework_declaration(
     assert resolve_frameworks(prd) == {
         "frontend": "unknown",
         "mobile": "unknown",
+        "desktop": "unknown",
+        "python_package": "unknown",
         "backend": "unknown",
         "deployment": "unknown",
     }
@@ -1692,6 +1898,7 @@ def _initialize_token_repository(project: Path, area: str, branch: str) -> None:
     [
         ("frontend", "react", "apps/frontend/fix.tsx", "dolan001"),
         ("mobile", "flutter", "apps/mobile/lib/fix.dart", "dolan-mobile"),
+        ("desktop", "pyside6", "apps/desktop/src/animations/fix.py", "dolan-desktop"),
         ("backend", "fastapi", "apps/backend/fix.py", "dolan002"),
         ("frontend", "nextjs", "apps/frontend/fix.tsx", "main"),
     ],
@@ -1713,6 +1920,7 @@ def test_resolve_token_verifies_and_reuses_checkpoint(
         branch=None,
         assumptions=[],
         mobile=framework if area == "mobile" else "unknown",
+        desktop=framework if area == "desktop" else "unknown",
     )
     _initialize_token_repository(tmp_path, area, base_branch)
     token_dir = tmp_path / area / "TKN001"
@@ -2012,14 +2220,15 @@ def test_clean_state_requires_confirmation(tmp_path: Path) -> None:
 def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
-    assert report["phases"] == 10
-    assert report["nodes"] == 45
-    assert report["agentic_nodes"] == 31
-    assert report["execution_groups"][2:6] == [
+    assert report["phases"] == 11
+    assert report["nodes"] == 50
+    assert report["agentic_nodes"] == 35
+    assert report["execution_groups"][2:7] == [
         ["backend"],
         ["design"],
         ["frontend"],
         ["mobile"],
+        ["desktop"],
     ]
 
 
@@ -2031,6 +2240,9 @@ def test_scheduler_unlocks_only_the_next_sequential_phase() -> None:
     assert ready_phases(completed | {"backend"}, set()) == ["design"]
     assert ready_phases(completed | {"backend", "design"}, set()) == ["frontend"]
     assert ready_phases(completed | {"backend", "design", "frontend"}, set()) == ["mobile"]
+    assert ready_phases(
+        completed | {"backend", "design", "frontend", "mobile"}, set()
+    ) == ["desktop"]
 
 
 def test_cache_key_changes_only_when_declared_inputs_change(tmp_path: Path) -> None:
@@ -2337,24 +2549,53 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     path = project / output
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, object] = {"phase": phase, "node": node}
+    frameworks = json.loads((project / ".ai" / "state.json").read_text()).get("frameworks", {})
     if node == "prepare-client-foundation":
         app = project / "apps" / phase
-        app.mkdir(parents=True, exist_ok=True)
+        if phase != "desktop" or frameworks.get("desktop") == "pyside6":
+            app.mkdir(parents=True, exist_ok=True)
         if phase == "frontend":
             (app / "package.json").write_text(json.dumps({
                 "scripts": {"build": "true", "test": "true", "lint": "true"}
             }))
             (app / "index.tsx").write_text("export const App = () => null\n")
-        else:
+        elif phase == "mobile":
             (app / "lib").mkdir(exist_ok=True)
             (app / "pubspec.yaml").write_text("name: pilot\n")
             (app / "lib/main.dart").write_text("void main() {}\n")
-        client = project / "packages/api-client"
-        client.mkdir(parents=True, exist_ok=True)
-        (client / ("client.dart" if phase == "mobile" else "client.ts")).write_text("// fixture\n")
-        api = project / "docs/api/openapi.json"
-        api.parent.mkdir(parents=True, exist_ok=True)
-        api.write_text(json.dumps({"openapi": "3.1.0"}))
+        elif phase == "desktop" and frameworks.get("desktop") == "pyside6":
+            module = app / "src" / "animations"
+            module.mkdir(parents=True, exist_ok=True)
+            (module / "__init__.py").write_text("")
+            (module / "__main__.py").write_text("def main():\n    return 0\n")
+            for package in ("domain", "services", "ui", "resources"):
+                (module / package).mkdir()
+            (app / "pyproject.toml").write_text(
+                "[project]\nname='desktop-pet'\nversion='0.1.0'\n"
+                "[project.gui-scripts]\ndesktop-pet='animations.__main__:main'\n"
+            )
+        if phase == "desktop" and frameworks.get("python_package", "unknown") != "unknown":
+            package = project / "packages" / "python"
+            module = package / "src" / "tools"
+            module.mkdir(parents=True, exist_ok=True)
+            (module / "__init__.py").write_text("def run():\n    return 0\n")
+            mode = frameworks["python_package"]
+            scripts = (
+                "[project.scripts]\nworkflow-tools='tools:run'\n"
+                if mode in {"cli", "both"} else ""
+            )
+            (package / "pyproject.toml").write_text(
+                "[project]\nname='workflow-tools'\nversion='0.1.0'\n" + scripts
+            )
+        if phase in {"frontend", "mobile"}:
+            client = project / "packages/api-client"
+            client.mkdir(parents=True, exist_ok=True)
+            (client / ("client.dart" if phase == "mobile" else "client.ts")).write_text(
+                "// fixture\n"
+            )
+            api = project / "docs/api/openapi.json"
+            api.parent.mkdir(parents=True, exist_ok=True)
+            api.write_text(json.dumps({"openapi": "3.1.0"}))
         payload["checks"] = [{"name": "fixture-foundation", "status": "passed"}]
     if node.startswith("verify-") or "verification" in node or node == "security-review":
         payload["verified"] = True
@@ -2392,7 +2633,7 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         payload["approved"] = True
         payload["output_hashes"] = output_hashes
         path.write_text(json.dumps(payload))
-    if phase in {"frontend", "mobile"} and node == "scaffold-target-monorepo":
+    if phase in {"frontend", "mobile", "desktop"} and node == "scaffold-target-monorepo":
         contract_path = Path(__file__).resolve().parents[1] / "config" / "target-monorepo.json"
         contract = json.loads(contract_path.read_text())
         for relative in contract["required_files"]:
@@ -2401,16 +2642,21 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
             root_file.write_text(f"pilot root artifact: {relative}\n")
         for relative in contract["required_directories"]:
             (project / relative).mkdir(parents=True, exist_ok=True)
-    if phase in {"frontend", "mobile"} and node in {
+    if phase in {"frontend", "mobile", "desktop"} and node in {
         "implement-frontend-slices",
         "implement-mobile-slices",
+        "implement-desktop-slices",
     }:
-        _create_pack_structure(project, prompt)
+        if phase != "desktop" or frameworks.get("desktop") == "pyside6":
+            _create_pack_structure(project, prompt)
+        if phase == "desktop" and frameworks.get("python_package", "unknown") != "unknown":
+            _create_pack_structure(project, prompt, "python-package-structure.json")
         commands = {
             group: [{"argv": ["true"], "cwd": "."}]
             for group in (
                 "frontend",
                 "mobile",
+                "desktop",
                 "backend",
                 "generate-client",
                 "contract",
@@ -2663,9 +2909,11 @@ def _write_design_fidelity_verification(
     )
 
 
-def _create_pack_structure(project: Path, prompt: str) -> None:
+def _create_pack_structure(
+    project: Path, prompt: str, contract_name: str = "project-structure.json"
+) -> None:
     pack_text = re.search(r"Selected framework pack: (.+)", prompt).group(1)  # type: ignore[union-attr]
-    contract = json.loads((Path(pack_text) / "rules" / "project-structure.json").read_text())
+    contract = json.loads((Path(pack_text) / "rules" / contract_name).read_text())
     target = project / contract["target_root"]
     directories = set(contract.get("required_directories", []))
     for relative in contract["required_paths"]:
@@ -2674,7 +2922,8 @@ def _create_pack_structure(project: Path, prompt: str) -> None:
             path.mkdir(parents=True, exist_ok=True)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(f"pilot {contract['framework']} artifact\n")
+            if not path.exists():
+                path.write_text(f"pilot {contract['framework']} artifact\n")
     for relative, values in contract.get("required_text", {}).items():
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -3646,6 +3895,8 @@ def test_start_build_uses_frameworks_declared_in_prd(
     assert state["frameworks"] == {
         "frontend": "nextjs",
         "mobile": "unknown",
+        "desktop": "unknown",
+        "python_package": "unknown",
         "backend": "django-drf",
         "deployment": "unknown",
     }
@@ -3877,6 +4128,8 @@ def test_start_build_supports_flutter_only_client(
     assert state["frameworks"] == {
         "frontend": "unknown",
         "mobile": "flutter",
+        "desktop": "unknown",
+        "python_package": "unknown",
         "backend": "fastapi",
         "deployment": "unknown",
     }
@@ -3886,6 +4139,89 @@ def test_start_build_supports_flutter_only_client(
     assert (tmp_path / "apps" / "mobile" / "android").is_dir()
     assert (tmp_path / "apps" / "mobile" / "ios").is_dir()
     assert (tmp_path / "apps" / "backend" / "app" / "main.py").is_file()
+
+
+def test_start_build_supports_local_pyside6_desktop_without_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Floating desktop cat\n\n"
+        "Desktop framework: Python Desktop\n\n"
+        "- PET-001 A transparent animated cat floats above desktop windows and can be dragged.\n"
+        "- PET-002 A context menu lets the user pause movement and exit safely.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert (
+        main(
+            [
+                "start-build",
+                "--project",
+                str(tmp_path),
+                "--github-user",
+                "test-user",
+                "--adapter",
+                "codex",
+                "--desktop",
+                "python",
+            ]
+        )
+        == 0
+    )
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"] == {
+        "frontend": "unknown",
+        "mobile": "unknown",
+        "desktop": "pyside6",
+        "python_package": "unknown",
+        "backend": "unknown",
+        "deployment": "unknown",
+    }
+    assert state["completed_phases"] == list(PHASES)
+    assert (tmp_path / "apps" / "desktop" / "pyproject.toml").is_file()
+    assert (tmp_path / "apps" / "desktop" / "src" / "animations" / "__main__.py").is_file()
+    assert not (tmp_path / "apps" / "backend").exists()
+
+
+@pytest.mark.parametrize("mode", ["library", "CLI", "both"])
+def test_start_build_supports_headless_python_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        f"# Command tools\n\nPython package: {mode}\n\n"
+        "- TOOL-001 User can run a reusable conversion operation.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert main([
+        "start-build", "--project", str(tmp_path), "--github-user", "test-user",
+        "--adapter", "codex",
+    ]) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"]["python_package"] == mode.lower()
+    assert state["completed_phases"] == list(PHASES)
+    assert (tmp_path / "packages" / "python" / "pyproject.toml").is_file()
+    assert not (tmp_path / "apps" / "desktop").exists()
+    assert not (tmp_path / "apps" / "backend").exists()
+    assert not list((tmp_path / "HTML" / "approved").glob("*.html"))
+
+
+def test_start_build_supports_gui_and_python_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Companion with tools\n\nDesktop framework: Python Desktop\n"
+        "Python package: CLI\n\n"
+        "- PET-001 User can run a desktop pet and a command-line tool.\n"
+    )
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", _fake_agent)
+    assert main([
+        "start-build", "--project", str(tmp_path), "--github-user", "test-user",
+        "--adapter", "codex",
+    ]) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"]["desktop"] == "pyside6"
+    assert state["frameworks"]["python_package"] == "cli"
+    assert (tmp_path / "apps" / "desktop" / "pyproject.toml").is_file()
+    assert (tmp_path / "packages" / "python" / "pyproject.toml").is_file()
 
 
 def test_start_build_supports_web_and_flutter_clients(

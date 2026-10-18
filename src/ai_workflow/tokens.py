@@ -104,10 +104,16 @@ def parse_token(project: Path, value: str) -> dict[str, Any]:
     """Validate the canonical token route, Markdown fields, and sibling images."""
     path = _inside(project, value)
     relative = path.relative_to(project)
-    if len(relative.parts) != 3 or relative.parts[0] not in {"frontend", "mobile", "backend"}:
+    if len(relative.parts) != 3 or relative.parts[0] not in {
+        "frontend",
+        "mobile",
+        "desktop",
+        "backend",
+    }:
         raise RuntimeError(
             "token path must be frontend/<TOKEN_ID>/TOKEN.md, "
-            "mobile/<TOKEN_ID>/TOKEN.md, or backend/<TOKEN_ID>/TOKEN.md"
+            "mobile/<TOKEN_ID>/TOKEN.md, desktop/<TOKEN_ID>/TOKEN.md, "
+            "or backend/<TOKEN_ID>/TOKEN.md"
         )
     area, token_id, filename = relative.parts
     if filename != "TOKEN.md" or not TOKEN_ID.fullmatch(token_id):
@@ -152,7 +158,7 @@ def _worktree_snapshot(project: Path) -> dict[str, str]:
         relative = path.relative_to(project)
         if not path.is_file() or any(part in IGNORED_PARTS for part in relative.parts):
             continue
-        if relative.parts[0] in {"frontend", "mobile", "backend"}:
+        if relative.parts[0] in {"frontend", "mobile", "desktop", "backend"}:
             continue
         snapshot[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return snapshot
@@ -223,6 +229,7 @@ def _allowed(area: str, relative: str) -> bool:
     roots = {
         "frontend": ("apps/frontend/", "packages/api-client/", "tests/"),
         "mobile": ("apps/mobile/", "tests/", "docs/api/"),
+        "desktop": ("apps/desktop/", "tests/desktop/", "artifacts/desktop/"),
         "backend": ("apps/backend/", "tests/", "docs/api/"),
     }[area]
     return relative.startswith(roots)
@@ -594,6 +601,7 @@ def resolve_token(
     packs = {
         "frontend": {"react": "reactjs", "nextjs": "nextjs"},
         "mobile": {"flutter": "flutter"},
+        "desktop": {"pyside6": "desktop"},
         "backend": {"django-drf": "drf", "fastapi": "fastapi"},
     }
     pack_name = packs[area].get(framework)

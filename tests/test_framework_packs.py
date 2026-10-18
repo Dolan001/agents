@@ -3,7 +3,7 @@ from pathlib import Path
 
 from ai_workflow.execution import _agent_path, _control_paths, _skill_paths
 
-PACK_NAMES = ("django-drf", "fastapi", "flutter", "nextjs", "react")
+PACK_NAMES = ("django-drf", "fastapi", "flutter", "nextjs", "pyside6", "react")
 REQUIRED_DIRECTORIES = {"agents", "skills", "commands", "hooks", "rules"}
 ALLOWED_TOP_LEVEL = REQUIRED_DIRECTORIES | {"AGENTS.md", "README.md", ".git", ".gitignore"}
 FORBIDDEN_APPLICATION_FILES = {
@@ -108,6 +108,7 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
         ("frontend", "react", "reactjs"),
         ("frontend", "nextjs", "nextjs"),
         ("mobile", "flutter", "flutter"),
+        ("desktop", "pyside6", "desktop"),
         ("backend", "django-drf", "drf"),
         ("backend", "fastapi", "fastapi"),
     )
@@ -115,6 +116,7 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
         frameworks = {
             "frontend": "unknown",
             "mobile": "unknown",
+            "desktop": "unknown",
             "backend": "unknown",
             "deployment": "unknown",
         }
@@ -144,7 +146,8 @@ def test_framework_nodes_route_only_role_specific_skills_rules_hooks_and_agents(
             frameworks,
             feature={"description": "Realtime chat notifications over WebSocket"},
         )
-        assert any("realtime" in path.parent.name for path in realtime_skills)
+        if phase != "desktop":
+            assert any("realtime" in path.parent.name for path in realtime_skills)
         if phase == "backend":
             background_skills = _skill_paths(
                 root,
@@ -189,6 +192,7 @@ def test_aws_deployment_pack_is_code_free_and_routes_by_role() -> None:
     frameworks = {
         "frontend": "react",
         "mobile": "unknown",
+        "desktop": "unknown",
         "backend": "fastapi",
         "deployment": "aws",
     }

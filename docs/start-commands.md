@@ -20,6 +20,7 @@ records source hashes, selected pins, missing packs, and unused existing checkou
 | `start-generatehtml` | Verified approved HTML | No |
 | `start-frontend` | Prerequisites plus selected frontend | Yes |
 | `start-mobile` | Prerequisites plus Flutter Android/iOS app | Yes |
+| `start-desktop` | Prerequisites plus PySide6 app, no-GUI Python package, or both | Yes |
 | `start-backend` | Prerequisites plus selected backend | Yes |
 | `start-integration` | Typed web/mobile and backend integration | Yes |
 | `start-testing` | Full independent test and security gates | Yes |
@@ -33,8 +34,9 @@ The PRD is required to build, but not to install the workflow. Without `--prd`, 
 `PRD.md`, `docs/prd.md`, or `prd.md`. HTML and screenshots are optional repeatable
 arguments. The engine prioritizes supplied HTML, otherwise screenshots, otherwise PRD
 generation. The engine automatically uses explicit PRD declarations for React,
-Next.js, Flutter, Django REST Framework, or FastAPI. Complete delivery requires at
-least one web/mobile client and one backend. Unsupported, conflicting, or multiple
+Next.js, Flutter, PySide6, standalone Python package, Django REST Framework, or FastAPI. Complete
+delivery requires a web, mobile, desktop GUI, or Python package deliverable. Web and mobile require
+a backend; a local GUI or Python package does not. Unsupported, conflicting, or multiple
 declarations fail before build work.
 
 `start-build`, `resume-build`, and legacy `one-shot` always skip deployment. An explicit
@@ -49,6 +51,9 @@ $start-design --github-user dolan
 $start-generatehtml
 $start-frontend --frontend nextjs
 $start-mobile --mobile flutter
+$start-desktop --desktop python
+$start-desktop --python-package cli
+$start-desktop --desktop python --python-package library
 $start-deployment
 $start-build
 $workflow-status

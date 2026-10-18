@@ -15,6 +15,7 @@ PHASES = (
     "design",
     "frontend",
     "mobile",
+    "desktop",
     "integration",
     "testing",
     "deployment",
@@ -38,6 +39,8 @@ class StateStore:
         frameworks = state.get("frameworks")
         if isinstance(frameworks, dict):
             frameworks.setdefault("deployment", "unknown")
+            frameworks.setdefault("desktop", "unknown")
+            frameworks.setdefault("python_package", "unknown")
         capabilities = state.setdefault("capabilities", {})
         if isinstance(capabilities, dict):
             capabilities.setdefault("rag", False)
@@ -58,6 +61,8 @@ class StateStore:
         branch: str | None,
         assumptions: list[str],
         mobile: str = "unknown",
+        desktop: str = "unknown",
+        python_package: str = "unknown",
         deployment: str = "unknown",
         capabilities: dict[str, bool] | None = None,
     ) -> dict[str, Any]:
@@ -72,6 +77,8 @@ class StateStore:
             "frameworks": {
                 "frontend": frontend,
                 "mobile": mobile,
+                "desktop": desktop,
+                "python_package": python_package,
                 "backend": backend,
                 "deployment": deployment,
             },

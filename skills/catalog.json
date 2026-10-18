@@ -8,6 +8,7 @@
     {"name": "start-generatehtml", "path": "skills/start-generatehtml/SKILL.md"},
     {"name": "start-frontend", "path": "skills/start-frontend/SKILL.md"},
     {"name": "start-mobile", "path": "skills/start-mobile/SKILL.md"},
+    {"name": "start-desktop", "path": "skills/start-desktop/SKILL.md"},
     {"name": "sync-design", "path": "skills/sync-design/SKILL.md"},
     {"name": "start-backend", "path": "skills/start-backend/SKILL.md"},
     {"name": "start-integration", "path": "skills/start-integration/SKILL.md"},
