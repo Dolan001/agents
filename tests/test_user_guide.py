@@ -21,7 +21,11 @@ def test_user_guide_covers_catalog_and_cli_flags_in_workflow_order() -> None:
     )
     command_names = {
         "workflow-status": "status",
-        **{name: name for name in skill_names if name != "workflow-status"},
+        **{
+            name: name
+            for name in skill_names
+            if name not in {"workflow-status", "create-requirements"}
+        },
     }
     for command in command_names.values():
         command_parser = subparsers.choices[command]
@@ -67,3 +71,16 @@ def test_readme_has_zero_knowledge_codex_bootstrap() -> None:
     assert "--recursive" not in readme
     assert "Refuse to overwrite an existing `.agents`" in readme
     assert "$start-build" in readme
+    assert "$create-requirements" in readme
+
+
+def test_requirements_intake_is_reviewed_before_document_generation() -> None:
+    root = Path(__file__).resolve().parents[1]
+    skill = (root / "skills/create-requirements/SKILL.md").read_text()
+    coverage = root / "skills/create-requirements/references/intake-coverage.md"
+    agent = (root / "base/agents/requirements-intake-agent.md").read_text()
+    assert "REQUIREMENTS.md" in skill
+    assert coverage.is_file()
+    assert "Pending user approval" in skill
+    assert "explicitly approves" in skill
+    assert "before approval" in agent

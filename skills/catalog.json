@@ -2,6 +2,7 @@
   "version": 1,
   "format": "markdown-first",
   "skills": [
+    {"name": "create-requirements", "path": "skills/create-requirements/SKILL.md"},
     {"name": "prepare-project-docs", "path": "skills/prepare-project-docs/SKILL.md"},
     {"name": "generate-prd", "path": "skills/generate-prd/SKILL.md"},
     {"name": "start-design", "path": "skills/start-design/SKILL.md"},

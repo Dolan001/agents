@@ -12,11 +12,11 @@ or preinstalled workflow skill is needed:
 setup-workflow "https://github.com/Dolan001/agents.git"
 ```
 
-This is not a `$skill` or terminal command. Codex reads it as an installation request, adds the
-repository as `.agents`, and runs the deterministic pack selector. With only requirements it
-initializes the provider bridge and `base`, asks the user to reopen Codex, and points to
-`$prepare-project-docs`. With existing drafts it audits all of them together before selecting the
-required packs.
+This is not a `$skill` or terminal command. Codex reads it as an installation request and adds the
+repository as `.agents`. With only an idea, it initializes the provider bridge and `base`, asks the
+user to reopen Codex, and points to `$create-requirements`. With requirements or a PRD, it also
+runs the deterministic pack selector. After requirements review, the selector initializes the
+required packs during document preparation.
 
 The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
 selects `nextjs`; Flutter selects `flutter`; Python Desktop and a standalone Python package both
@@ -114,6 +114,17 @@ proven reusable fix should be reviewed and committed to the appropriate reposito
 
 ## Recommended command order
 
+With an idea but no requirements file, use:
+
+```text
+setup-workflow "<workflow-git-url>"
+    -> reopen Codex
+    -> $create-requirements
+    -> review REQUIREMENTS.md and request changes until approved
+    -> $prepare-project-docs --requirements REQUIREMENTS.md
+    -> $start-build
+```
+
 With existing requirements or any project-document drafts, use:
 
 ```text
@@ -161,6 +172,7 @@ explicitly authorized live AWS work.
 
 | Skill | Purpose | Normal stopping point or effect |
 |---|---|---|
+| `$create-requirements` | Turn an idea into a requirements source and revise it with the user | Reviewed `REQUIREMENTS.md` |
 | `$prepare-project-docs` | Generate/audit all project specifications | Five consistent READY documents |
 | `$generate-prd` | Convert requirements into a validated PRD | Ready `PRD.md` |
 | `$start-design` | Create the design specification | Design specification |
@@ -182,6 +194,17 @@ explicitly authorized live AWS work.
 | `$deploy-staging` | Deploy the verified immutable release to AWS staging | Verified staging evidence |
 | `$deploy-production` | Promote the staging digest to AWS production | Verified production evidence |
 | `$rollback-deployment` | Restore a named AWS environment | Verified rollback evidence |
+
+## Requirements intake
+
+### `$create-requirements`
+
+Describe the project idea in ordinary language. Add preferred frameworks, platforms, users, or
+constraints if known. The skill asks only material missing product questions, writes
+`REQUIREMENTS.md`, and returns it for review. Request changes until it matches the intended
+product. It does not generate the PRD or start building before approval. On approval, it proceeds
+to `$prepare-project-docs --requirements REQUIREMENTS.md` unless the user asked to stop at
+requirements. Successful document preparation selects the required packs.
 
 ## Project document preparation
 

@@ -4,12 +4,16 @@ Add this repository directly at Codex's canonical project path:
 
 ```bash
 git submodule add -b dev https://github.com/Dolan001/agents.git .agents
-./.agents/bin/ai select-packs --project .
+git -C .agents submodule update --init agent-bridge
 ```
 
 The `.agents` directory is the tracked `agents` submodule itself, not a generated
-copy. Codex discovers `.agents/skills` directly. With only `REQUIREMENTS.md`, the selector initializes
-`base` and returns the PRD-generation command. With a PRD, it initializes only the justified
+copy. Codex discovers `.agents/skills` directly. With only an idea, initialize `base` using
+`git -C .agents submodule update --init base`, reopen Codex, and use `$create-requirements`.
+Review the source before `$prepare-project-docs --requirements REQUIREMENTS.md`; successful
+document preparation selects the needed packs. With an existing `REQUIREMENTS.md`, run
+`./.agents/bin/ai select-packs --project .`; the selector initializes
+`base` and returns the project-document command. With a PRD, it initializes only the justified
 framework and capability packs and reports missing framework choices without guessing. Commit
 `.gitmodules` and the `.agents` gitlink to the real project; runtime `.ai/selected-packs.json`
 records source hashes, selected pins, missing packs, and unused existing checkouts.

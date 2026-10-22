@@ -65,8 +65,8 @@ Design-only commands stop before this monorepo is created. `start-frontend`, `st
 
 ## Setup for a user who knows only Codex
 
-The user does not need to remember or run Git submodule commands. After adding either a PRD or an
-informal `REQUIREMENTS.md` to the current project, open Codex there and send this request:
+The user does not need to remember or run Git submodule commands. Open Codex in the intended
+project and send this request, even if the project contains only an idea:
 
 ```text
 setup-workflow "https://github.com/Dolan001/agents.git"
@@ -86,22 +86,25 @@ must:
    ```bash
    git submodule add -b dev https://github.com/Dolan001/agents.git .agents
    git -C .agents submodule update --init agent-bridge
-   ./.agents/bin/ai select-packs --project .
    ```
 
-4. Read the selector output. With requirements only, it initializes `base` and directs the user to
-   `$prepare-project-docs`; document completion immediately initializes the exact
-   framework/capability packs. If
-   a PRD reports missing framework choices, ask only for those choices and rerun `select-packs`.
+4. If neither a PRD nor a requirements file exists, initialize `base` with
+   `git -C .agents submodule update --init base` and direct the user to `$create-requirements`.
+   Otherwise run `./.agents/bin/ai select-packs --project .` and read its output. With requirements
+   only, the selector initializes `base` and directs the user to `$prepare-project-docs`; document
+   completion initializes the selected framework/capability packs. If a PRD reports missing
+   framework choices, ask only for those choices and rerun `select-packs`.
 5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `agent-bridge`, `base`, and
    every selected behavior repository. Unselected behavior-pack submodules must remain
    uninitialized.
 6. Make no application changes, commits, pushes, or remote branches during setup.
 7. Tell the user to reopen Codex so skill discovery refreshes.
 
-After reopening Codex, use `$prepare-project-docs --requirements REQUIREMENTS.md` to generate or
-complete the full project document set;
-otherwise the only command needed is:
+After reopening Codex, use `$create-requirements` if starting from an idea. Review its
+`REQUIREMENTS.md` and request changes until satisfied. After approval, use
+`$prepare-project-docs --requirements REQUIREMENTS.md` to generate the full project document set;
+that command selects the necessary packs when the documents pass validation. If documents already exist, use
+`$prepare-project-docs --requirements REQUIREMENTS.md` as needed. Then the only build command is:
 
 ```text
 $start-build
