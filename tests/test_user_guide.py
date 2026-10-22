@@ -72,6 +72,7 @@ def test_readme_has_zero_knowledge_codex_bootstrap() -> None:
     assert "Refuse to overwrite an existing `.agents`" in readme
     assert "$start-build" in readme
     assert "$create-requirements" in readme
+    assert readme.index("$create-requirements") < readme.index("$prepare-project-docs") < readme.index("$start-build")
 
 
 def test_requirements_intake_is_reviewed_before_document_generation() -> None:

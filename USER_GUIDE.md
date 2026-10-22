@@ -5,6 +5,22 @@ command and flag reference for every skill shipped by `agents`.
 The workflow must be mounted in the target project as `.agents`. Only PRD-selected nested
 submodules are initialized.
 
+## Start with an idea
+
+The normal path for a new project is:
+
+```text
+Project idea -> $create-requirements -> approve REQUIREMENTS.md
+    -> $prepare-project-docs (PRD.md, TRD.md, UI_UX_SPEC.md, BACKEND_SPEC.md, DELIVERY_SPEC.md)
+    -> $start-build
+```
+
+Tell Codex the idea, intended users, important features, and any framework preferences in an
+ordinary message. The requirements skill asks about missing product decisions and revises the
+file until you approve it. The document step then generates the PRD and related specifications;
+the PRD is required for the build, but you do not have to write it yourself. If you already have
+approved requirements or a PRD, start from that file and skip earlier creation steps.
+
 For first installation, the user can give Codex only this plain-text instruction—no Git knowledge
 or preinstalled workflow skill is needed:
 
@@ -125,7 +141,7 @@ setup-workflow "<workflow-git-url>"
     -> $start-build
 ```
 
-With existing requirements or any project-document drafts, use:
+With an existing PRD or other project-document drafts, use:
 
 ```text
 setup-workflow "<workflow-git-url>"
@@ -134,7 +150,7 @@ setup-workflow "<workflow-git-url>"
     -> $start-build
 ```
 
-With requirements only, use:
+With an existing approved requirements file, use:
 
 ```text
 setup-workflow "<workflow-git-url>"

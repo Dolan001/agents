@@ -1,9 +1,26 @@
 # Agents
 
-`agents` is a provider-neutral control plane that turns a required PRD and optional
-design evidence into a verified full-stack monorepo. It coordinates specialized agents,
+`agents` is a provider-neutral control plane that turns a project idea or existing PRD into a
+verified full-stack monorepo. It coordinates specialized agents,
 skills, phase rules, framework behavior packs, deterministic checks, evidence gates,
 durable checkpoints, and safe Git delivery.
+
+## Start with your project idea
+
+You do not need to write a PRD first. In your project, ask Codex to install the workflow with
+`setup-workflow "https://github.com/Dolan001/agents.git"`, then reopen Codex and describe your
+idea, features, users, and any preferred frameworks to `$create-requirements`. The flow is:
+
+```text
+Idea -> $create-requirements -> reviewed REQUIREMENTS.md -> $prepare-project-docs
+    -> PRD.md + four related specifications -> $start-build
+```
+
+The skill asks follow-up questions, writes `REQUIREMENTS.md`, and lets you request changes until
+you approve it. It then runs `$prepare-project-docs` to generate and validate `PRD.md`, `TRD.md`,
+`UI_UX_SPEC.md`, `BACKEND_SPEC.md`, and `DELIVERY_SPEC.md`. If you already have requirements or a
+PRD, start from those files instead. A PRD is required **before building**, not before installing
+the workflow.
 
 The workflow repository contains no demonstration application or framework source to
 copy. Its linked or colocated framework directories are code-free behavior packs. During execution,
