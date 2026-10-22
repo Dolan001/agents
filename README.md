@@ -101,10 +101,11 @@ must:
 7. Tell the user to reopen Codex so skill discovery refreshes.
 
 After reopening Codex, use `$create-requirements` if starting from an idea. Review its
-`REQUIREMENTS.md` and request changes until satisfied. After approval, use
-`$prepare-project-docs --requirements REQUIREMENTS.md` to generate the full project document set;
-that command selects the necessary packs when the documents pass validation. If documents already exist, use
-`$prepare-project-docs --requirements REQUIREMENTS.md` as needed. Then the only build command is:
+`REQUIREMENTS.md` and request changes until satisfied. Once you approve it, the skill continues
+with `$prepare-project-docs --requirements REQUIREMENTS.md`; that command selects the necessary
+packs when the documents pass validation. If you already have project-document drafts but no
+requirements file, use `$prepare-project-docs` without `--requirements`. Then the only build
+command is:
 
 ```text
 $start-build
@@ -227,7 +228,8 @@ previous checkout.
 
 ### 2. Supply the project inputs
 
-The PRD is required and must be non-empty. It should describe product scope, users,
+Before building, the PRD is required and must be non-empty; `$prepare-project-docs` can generate it
+from approved requirements. It should describe product scope, users,
 features, acceptance criteria, business rules, data, integrations, security needs, and
 non-functional requirements.
 

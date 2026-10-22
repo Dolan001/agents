@@ -15,8 +15,8 @@ setup-workflow "https://github.com/Dolan001/agents.git"
 This is not a `$skill` or terminal command. Codex reads it as an installation request and adds the
 repository as `.agents`. With only an idea, it initializes the provider bridge and `base`, asks the
 user to reopen Codex, and points to `$create-requirements`. With requirements or a PRD, it also
-runs the deterministic pack selector. After requirements review, the selector initializes the
-required packs during document preparation.
+runs the deterministic pack selector. After requirements approval, document preparation validates
+the five specifications and selects the required packs.
 
 The selector reads the PRD before downloading nested repositories. React selects `reactjs`; Next.js
 selects `nextjs`; Flutter selects `flutter`; Python Desktop and a standalone Python package both
@@ -121,7 +121,7 @@ setup-workflow "<workflow-git-url>"
     -> reopen Codex
     -> $create-requirements
     -> review REQUIREMENTS.md and request changes until approved
-    -> $prepare-project-docs --requirements REQUIREMENTS.md
+    -> the skill runs $prepare-project-docs --requirements REQUIREMENTS.md
     -> $start-build
 ```
 
