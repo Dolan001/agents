@@ -155,7 +155,12 @@ def _document_targets(project: Path) -> dict[str, Path]:
 
 def _next_build_command(project: Path, prd: Path) -> str:
     declared = detect_prd_frameworks(prd)
-    command = "start-design" if {"frontend", "mobile"} & declared.keys() else "start-desktop"
+    if "backend" in declared:
+        command = "start-backend"
+    elif {"frontend", "mobile"} & declared.keys():
+        command = "start-design"
+    else:
+        command = "start-desktop"
     return f"${command} --prd {prd.relative_to(project).as_posix()}"
 
 

@@ -23,7 +23,7 @@ from ai_workflow.design_fidelity import (
     validate_design_fidelity_evidence,
 )
 from ai_workflow.discovery import detect
-from ai_workflow.documents import DOCUMENTS, validate_document_set
+from ai_workflow.documents import DOCUMENTS, _next_build_command, validate_document_set
 from ai_workflow.execution import (
     _artifact_ok,
     _build_context_bundle,
@@ -54,6 +54,22 @@ from ai_workflow.structure import (
 )
 from ai_workflow.tokens import parse_token
 from ai_workflow.visual_diff import compare_pixels
+
+
+@pytest.mark.parametrize(
+    ("declarations", "expected"),
+    [
+        ("Backend framework: FastAPI\nFrontend framework: React", "start-backend"),
+        ("Frontend framework: React", "start-design"),
+        ("Desktop framework: Python Desktop", "start-desktop"),
+    ],
+)
+def test_document_next_command_follows_first_selected_phase(
+    tmp_path: Path, declarations: str, expected: str
+) -> None:
+    prd = tmp_path / "PRD.md"
+    prd.write_text(declarations)
+    assert _next_build_command(tmp_path, prd) == f"${expected} --prd PRD.md"
 
 
 def test_detects_explicit_and_requirement_backed_rag(tmp_path: Path) -> None:
