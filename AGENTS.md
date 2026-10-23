@@ -16,3 +16,8 @@ and application delivery. AWS generation and deployment readiness run only throu
 explicit deployment command; live cloud mutation is never part of the normal build phase.
 Parallel work is allowed only inside a phase when explicitly planned and path leases do
 not overlap.
+
+For a user-requested start or resume, read `commands/references/start-command-contract.md` and
+invoke the requested workflow CLI after required argument validation. `ai status` records past
+failures; it does not test current adapter quota. If the user confirms usage reset or new credits,
+attempt one checkpoint resume instead of refusing based on an older quota message.

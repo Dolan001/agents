@@ -42,12 +42,20 @@ These entrypoints execute work; they are not explanatory prompt templates.
 8. Preserve durable `.ai` checkpoints. When an implementation check identifies an exact existing
    shared application file outside the active lease, the orchestrator may run one separately leased
    repair and retry the slice before treating it as failed. It must not broaden the original task
-   lease or retry permission, storage, quota, or unavailable-service failures. On remaining failure,
+   lease or retry permission, storage, quota, or unavailable-service failures within the same
+   invocation without evidence that the environment changed. On remaining failure,
    stop and report the failing phase,
    evidence, and exact recovery command. Never claim a stage completed unless its gate
    passed. If evidence says `retryable_without_new_evidence: false`, do not invoke an
    agent repair or repeat the verifier. HTML approval belongs to the independent
    verifier and finishes within the same invocation; no user HTML review is required.
+   `ai status` reports durable checkpoints and past failures; it does not probe the current
+   environment or adapter quota. For any lifecycle command, a user-confirmed quota reset,
+   added credits, or a successful live check of the selected adapter after the saved failure
+   is changed environment evidence. Invoke the requested CLI command once from its checkpoint,
+   even if the old failure named a later reset date. The requested command is the live check;
+   do not spend usage on a separate adapter probe. If it reports quota again, stop and report
+   that new result. Treat a parent sandbox denial separately from an adapter quota failure.
 9. Report the requested stopping point and the next optional command after success.
    Include the CLI's `progress` percentage and scope: overall for `start-build` and
    `resume-build`, requested stage for an individual start command. Do not call it an

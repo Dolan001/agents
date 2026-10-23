@@ -11,5 +11,7 @@ planning if no task plan exists), failed evidence, unresolved and resolved issue
 `.ai/issues/REPORT.md`, selected/initialized/missing/unused behavior packs from
 `.ai/selected-packs.json`, and the exact next command. Do not mutate files, Git state, or
 remote systems.
+Status shows recorded issues, not current adapter quota or service availability. Identify quota
+errors as last observed; do not infer that they remain active solely from their saved reset time.
 
 <!-- managed-by: ai_workflow -->
