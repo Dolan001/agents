@@ -11,13 +11,14 @@ The normal path for a new project is:
 
 ```text
 Project idea -> $create-requirements -> approve REQUIREMENTS.md
-    -> $prepare-project-docs (PRD.md, TRD.md, UI_UX_SPEC.md, BACKEND_SPEC.md, DELIVERY_SPEC.md)
+    -> $generate-prd (PRD.md)
+    -> $prepare-project-docs (TRD.md, UI_UX_SPEC.md, BACKEND_SPEC.md, DELIVERY_SPEC.md)
     -> $start-build
 ```
 
 Tell Codex the idea, intended users, important features, and any framework preferences in an
 ordinary message. The requirements skill asks about missing product decisions and revises the
-file until you approve it. The document step then generates the PRD and related specifications;
+file until you approve it. Run `$generate-prd` for the PRD, then `$prepare-project-docs` for the related specifications;
 the PRD is required for the build, but you do not have to write it yourself. If you already have
 approved requirements or a PRD, start from that file and skip earlier creation steps.
 
@@ -137,7 +138,8 @@ setup-workflow "<workflow-git-url>"
     -> reopen Codex
     -> $create-requirements
     -> review REQUIREMENTS.md and request changes until approved
-    -> the skill runs $prepare-project-docs --requirements REQUIREMENTS.md
+    -> $generate-prd --requirements REQUIREMENTS.md
+    -> $prepare-project-docs --requirements REQUIREMENTS.md
     -> $start-build
 ```
 
@@ -155,6 +157,7 @@ With an existing approved requirements file, use:
 ```text
 setup-workflow "<workflow-git-url>"
     -> reopen Codex
+    -> $generate-prd --requirements REQUIREMENTS.md
     -> $prepare-project-docs --requirements REQUIREMENTS.md
     -> $start-build
 ```
@@ -222,9 +225,10 @@ product. The draft includes functional (`FR`), business-rule (`BR`), nonfunction
 structural (`SR`), and acceptance (`AC`) registers, with each in-scope `FR` linked to an `AC`.
 It proposes a few relevant improvements and lets you accept, change, defer, or reject them without
 silently adding features to the first release.
-It does not generate the PRD or start building before approval. On approval, it proceeds
-to `$prepare-project-docs --requirements REQUIREMENTS.md` unless the user asked to stop at
-requirements. Successful document preparation selects the required packs.
+It stops after requirements approval. Run `$generate-prd --requirements REQUIREMENTS.md` to
+create only the PRD, then `$prepare-project-docs --requirements REQUIREMENTS.md` to complete and
+validate all five documents. If you want all five in one document step, invoke
+`$prepare-project-docs` directly. Successful document preparation selects the required packs.
 
 ## Project document preparation
 

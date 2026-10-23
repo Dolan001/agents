@@ -12,13 +12,15 @@ You do not need to write a PRD first. In your project, ask Codex to install the 
 idea, features, users, and any preferred frameworks to `$create-requirements`. The flow is:
 
 ```text
-Idea -> $create-requirements -> reviewed REQUIREMENTS.md -> $prepare-project-docs
-    -> PRD.md + four related specifications -> $start-build
+Idea -> $create-requirements -> approved REQUIREMENTS.md -> $generate-prd
+    -> PRD.md -> $prepare-project-docs -> four related specifications -> $start-build
 ```
 
 The skill asks follow-up questions, writes `REQUIREMENTS.md`, and lets you request changes until
-you approve it. It then runs `$prepare-project-docs` to generate and validate `PRD.md`, `TRD.md`,
-`UI_UX_SPEC.md`, `BACKEND_SPEC.md`, and `DELIVERY_SPEC.md`. If you already have requirements or a
+you approve it. It stops at approval. Run `$generate-prd` when you want `PRD.md`, then
+`$prepare-project-docs` to generate or reconcile `TRD.md`, `UI_UX_SPEC.md`, `BACKEND_SPEC.md`, and
+`DELIVERY_SPEC.md` and validate all five together. You can run `$prepare-project-docs` directly
+if you want all five in one document step. If you already have requirements or a
 PRD, start from those files instead. A PRD is required **before building**, not before installing
 the workflow.
 The requirements source separates functional behavior, business rules, nonfunctional targets,
@@ -112,8 +114,8 @@ must:
 4. If neither a PRD nor a requirements file exists, initialize `base` with
    `git -C .agents submodule update --init base` and direct the user to `$create-requirements`.
    Otherwise run `./.agents/bin/ai select-packs --project .` and read its output. With requirements
-   only, the selector initializes `base` and directs the user to `$prepare-project-docs`; document
-   completion initializes the selected framework/capability packs. If a PRD reports missing
+   only, the selector initializes `base` and directs the user to `$generate-prd`; document
+   completion later initializes the selected framework/capability packs. If a PRD reports missing
    framework choices, ask only for those choices and rerun `select-packs`.
 5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `agent-bridge`, `base`, and
    every selected behavior repository. Unselected behavior-pack submodules must remain
@@ -122,10 +124,12 @@ must:
 7. Tell the user to reopen Codex so skill discovery refreshes.
 
 After reopening Codex, use `$create-requirements` if starting from an idea. Review its
-`REQUIREMENTS.md` and request changes until satisfied. Once you approve it, the skill continues
-with `$prepare-project-docs --requirements REQUIREMENTS.md`; that command selects the necessary
-packs when the documents pass validation. If you already have project-document drafts but no
-requirements file, use `$prepare-project-docs` without `--requirements`. Then the only build
+`REQUIREMENTS.md` and request changes until satisfied. Once you approve it, the skill stops.
+Run `$generate-prd --requirements REQUIREMENTS.md` for the PRD, then
+`$prepare-project-docs --requirements REQUIREMENTS.md` for the complete validated document set.
+The document command selects the necessary packs when validation passes. If you already have
+project-document drafts but no requirements file, use `$prepare-project-docs` without
+`--requirements`. Then the only build
 command is:
 
 ```text
@@ -197,13 +201,16 @@ If only informal requirements are available, the selector initializes `base` wit
 PRD. Reopen Codex, then invoke:
 
 ```text
+$create-requirements
+$generate-prd --requirements REQUIREMENTS.md
 $prepare-project-docs --requirements REQUIREMENTS.md
 ```
 
-The preparer sanitizes credential material, asks only for blocking decisions in ordinary language,
-validates all five project documents together, and immediately initializes the selected packs.
-Then invoke `$start-build` normally. `$generate-prd` remains available only when a PRD-only
-compatibility flow is specifically wanted.
+Review and approve `REQUIREMENTS.md` before the second command. The preparer sanitizes credential
+material, asks only for blocking decisions in ordinary language, validates all five project
+documents together, and immediately initializes the selected packs. Then invoke `$start-build`.
+To create all five documents in one document step, invoke `$prepare-project-docs` directly after
+requirements approval.
 
 Keep exactly one of those files, or pass an explicit `--prd` path. Then reopen Codex
 so it discovers `.agents/skills`, and type this in Codex chat:

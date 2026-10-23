@@ -517,7 +517,7 @@ def select_from_inputs(args: argparse.Namespace) -> dict[str, Any]:
             "status": "needs-prd",
             "missing_choices": [],
             "next": (
-                "$prepare-project-docs --requirements "
+                "$generate-prd --requirements "
                 f"{requirements.relative_to(project).as_posix()}"
             ),
             "selection": selection,

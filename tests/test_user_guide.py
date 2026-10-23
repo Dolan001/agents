@@ -72,7 +72,12 @@ def test_readme_has_zero_knowledge_codex_bootstrap() -> None:
     assert "Refuse to overwrite an existing `.agents`" in readme
     assert "$start-build" in readme
     assert "$create-requirements" in readme
-    assert readme.index("$create-requirements") < readme.index("$prepare-project-docs") < readme.index("$start-build")
+    assert (
+        readme.index("$create-requirements")
+        < readme.index("$generate-prd")
+        < readme.index("$prepare-project-docs")
+        < readme.index("$start-build")
+    )
 
 
 def test_requirements_intake_is_reviewed_before_document_generation() -> None:
@@ -84,4 +89,6 @@ def test_requirements_intake_is_reviewed_before_document_generation() -> None:
     assert coverage.is_file()
     assert "Pending user approval" in skill
     assert "explicitly approves" in skill
-    assert "before approval" in agent
+    assert "mark `Review status: Approved by user` and stop" in skill
+    assert "Do not run either" in skill
+    assert "Mark it approved only on explicit approval, then stop" in agent

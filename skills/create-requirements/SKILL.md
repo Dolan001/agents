@@ -52,14 +52,12 @@ unresolved material decisions, and the most useful unaccepted suggestions; invit
 the user requests changes, update the same file and return it for another review, resetting the
 status to pending. If the user explicitly
 approves but a material user-owned decision remains unresolved, ask for it before advancing. When
-the user explicitly approves a complete source, mark `Review status: Approved by user` and proceed
-to document preparation unless they asked to stop at requirements. Do not treat silence, an
-existing file, or a recommendation as approval.
+the user explicitly approves a complete source, mark `Review status: Approved by user` and stop.
+Do not treat silence, an existing file, or a recommendation as approval.
 
-After approval, use `$prepare-project-docs --requirements <actual requirements path>` to generate
-the five documents. That command selects the necessary packs when its documents pass validation;
-running `select-packs` here would repeat work. If it returns `NEEDS_INPUT`, ask its questions. When
-an answer changes product intent, update the source requirements, reset its review status, and get
-the user's approval of that revision before rerunning document preparation. Its own validation
-gate decides whether those documents are ready; requirements approval does not imply PRD or build
-approval. Do not start implementation unless separately requested.
+Report the next separate command: `$generate-prd --requirements <actual requirements path>` to
+create only `PRD.md`. After that, `$prepare-project-docs --requirements <actual requirements path>`
+creates or reconciles the other four specifications and validates all five together. A user who
+wants all five in one document step may invoke `$prepare-project-docs` directly. Do not run either
+command from this skill, even immediately after approval. Requirements approval does not imply
+PRD, project-document, or build approval.
