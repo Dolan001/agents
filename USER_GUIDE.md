@@ -218,7 +218,9 @@ explicitly authorized live AWS work.
 Describe the project idea in ordinary language. Add preferred frameworks, platforms, users, or
 constraints if known. The skill asks only material missing product questions, writes
 `REQUIREMENTS.md`, and returns it for review. Request changes until it matches the intended
-product. It does not generate the PRD or start building before approval. On approval, it proceeds
+product. The draft includes functional (`FR`), business-rule (`BR`), nonfunctional (`NFR`),
+structural (`SR`), and acceptance (`AC`) registers, with each in-scope `FR` linked to an `AC`.
+It does not generate the PRD or start building before approval. On approval, it proceeds
 to `$prepare-project-docs --requirements REQUIREMENTS.md` unless the user asked to stop at
 requirements. Successful document preparation selects the required packs.
 

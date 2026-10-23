@@ -1,4 +1,4 @@
 interface:
   display_name: "Create Requirements"
-  short_description: "Turn a project idea into reviewable requirements"
+  short_description: "Draft structured, reviewable project requirements"
   default_prompt: "Use $create-requirements to turn my project idea into REQUIREMENTS.md and let me review it before generating the PRD and related documents."

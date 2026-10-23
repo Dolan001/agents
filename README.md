@@ -21,6 +21,8 @@ you approve it. It then runs `$prepare-project-docs` to generate and validate `P
 `UI_UX_SPEC.md`, `BACKEND_SPEC.md`, and `DELIVERY_SPEC.md`. If you already have requirements or a
 PRD, start from those files instead. A PRD is required **before building**, not before installing
 the workflow.
+The requirements source separates functional behavior, business rules, nonfunctional targets,
+structural constraints, UX inputs, and acceptance scenarios with stable IDs before review.
 
 The workflow repository contains no demonstration application or framework source to
 copy. Its linked or colocated framework directories are code-free behavior packs. During execution,

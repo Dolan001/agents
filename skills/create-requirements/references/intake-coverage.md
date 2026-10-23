@@ -5,26 +5,62 @@ document architect writes technical detail and safely reversible defaults. Ask t
 material product-owned decisions; use additional short rounds when needed. A source with
 unresolved material decisions stays pending.
 
-## Source outline
+## Requirements structure
 
-1. **Purpose and users:** problem, target users, owner, desired outcome, and how success is observed.
-2. **Scope and priorities:** first release, later work, exclusions, dependencies, and known deadlines.
-3. **Deliverables and preferences:** web, Android/iOS, desktop GUI, Python library/CLI, or a
-   combination; explicit framework choices and hard constraints, or "No preference."
-4. **Journeys and behavior:** main user tasks in order, inputs and outputs, validation, failure,
-   empty-state and permission behavior, and observable acceptance examples.
-5. **Users and access:** roles, ownership/sharing boundaries, sign-in needs, and who can read,
-   change, export, or delete information.
-6. **Data and integrations:** business objects and relationships, important fields, user uploads,
-   external systems, source of real test data, and data ownership.
-7. **Experience:** important screens or navigation, content and language, brand references if any,
-   accessibility or offline needs that affect users, and device/platform expectations.
-8. **Quality and policy:** privacy, retention/deletion, security or compliance commitments,
-   performance or scale expectations the user actually owns, audit/reporting needs.
-9. **Operations and release:** hosting/deployment request, environments, domain or store ownership,
-   rollout/approval responsibilities, budget or location constraints, and support expectations.
-10. **Assumptions and open decisions:** visible proposals, their source, unresolved questions,
-    and review status. Use credential variable names only; never values.
+Use these second-level headings in the generated source. Keep each requirement atomic, scoped to
+the first release or clearly marked later, and give it a stable ID. Preserve IDs when revising;
+never recycle an ID for different behavior. User-specified choices and assistant proposals must
+remain distinguishable.
+
+1. `## Product goals and release scope` — problem, audience, desired outcomes, MVP, later work,
+   exclusions, success criteria, and dependencies.
+2. `## Deliverables and framework choices` — selected web/mobile/desktop/package/backend outputs,
+   required frameworks or explicit no preference, and deployment scope. Use canonical framework
+   labels where chosen (`React`, `Next.js`, `Flutter`, `Python Desktop`, `Django REST Framework`,
+   `FastAPI`). Do not silently substitute an unsupported requirement.
+3. `## Users, roles, and permissions` — actor list, ownership and sharing boundaries, sign-in,
+   who may read/write/delete/export, and administrator limits.
+4. `## Functional requirements` — `FR-001` onward, each stating actor, trigger, and observable
+   result. Cover primary journeys, validation, failures, authorization, and relevant empty/offline
+   states. Split unrelated outcomes rather than hiding them in one long bullet.
+5. `## Business rules and edge cases` — `BR-001` onward for rules such as membership, retention,
+   limits, status meanings, lifecycle transitions, and conflicting or failed actions.
+6. `## Data and privacy` — core business objects and relationships, ownership, visibility,
+   sensitive fields, retention/deletion, uploads, external sources, and realistic test-data needs.
+7. `## Experience and design requirements` — screens/routes, key layouts and journeys, visual
+   direction or supplied references, responsive/device scope, accessibility, content, and loading,
+   empty, error, permission, and offline states. Use `UX-` IDs when requirements are specific.
+8. `## Non-functional requirements` — `NFR-001` onward for measurable or otherwise verifiable
+   performance, reliability, security, accessibility, capacity, data integrity, and observability
+   outcomes. Include at least one numeric service-quality target needed by the PRD validator.
+   If the user supplied no numeric target, propose a conservative baseline, label it as proposed,
+   and ask for approval; do not present it as a prior user decision. State how each target can be
+   checked, including the load or environment when relevant.
+9. `## Structural requirements` — `SR-001` onward for required system boundaries and constraints:
+   clients and backend responsibilities, API/realtime boundaries, persistence and background work,
+   named external integrations, environment/deployment boundary, and required data flows. Separate
+   mandated stack from architect-owned design; do not turn implementation suggestions into
+   immutable requirements. A system-context sketch may help but cannot replace the ID register.
+10. `## Acceptance scenarios and traceability` — `AC-001` onward with Given/When/Then or another
+    observable test condition, each naming its `FR` (and relevant `BR`/`NFR`/`UX`/`SR`). Cover
+    success, validation, denied access, failure/recovery, and a representative end-to-end journey.
+    Every in-scope `FR` needs at least one `AC`.
+11. `## Delivery and verification` — real-data/API verification needs, target environments,
+    release approval, migration/backup expectations when relevant, and what is deferred.
+12. `## Assumptions and open decisions` — source/provenance of proposed choices, dependencies,
+    risks, and remaining user-owned questions. Use `None` only when no material decision remains.
+
+Put `Review status: Pending user approval` near the top; change it only on explicit approval.
+The file is a product source, not a prewritten PRD: do not copy the PRD's 24 headings, database
+schema, API pagination, worker topology, or cloud infrastructure unless the user requires them.
+
+## Coverage prompts
+
+Ask about missing user-owned facts behind those headings, not every technical detail. Record only
+credential variable names or placeholders, never values. When the user delegated a product choice,
+make a reviewable proposal and mark its provenance rather than silently claiming it came from the
+user. When the user did not delegate a material choice, ask for it across as many short rounds as
+needed. Do not mark the source approved while material questions remain.
 
 The PRD turns journeys into `FR`, `AC`, `BR`, and `NFR` IDs and traceability. The TRD derives
 architecture and APIs; UI/UX derives routes, screens, states, and design; backend derives data,
@@ -60,6 +96,8 @@ pre-design database indexes, API pagination, worker topology, cloud architecture
 
 Can a reviewer tell who uses the product, what the first release does, what it excludes, who may
 access each important data type, what successful and failed journeys look like, which deliverables
-are expected, and which user-owned constraints apply? Are explicit choices preserved, assumptions
-separate, unsupported choices surfaced, and any material open decision answered? If not, ask the
-next short round before treating the source as ready for approval.
+are expected, and which user-owned constraints apply? Does every `FR` have an acceptance scenario,
+do the `BR`, `NFR`, and `SR` registers agree with those journeys, and can the UI, backend, and
+delivery documents trace back to a named source requirement? Are explicit choices preserved,
+assumptions separate, unsupported choices surfaced, and any material open decision answered? If
+not, ask the next short round before treating the source as ready for approval.

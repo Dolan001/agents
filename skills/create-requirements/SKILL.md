@@ -1,6 +1,6 @@
 ---
 name: create-requirements
-description: Turn a project idea and any chosen frameworks into a user-approved REQUIREMENTS.md that can generate the PRD and four related project specifications. Use for new project intake or requirements revisions before document preparation.
+description: Turn a project idea and chosen frameworks into user-approved, traceable functional, nonfunctional, structural, and acceptance requirements for PRD and specification generation. Use for new project intake or requirements revisions before document preparation.
 ---
 
 # Create requirements from an idea
@@ -21,11 +21,23 @@ not ask the user to design implementation internals. For reversible technical ch
 "No preference; architect may choose" instead of silently presenting a choice as user-approved.
 
 Create or revise the one existing requirements file; otherwise write `REQUIREMENTS.md` at the
-project root. Use the outline in the coverage reference, omit inapplicable detail, and keep explicit
-requirements, proposed assumptions, and unresolved user decisions separate. Explain observable
-success, relevant failure and access behavior, and scope boundaries in the user's language. Do
-not copy the PRD's 24-heading template or invent technical precision to fill it. Record credential
-names or placeholders only, never values.
+project root. Follow the [requirements structure](references/intake-coverage.md): a reviewable
+product brief plus explicit, stable `FR-`, `BR-`, `NFR-`, `SR-`, and `AC-` registers. Functional
+requirements describe observable behavior; nonfunctional requirements state verifiable quality
+outcomes; structural requirements capture required deliverables, component/data boundaries, and
+framework constraints without pre-designing internals. Map each in-scope `FR` to acceptance
+evidence. Give UX, data, access, and release inputs their own sections so the five downstream
+documents can trace back to this source. Mark every proposal as an assumption and keep unresolved
+user decisions separate. Do not copy the PRD's 24-heading template or invent technical precision
+to fill it. Record credential names or placeholders only, never values.
+
+Before requesting approval, audit the draft against the coverage reference and the selected
+capability profiles. Check for missing sections, duplicated or contradictory rules, unlinked
+features, untestable quality claims, unsupported stack directives, unclear data ownership, and
+conflicts between MVP and later scope. Run `scripts/check_requirements.py <path>` on this format
+and repair its findings; the script checks structure and references, while the semantic audit
+checks the actual meaning. A short source is fine, but never omit a required class of requirements
+just to keep it short.
 
 Mark the file `Review status: Pending user approval`. Show its path, a concise summary, assumptions,
 and unresolved material decisions; invite review. When the user requests changes, update the same
