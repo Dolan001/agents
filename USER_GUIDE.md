@@ -5,6 +5,34 @@ command and flag reference for every skill shipped by `agents`.
 The workflow must be mounted in the target project as `.agents`. Only PRD-selected nested
 submodules are initialized.
 
+## Before installation
+
+Have Git, Python 3.12+, and your selected coding provider installed on the host, with network
+access for the first setup and dependency downloads. The workflow uses `python3`, `jsonschema`,
+and Pillow. After `.agents` is mounted, use a project Python environment rather than global `pip`:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ./.agents
+```
+
+Keep the environment active for `./.agents/bin/ai` commands, or ask Codex to use that Python.
+Add `.venv/` to the project's `.gitignore`. Codex can do this setup when installing the workflow.
+
+For backend or container-based verification, Docker with Compose v2 must be installed, running,
+and accessible to the coding adapter. PostgreSQL, Redis, Celery, and backend services run in the
+project's containers when selected; host installations of PostgreSQL and Redis are unnecessary.
+Host Node.js/npm is needed only for frontend checks run outside containers. Flutter and its target
+platform toolchain are needed only for mobile builds. GitHub CLI (`gh`) is needed only for the
+GitHub operations that use it.
+
+For a Docker-backed web project, plan roughly 20 GB of free host space and a Docker disk limit of
+at least 30 GB as a starting buffer, with more for browser/mobile images or large projects. These
+figures are not fixed minimums. Check `df -h .`, `docker system df`, Docker's configured disk limit,
+and, after installation, `./.agents/bin/ai doctor --project .`. When Docker is selected, verify
+`docker info` and `docker compose version` too. Preserve unrelated Docker data during cleanup.
+
 ## Start with an idea
 
 The normal path for a new project is:

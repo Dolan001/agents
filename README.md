@@ -5,6 +5,41 @@ verified full-stack monorepo. It coordinates specialized agents,
 skills, phase rules, framework behavior packs, deterministic checks, evidence gates,
 durable checkpoints, and safe Git delivery.
 
+## Before you start
+
+- Install Git and Python 3.12 or newer on the host. The workflow launcher calls `python3` and
+  needs the Python dependencies declared in this repository. Use an isolated Python environment;
+  a global `pip` installation is unnecessary. After `.agents` is installed, create or activate a
+  project environment and install the workflow there:
+
+  ```bash
+  python3 -m venv .venv
+  . .venv/bin/activate
+  python -m pip install -e ./.agents
+  ```
+
+  Keep that environment active when running `./.agents/bin/ai`, or have Codex use its `python3`.
+  Ignore `.venv/` in the project Git repository. Codex can perform these setup steps for you.
+- Install and sign in to the coding provider you select (Codex by default). Initial setup and
+  dependency/image downloads need network access. GitHub CLI (`gh`) is needed only for GitHub
+  token, pull-request, or push operations that use it.
+- For backend, database, worker, or container-based frontend verification, install and start
+  Docker with Compose v2. The selected project stack runs PostgreSQL and, when needed, Redis,
+  Celery, backend, and test services in project-scoped containers. Do not install PostgreSQL or
+  Redis on the host just for this workflow. The coding adapter must also be able to access Docker;
+  see [Docker and browser access from the Codex adapter](#docker-and-browser-access-from-the-codex-adapter).
+- Install Node.js/npm on the host only if your selected frontend checks run outside containers.
+  Flutter projects need the Flutter SDK and the platform build tools for the devices being tested;
+  projects without Flutter do not need them.
+
+Plan storage before a Docker-backed build. As a practical starting buffer, keep about 20 GB free
+on the host and allow at least 30 GB for Docker's disk image; browser, mobile, and larger projects
+may need more. These are planning figures, not guaranteed minimums. Check host free space with
+`df -h .`, Docker usage with `docker system df`, and the Docker disk limit in Docker's settings.
+Do not remove unrelated images, volumes, or caches just to pass a workflow check. After setup,
+`./.agents/bin/ai doctor --project .` reports the Python version and available executables;
+also run `docker info` and `docker compose version` when Docker is required.
+
 ## Start with your project idea
 
 You do not need to write a PRD first. In your project, ask Codex to install the workflow with
@@ -111,17 +146,20 @@ must:
    git -C .agents submodule update --init agent-bridge
    ```
 
-4. If neither a PRD nor a requirements file exists, initialize `base` with
+4. Check Git and Python 3.12+, then reuse or create an isolated Python environment, install
+   `.agents` into it, and use that environment's `python3` for workflow commands. Report a missing
+   host prerequisite clearly instead of repeatedly retrying the same command.
+5. If neither a PRD nor a requirements file exists, initialize `base` with
    `git -C .agents submodule update --init base` and direct the user to `$create-requirements`.
    Otherwise run `./.agents/bin/ai select-packs --project .` and read its output. With requirements
    only, the selector initializes `base` and directs the user to `$generate-prd`; document
    completion later initializes the selected framework/capability packs. If a PRD reports missing
    framework choices, ask only for those choices and rerun `select-packs`.
-5. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `agent-bridge`, `base`, and
+6. Verify `.agents/skills/catalog.json`, the executable `.agents/bin/ai`, `agent-bridge`, `base`, and
    every selected behavior repository. Unselected behavior-pack submodules must remain
    uninitialized.
-6. Make no application changes, commits, pushes, or remote branches during setup.
-7. Tell the user to reopen Codex so skill discovery refreshes.
+7. Make no application changes, commits, pushes, or remote branches during setup.
+8. Tell the user to reopen Codex so skill discovery refreshes.
 
 After reopening Codex, use `$create-requirements` if starting from an idea. Review its
 `REQUIREMENTS.md` and request changes until satisfied. Once you approve it, the skill stops.
