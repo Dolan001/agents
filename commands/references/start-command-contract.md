@@ -40,8 +40,9 @@ These entrypoints execute work; they are not explanatory prompt templates.
    `--commit-verified`, live deployment, cloud mutation, or merge behavior
    unless explicitly requested.
 8. Preserve durable `.ai` checkpoints. When an implementation check identifies an exact existing
-   shared application file outside the active lease, the orchestrator may run one separately leased
-   repair and retry the slice before treating it as failed. It must not broaden the original task
+   shared application file outside the active lease, the orchestrator may run separately leased
+   repairs for distinct findings within the existing retry budget and retry the slice before
+   treating it as failed. It must not broaden the original task
    lease or retry permission, storage, quota, or unavailable-service failures within the same
    invocation without evidence that the environment changed. On remaining failure,
    stop and report the failing phase,

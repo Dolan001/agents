@@ -12,7 +12,7 @@ from ai_workflow.execution import (
     _complete_task_contract,
     _release_path_lease,
     _run_scoped_dependency_repair,
-    _scope_repair_paths,
+    _scope_repair_request,
 )
 from ai_workflow.task_projection import phase_tasks
 
@@ -49,7 +49,8 @@ def test_blocked_shared_file_gets_exact_separate_repair_scope(tmp_path: Path) ->
         "allowed_paths": ["apps/backend/src/example/messages/group/**"],
         "forbidden_paths": [".agents/**", ".git/**"],
     }
-    assert _scope_repair_paths(tmp_path, "backend", evidence, contract) == [shared]
+    request = _scope_repair_request(tmp_path, "backend", evidence, contract)
+    assert request is not None and request[0] == [shared]
 
     evidence.write_text(
         json.dumps(
@@ -65,7 +66,7 @@ def test_blocked_shared_file_gets_exact_separate_repair_scope(tmp_path: Path) ->
             }
         )
     )
-    assert _scope_repair_paths(tmp_path, "backend", evidence, contract) == []
+    assert _scope_repair_request(tmp_path, "backend", evidence, contract) is None
 
 
 def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
@@ -82,16 +83,20 @@ def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
 
     def repair_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         del adapter
-        assert (
-            "Required output: .ai/evidence/repairs/group-messaging/backend-shared-dependency.json"
-            in prompt
+        output_line = next(
+            line.removeprefix("Required output: ")
+            for line in prompt.splitlines()
+            if line.startswith("Required output: ")
+        )
+        assert output_line.startswith(
+            ".ai/evidence/repairs/group-messaging/backend-shared-dependency-1-"
         )
         leases = json.loads((project / ".ai/path-leases.json").read_text())["leases"]
         assert len(leases) == 1
         assert shared in leases[0]["paths"]
         assert "apps/backend/src/example/messages/group/**" not in leases[0]["paths"]
         source.write_text("# corrected query\n")
-        output = project / ".ai/evidence/repairs/group-messaging/backend-shared-dependency.json"
+        output = project / output_line
         output.parent.mkdir(parents=True)
         output.write_text(
             json.dumps(
@@ -131,6 +136,7 @@ def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
         },
         failed,
         [shared],
+        1,
     )
     assert repaired and shared in reason
     assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []

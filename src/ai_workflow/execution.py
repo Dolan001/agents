@@ -347,24 +347,26 @@ def _artifact_external_blocker(path: Path) -> str | None:
     return f"{reason}; next action: {next_action}" if next_action else reason
 
 
-def _scope_repair_paths(
+def _scope_repair_request(
     project: Path, phase: str, evidence_path: Path, contract: dict[str, Any]
-) -> list[str]:
-    """Accept only exact, existing application files requested by blocked evidence."""
+) -> tuple[list[str], str] | None:
+    """Accept exact application files and fingerprint the finding that needs repair."""
     if phase not in {"backend", "frontend", "mobile", "desktop"}:
-        return []
+        return None
     payload = read_json(evidence_path, {})
     if not isinstance(payload, dict) or _implementation_blocker(payload) is None:
-        return []
+        return None
     reviews = payload.get("reviews", [])
     if not isinstance(reviews, list):
-        return []
+        return None
     requested: list[str] = []
+    findings: list[str] = []
     for review in reviews:
         if not isinstance(review, dict):
             continue
         if review.get("type") == "scope_repair_request":
             requested.extend(_safe_strings(review.get("paths")))
+            findings.append(" ".join(str(review.get("details", "")).split()))
         elif review.get("type") == "dependency_blocker":
             # Support evidence written before the structured repair request existed.
             match = re.search(
@@ -373,9 +375,10 @@ def _scope_repair_paths(
             )
             if match:
                 requested.append(match.group(1))
+                findings.append(" ".join(str(review.get("details", "")).split()))
     requested = list(dict.fromkeys(requested))
     if not requested or len(requested) > 2:
-        return []
+        return None
     for relative in requested:
         path = PurePosixPath(relative)
         if (
@@ -389,8 +392,11 @@ def _scope_repair_paths(
             )
             or any(fnmatch.fnmatchcase(relative, pattern) for pattern in contract["allowed_paths"])
         ):
-            return []
-    return requested
+            return None
+    signature = hashlib.sha256(
+        json.dumps({"paths": sorted(requested), "findings": findings}, sort_keys=True).encode()
+    ).hexdigest()
+    return requested, signature
 
 
 def _run_scoped_dependency_repair(
@@ -402,10 +408,12 @@ def _run_scoped_dependency_repair(
     feature: dict[str, Any],
     failed_output: str,
     paths: list[str],
+    repair_attempt: int,
 ) -> tuple[bool, str]:
-    """Repair a lease-external dependency once under a separate exact-file lease."""
+    """Repair a lease-external dependency under a separate exact-file lease."""
     feature_id = feature["feature_id"]
-    output = f".ai/evidence/repairs/{feature_id}/{phase}-shared-dependency.json"
+    repair_token = f"{repair_attempt}-{time.time_ns()}"
+    output = f".ai/evidence/repairs/{feature_id}/{phase}-shared-dependency-{repair_token}.json"
     repair_node = {
         "id": "repair-shared-dependency",
         "agent": node["agent"],
@@ -414,7 +422,7 @@ def _run_scoped_dependency_repair(
     }
     repair_feature = dict(feature)
     repair_feature.update(
-        task_id=f"TASK-SHARED-DEPENDENCY-REPAIR-{feature_id.upper()}",
+        task_id=f"TASK-SHARED-DEPENDENCY-REPAIR-{feature_id.upper()}-{repair_token}",
         allowed_paths=paths,
         required_tests=["Rerun the focused check that failed in the implementation evidence"],
     )
@@ -430,10 +438,14 @@ def _run_scoped_dependency_repair(
         "exact file(s) in this separate contract, rerun the focused check, and write truthful "
         "schema-valid repair evidence. Do not change the original slice evidence or expand scope.",
     )
-    identity = f"{phase}/repair-shared-dependency/{feature_id}"
+    identity = f"{phase}/repair-shared-dependency/{feature_id}-{repair_token}"
     prompt_path = project / ".ai" / "prompts" / f"{identity.replace('/', '--')}.md"
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
     prompt_path.write_text(prompt, encoding="utf-8")
+    source_hashes = {
+        relative: hashlib.sha256(_inside(project, relative).read_bytes()).hexdigest()
+        for relative in paths
+    }
     _acquire_path_lease(project, contract)
     try:
         started = time.monotonic()
@@ -463,15 +475,26 @@ def _run_scoped_dependency_repair(
         return False, "shared dependency repair did not produce structured evidence"
     changed = evidence.get("changed_files", [])
     checks = evidence.get("checks", [])
+    actual_changes = {
+        relative
+        for relative, before in source_hashes.items()
+        if _inside(project, relative).is_file()
+        and hashlib.sha256(_inside(project, relative).read_bytes()).hexdigest() != before
+    }
     if (
         not isinstance(changed, list)
         or not changed
         or not set(changed) <= set(paths)
+        or not actual_changes
+        or not set(changed) <= actual_changes
         or not isinstance(checks, list)
         or not any(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
         or any(isinstance(check, dict) and check.get("status") == "failed" for check in checks)
     ):
-        return False, "shared dependency repair lacks an in-scope change and passing focused check"
+        return (
+            False,
+            "shared dependency repair lacks an actual in-scope change and passing focused check",
+        )
     return True, f"shared dependency repaired under a separate exact-file lease: {', '.join(paths)}"
 
 
@@ -2047,7 +2070,8 @@ If a required check exposes a defect in an existing application source file outs
 lease, do not edit that file. In the blocked evidence, add a review with type
 `scope_repair_request`, status `blocked`, `paths` containing at most two exact existing
 project-relative source file paths, and details explaining the failed check. The orchestrator
-may schedule one separately leased repair and retry this node. Never request a directory, glob,
+may schedule bounded, separately leased repairs for distinct findings and retry this node.
+Never request a directory, glob,
 workflow file, or an unrelated file; environment and permission failures are not scope repairs.
 The complete task contract is embedded once in the bounded context bundle; do not search for or
 reload a second copy. It has already passed the workflow's JSON Schema validation and is READY.
@@ -2452,7 +2476,7 @@ def _execute_phase_unlocked(
             tracked_issues: list[str] = []
             nonretryable_class: str | None = None
             needs_repair = False
-            scope_repair_attempted = False
+            repaired_findings: set[str] = set()
             result: dict[str, Any] = {}
             for attempt in range(maximum_retries + 1):
                 retry_context = failure_reasons[-1] if failure_reasons else None
@@ -2661,14 +2685,15 @@ def _execute_phase_unlocked(
                     if tracked:
                         tracked_issues.append(tracked)
                     if external_blocker:
-                        repair_paths = (
-                            _scope_repair_paths(project, phase, output_path, contract)
-                            if feature and not scope_repair_attempted and attempt < maximum_retries
-                            else []
+                        repair_request = (
+                            _scope_repair_request(project, phase, output_path, contract)
+                            if feature and attempt < maximum_retries
+                            else None
                         )
-                        if repair_paths:
+                        if repair_request and repair_request[1] not in repaired_findings:
                             assert feature is not None
-                            scope_repair_attempted = True
+                            repair_paths, finding_signature = repair_request
+                            repaired_findings.add(finding_signature)
                             try:
                                 repaired, repair_reason = _run_scoped_dependency_repair(
                                     project,
@@ -2679,6 +2704,7 @@ def _execute_phase_unlocked(
                                     feature,
                                     output,
                                     repair_paths,
+                                    attempt + 1,
                                 )
                             except RuntimeError as error:
                                 repaired = False
@@ -2689,6 +2715,10 @@ def _execute_phase_unlocked(
                                 continue
                             nonretryable_class = repair_reason
                             break
+                        if repair_request and repair_request[1] in repaired_findings:
+                            external_blocker = (
+                                "identical scoped repair finding repeated after its focused repair"
+                            )
                         nonretryable_class = external_blocker
                         break
                     needs_repair = not format_errors

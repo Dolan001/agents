@@ -29,6 +29,8 @@ from ai_workflow.execution import (
     _build_context_bundle,
     _feature_input_files,
     _node_input_files,
+    _run_scoped_dependency_repair,
+    _scope_repair_request,
     _validate_project_test_commands,
 )
 from ai_workflow.frameworks import detect_prd_frameworks, resolve_frameworks
@@ -3842,6 +3844,145 @@ def test_agent_node_does_not_retry_quota_or_environment_failure(
     assert failure["status"] == "blocked"
     assert failure["attempts"] == 0
     assert failure["failure_class"] == "adapter quota is unavailable"
+
+
+@pytest.mark.parametrize("second_distinct", [True, False])
+def test_backend_scoped_dependency_repair_requires_new_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, second_distinct: bool
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 User can view an account.\n"
+    )
+    target_feature: str | None = None
+    attempts = 0
+    repairs: list[int] = []
+
+    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        nonlocal target_feature, attempts
+        if "Phase/node: backend/implement-backend-slices" not in prompt:
+            return _fake_agent(project, adapter, prompt)
+        bundle = re.search(r"Bounded context bundle: (.+)", prompt)
+        assert bundle
+        feature = json.loads(Path(bundle.group(1)).read_text())["task_contract"]["feature_id"]
+        if target_feature is None:
+            target_feature = feature
+        if feature != target_feature or attempts >= 2:
+            return _fake_agent(project, adapter, prompt)
+        attempts += 1
+        output = project / f".ai/evidence/features/{feature}/backend.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({
+            "feature_id": feature,
+            "requirement_ids": ["ACC-001"],
+            "changed_files": [],
+            "checks": [{"name": "migration", "status": "failed"}],
+            "reviews": [{
+                "type": "scope_repair_request",
+                "status": "blocked",
+                "paths": ["apps/backend/shared_migration.py"],
+                "details": f"migration defect {attempts if second_distinct else 1}",
+            }],
+            "verified": False,
+        }))
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    def scoped_request(
+        project: Path, phase: str, evidence_path: Path, contract: dict[str, object]
+    ) -> tuple[list[str], str]:
+        del project, phase, contract
+        finding = json.loads(evidence_path.read_text())["reviews"][0]["details"]
+        return ["apps/backend/shared_migration.py"], finding
+
+    def repair(*args: object) -> tuple[bool, str]:
+        repairs.append(int(args[-1]))
+        return True, "repaired"
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
+    monkeypatch.setattr("ai_workflow.execution._scope_repair_request", scoped_request)
+    monkeypatch.setattr("ai_workflow.execution._run_scoped_dependency_repair", repair)
+    result = main([
+        "start-backend", "--project", str(tmp_path), "--github-user", "test-user",
+        "--backend", "fastapi",
+    ])
+    assert result == (0 if second_distinct else 1)
+    assert attempts == 2
+    assert repairs == ([1, 2] if second_distinct else [1])
+    assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
+
+
+def test_scoped_repair_requires_actual_source_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "apps/backend/shared_migration.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("before\n")
+    paths = [source.relative_to(tmp_path).as_posix()]
+    feature = {"feature_id": "sample", "task_id": "TASK-SAMPLE", "allowed_paths": paths}
+    monkeypatch.setattr(
+        "ai_workflow.execution._prompt",
+        lambda project, phase, node, state, repair_feature, inputs, instruction: (
+            node["required_output"],
+            {
+                "task_id": repair_feature["task_id"],
+                "agent": node["agent"],
+                "allowed_paths": repair_feature["allowed_paths"],
+            },
+        ),
+    )
+    monkeypatch.setattr("ai_workflow.execution.record_attempt", lambda *args, **kwargs: None)
+
+    def repair_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter
+        output = project / prompt
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({
+            "feature_id": "sample",
+            "requirement_ids": ["FR-001"],
+            "changed_files": paths,
+            "checks": [{"name": "migration", "status": "passed"}],
+            "reviews": [],
+            "verified": True,
+        }))
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", repair_agent)
+    arguments = (tmp_path, "codex", "backend", {"agent": "test"}, {}, feature, "failed.json", paths)
+    repaired, reason = _run_scoped_dependency_repair(*arguments, 1)
+    assert not repaired and "actual in-scope change" in reason
+
+    source.write_text("before\n")
+
+    def changing_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        source.write_text("after\n")
+        return repair_agent(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", changing_agent)
+    repaired, reason = _run_scoped_dependency_repair(*arguments, 2)
+    assert repaired and "separate exact-file lease" in reason
+    assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
+
+
+def test_scope_repair_request_fingerprints_distinct_findings(tmp_path: Path) -> None:
+    source = tmp_path / "apps/backend/shared_migration.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("migration\n")
+    evidence = tmp_path / "backend.json"
+    payload = {
+        "reviews": [{
+            "type": "scope_repair_request",
+            "status": "blocked",
+            "paths": ["apps/backend/shared_migration.py"],
+            "details": "first migration defect",
+        }]
+    }
+    evidence.write_text(json.dumps(payload))
+    contract = {"allowed_paths": [], "forbidden_paths": []}
+    first = _scope_repair_request(tmp_path, "backend", evidence, contract)
+    assert first is not None and first[0] == ["apps/backend/shared_migration.py"]
+    payload["reviews"][0]["details"] = "second migration defect"
+    evidence.write_text(json.dumps(payload))
+    second = _scope_repair_request(tmp_path, "backend", evidence, contract)
+    assert second is not None and second[1] != first[1]
 
 
 def test_resume_build_rejects_a_different_git_branch(tmp_path: Path) -> None:
