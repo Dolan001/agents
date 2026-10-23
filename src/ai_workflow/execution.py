@@ -347,6 +347,134 @@ def _artifact_external_blocker(path: Path) -> str | None:
     return f"{reason}; next action: {next_action}" if next_action else reason
 
 
+def _scope_repair_paths(
+    project: Path, phase: str, evidence_path: Path, contract: dict[str, Any]
+) -> list[str]:
+    """Accept only exact, existing application files requested by blocked evidence."""
+    if phase not in {"backend", "frontend", "mobile", "desktop"}:
+        return []
+    payload = read_json(evidence_path, {})
+    if not isinstance(payload, dict) or _implementation_blocker(payload) is None:
+        return []
+    reviews = payload.get("reviews", [])
+    if not isinstance(reviews, list):
+        return []
+    requested: list[str] = []
+    for review in reviews:
+        if not isinstance(review, dict):
+            continue
+        if review.get("type") == "scope_repair_request":
+            requested.extend(_safe_strings(review.get("paths")))
+        elif review.get("type") == "dependency_blocker":
+            # Support evidence written before the structured repair request existed.
+            match = re.search(
+                r"Required repair target (apps/[A-Za-z0-9_./-]+) is outside",
+                str(review.get("details", "")),
+            )
+            if match:
+                requested.append(match.group(1))
+    requested = list(dict.fromkeys(requested))
+    if not requested or len(requested) > 2:
+        return []
+    for relative in requested:
+        path = PurePosixPath(relative)
+        if (
+            not relative.startswith(f"apps/{phase}/")
+            or path.is_absolute()
+            or ".." in path.parts
+            or any(char in relative for char in "*?[]")
+            or not _inside(project, relative).is_file()
+            or any(
+                fnmatch.fnmatchcase(relative, pattern) for pattern in contract["forbidden_paths"]
+            )
+            or any(fnmatch.fnmatchcase(relative, pattern) for pattern in contract["allowed_paths"])
+        ):
+            return []
+    return requested
+
+
+def _run_scoped_dependency_repair(
+    project: Path,
+    adapter: str,
+    phase: str,
+    node: dict[str, Any],
+    state: dict[str, Any],
+    feature: dict[str, Any],
+    failed_output: str,
+    paths: list[str],
+) -> tuple[bool, str]:
+    """Repair a lease-external dependency once under a separate exact-file lease."""
+    feature_id = feature["feature_id"]
+    output = f".ai/evidence/repairs/{feature_id}/{phase}-shared-dependency.json"
+    repair_node = {
+        "id": "repair-shared-dependency",
+        "agent": node["agent"],
+        "required_output": output,
+        "verification": "evidence-schema",
+    }
+    repair_feature = dict(feature)
+    repair_feature.update(
+        task_id=f"TASK-SHARED-DEPENDENCY-REPAIR-{feature_id.upper()}",
+        allowed_paths=paths,
+        required_tests=["Rerun the focused check that failed in the implementation evidence"],
+    )
+    prompt, contract = _prompt(
+        project,
+        phase,
+        repair_node,
+        state,
+        repair_feature,
+        [failed_output, *paths],
+        "A required focused check failed in an existing shared application file outside the "
+        "original slice lease. Diagnose the failure in the supplied evidence. Repair only the "
+        "exact file(s) in this separate contract, rerun the focused check, and write truthful "
+        "schema-valid repair evidence. Do not change the original slice evidence or expand scope.",
+    )
+    identity = f"{phase}/repair-shared-dependency/{feature_id}"
+    prompt_path = project / ".ai" / "prompts" / f"{identity.replace('/', '--')}.md"
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text(prompt, encoding="utf-8")
+    _acquire_path_lease(project, contract)
+    try:
+        started = time.monotonic()
+        result = _run_adapter(project, adapter, prompt)
+        record_attempt(
+            project,
+            identity=identity,
+            adapter=adapter,
+            agent=node["agent"],
+            skills=[],
+            prompt=prompt,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            result=result,
+        )
+    finally:
+        _release_path_lease(project, contract["task_id"])
+    log_path = project / ".ai" / "logs" / f"{identity.replace('/', '--')}.json"
+    write_json(log_path, result)
+    if result["returncode"] != 0:
+        concise, _ = _concise_adapter_failure(result)
+        return False, f"shared dependency repair failed: {concise}"
+    evidence_path = _inside(project, output)
+    if not _artifact_ok(evidence_path, "evidence-schema"):
+        return False, f"shared dependency repair evidence failed validation: {output}"
+    evidence = read_json(evidence_path, {})
+    if not isinstance(evidence, dict):
+        return False, "shared dependency repair did not produce structured evidence"
+    changed = evidence.get("changed_files", [])
+    checks = evidence.get("checks", [])
+    if (
+        not isinstance(changed, list)
+        or not changed
+        or not set(changed) <= set(paths)
+        or not isinstance(checks, list)
+        or not any(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
+        or any(isinstance(check, dict) and check.get("status") == "failed" for check in checks)
+    ):
+        return False, "shared dependency repair lacks an in-scope change and passing focused check"
+    return True, f"shared dependency repaired under a separate exact-file lease: {', '.join(paths)}"
+
+
 def _repair_input_files(
     project: Path,
     inputs: list[str],
@@ -1915,6 +2043,12 @@ checks, review the diff, and write truthful evidence at the exact required outpu
 Do not stage, commit, push, merge, deploy, or change Git branches; delivery is owned by
 the workflow's verified Git boundary.
 Do not claim verification when a required command did not run or failed.
+If a required check exposes a defect in an existing application source file outside this task's
+lease, do not edit that file. In the blocked evidence, add a review with type
+`scope_repair_request`, status `blocked`, `paths` containing at most two exact existing
+project-relative source file paths, and details explaining the failed check. The orchestrator
+may schedule one separately leased repair and retry this node. Never request a directory, glob,
+workflow file, or an unrelated file; environment and permission failures are not scope repairs.
 The complete task contract is embedded once in the bounded context bundle; do not search for or
 reload a second copy. It has already passed the workflow's JSON Schema validation and is READY.
 The workflow acquires its path lease before invoking you and releases it after you return. Do not
@@ -2318,6 +2452,7 @@ def _execute_phase_unlocked(
             tracked_issues: list[str] = []
             nonretryable_class: str | None = None
             needs_repair = False
+            scope_repair_attempted = False
             result: dict[str, Any] = {}
             for attempt in range(maximum_retries + 1):
                 retry_context = failure_reasons[-1] if failure_reasons else None
@@ -2526,6 +2661,34 @@ def _execute_phase_unlocked(
                     if tracked:
                         tracked_issues.append(tracked)
                     if external_blocker:
+                        repair_paths = (
+                            _scope_repair_paths(project, phase, output_path, contract)
+                            if feature and not scope_repair_attempted and attempt < maximum_retries
+                            else []
+                        )
+                        if repair_paths:
+                            assert feature is not None
+                            scope_repair_attempted = True
+                            try:
+                                repaired, repair_reason = _run_scoped_dependency_repair(
+                                    project,
+                                    adapter,
+                                    phase,
+                                    node,
+                                    state,
+                                    feature,
+                                    output,
+                                    repair_paths,
+                                )
+                            except RuntimeError as error:
+                                repaired = False
+                                repair_reason = f"shared dependency repair could not start: {error}"
+                            failure_reasons.append(repair_reason)
+                            if repaired:
+                                needs_repair = False
+                                continue
+                            nonretryable_class = repair_reason
+                            break
                         nonretryable_class = external_blocker
                         break
                     needs_repair = not format_errors

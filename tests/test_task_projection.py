@@ -11,6 +11,8 @@ from ai_workflow.execution import (
     _client_foundation_ready,
     _complete_task_contract,
     _release_path_lease,
+    _run_scoped_dependency_repair,
+    _scope_repair_paths,
 )
 from ai_workflow.task_projection import phase_tasks
 
@@ -20,6 +22,118 @@ def task(name, paths, dependencies=(), agent="implementer"):
         "task_id": name, "feature_id": name.lower().removeprefix("task-").removesuffix("-verify"),
         "allowed_paths": paths, "dependencies": list(dependencies), "agent": agent,
     }
+
+
+def test_blocked_shared_file_gets_exact_separate_repair_scope(tmp_path: Path) -> None:
+    shared = "apps/backend/src/example/messages/repository.py"
+    source = tmp_path / shared
+    source.parent.mkdir(parents=True)
+    source.write_text("# existing shared query\n")
+    evidence = tmp_path / ".ai/evidence/features/group-messaging/backend.json"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_text(
+        json.dumps(
+            {
+                "verified": False,
+                "reviews": [
+                    {
+                        "type": "dependency_blocker",
+                        "status": "blocked",
+                        "details": f"Required repair target {shared} is outside the active lease.",
+                    }
+                ],
+            }
+        )
+    )
+    contract = {
+        "allowed_paths": ["apps/backend/src/example/messages/group/**"],
+        "forbidden_paths": [".agents/**", ".git/**"],
+    }
+    assert _scope_repair_paths(tmp_path, "backend", evidence, contract) == [shared]
+
+    evidence.write_text(
+        json.dumps(
+            {
+                "verified": False,
+                "reviews": [
+                    {
+                        "type": "scope_repair_request",
+                        "status": "blocked",
+                        "paths": ["apps/backend/../.agents/AGENTS.md"],
+                    }
+                ],
+            }
+        )
+    )
+    assert _scope_repair_paths(tmp_path, "backend", evidence, contract) == []
+
+
+def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shared = "apps/backend/src/example/messages/repository.py"
+    source = tmp_path / shared
+    source.parent.mkdir(parents=True)
+    source.write_text("# failing query\n")
+    failed = ".ai/evidence/features/group-messaging/backend.json"
+    failed_path = tmp_path / failed
+    failed_path.parent.mkdir(parents=True)
+    failed_path.write_text("{}")
+
+    def repair_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter
+        assert (
+            "Required output: .ai/evidence/repairs/group-messaging/backend-shared-dependency.json"
+            in prompt
+        )
+        leases = json.loads((project / ".ai/path-leases.json").read_text())["leases"]
+        assert len(leases) == 1
+        assert shared in leases[0]["paths"]
+        assert "apps/backend/src/example/messages/group/**" not in leases[0]["paths"]
+        source.write_text("# corrected query\n")
+        output = project / ".ai/evidence/repairs/group-messaging/backend-shared-dependency.json"
+        output.parent.mkdir(parents=True)
+        output.write_text(
+            json.dumps(
+                {
+                    "feature_id": "group-messaging",
+                    "requirement_ids": ["FR-015"],
+                    "changed_files": [shared],
+                    "checks": [{"name": "focused-postgresql", "status": "passed"}],
+                    "reviews": [],
+                    "verified": False,
+                }
+            )
+        )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", repair_agent)
+    repaired, reason = _run_scoped_dependency_repair(
+        tmp_path,
+        "codex",
+        "backend",
+        {"agent": "selected-backend-agent"},
+        {
+            "frameworks": {
+                "frontend": "unknown",
+                "mobile": "unknown",
+                "desktop": "unknown",
+                "backend": "fastapi",
+                "deployment": "unknown",
+            },
+            "capabilities": {},
+        },
+        {
+            "feature_id": "group-messaging",
+            "task_id": "TASK-GROUP-MESSAGING",
+            "allowed_paths": ["apps/backend/src/example/messages/group/**"],
+            "requirement_ids": ["FR-015"],
+        },
+        failed,
+        [shared],
+    )
+    assert repaired and shared in reason
+    assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
 
 
 def test_client_projection_orders_prerequisites_and_excludes_backend_verifiers():

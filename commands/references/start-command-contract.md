@@ -39,7 +39,11 @@ These entrypoints execute work; they are not explanatory prompt templates.
 7. Pass arguments directly to the Codex workflow CLI. Never add `--push`,
    `--commit-verified`, live deployment, cloud mutation, or merge behavior
    unless explicitly requested.
-8. Preserve durable `.ai` checkpoints. On failure, stop and report the failing phase,
+8. Preserve durable `.ai` checkpoints. When an implementation check identifies an exact existing
+   shared application file outside the active lease, the orchestrator may run one separately leased
+   repair and retry the slice before treating it as failed. It must not broaden the original task
+   lease or retry permission, storage, quota, or unavailable-service failures. On remaining failure,
+   stop and report the failing phase,
    evidence, and exact recovery command. Never claim a stage completed unless its gate
    passed. If evidence says `retryable_without_new_evidence: false`, do not invoke an
    agent repair or repeat the verifier. HTML approval belongs to the independent
