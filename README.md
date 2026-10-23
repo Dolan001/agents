@@ -118,8 +118,9 @@ target-project/
 └── Makefile
 ```
 
-Design-only commands stop before this monorepo is created. `start-frontend`, `start-mobile`, or
-`start-desktop` is the first command allowed to scaffold the application structure.
+Design-only commands stop before application scaffolding. `start-backend` can create the backend
+and root runtime files; client commands add their selected applications later. Setup or pack
+selection creates a conservative `.gitignore` if one is missing; it never replaces an existing file.
 
 ## Setup for a user who knows only Codex
 
@@ -138,6 +139,9 @@ project boundary, and perform the installation. Codex
 must:
 
 1. Confirm the current directory is the intended project and initialize local Git only if needed.
+   Git does not create `.gitignore`; create a conservative project ignore file if missing, while
+   preserving any existing one. Include `.env`, local dependencies/caches, and transient workflow
+   logs, but keep `.env.example` and durable `.ai` evidence visible.
 2. Refuse to overwrite an existing `.agents` path unless it is already this registered submodule.
 3. Execute:
 

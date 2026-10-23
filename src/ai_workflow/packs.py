@@ -12,6 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .git import ensure_project_gitignore
 from .io import read_json, write_json
 from .model import utc_now
 from .pipeline import workflow_root
@@ -512,6 +513,7 @@ def select_from_inputs(args: argparse.Namespace) -> dict[str, Any]:
             raise RuntimeError(
                 "no PRD or requirements found; provide --prd or --requirements"
             )
+        ensure_project_gitignore(project)
         selection = bootstrap_base_pack(project, requirements)
         return {
             "status": "needs-prd",
@@ -527,6 +529,7 @@ def select_from_inputs(args: argparse.Namespace) -> dict[str, Any]:
         prd, args.frontend, args.mobile, args.desktop, args.python_package,
         args.backend, args.deployment
     )
+    ensure_project_gitignore(project)
     selection = reconcile_selected_packs(
         project,
         prd,

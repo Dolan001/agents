@@ -6,6 +6,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from ai_workflow.cli import main, parser
+from ai_workflow.git import DEFAULT_GITIGNORE, ensure_project_gitignore
 from ai_workflow.packs import (
     bootstrap_base_pack,
     build_lightweight_parser,
@@ -248,6 +249,7 @@ def test_select_packs_cli_uses_prd_and_reports_no_missing_choices(tmp_path: Path
     )
 
     assert main(["select-packs", "--project", str(tmp_path)]) == 0
+    assert (tmp_path / ".gitignore").read_text() == DEFAULT_GITIGNORE
     manifest = json.loads((tmp_path / ".ai" / "selected-packs.json").read_text())
     assert {item["name"] for item in manifest["selected_packs"]} == {
         "base",
@@ -259,6 +261,13 @@ def test_select_packs_cli_uses_prd_and_reports_no_missing_choices(tmp_path: Path
     assert selected_pack_status(tmp_path)["prd_hash_current"] is True
     (tmp_path / "PRD.md").write_text("# Changed product\n")
     assert selected_pack_status(tmp_path)["prd_hash_current"] is False
+
+
+def test_project_gitignore_preserves_existing_rules(tmp_path: Path) -> None:
+    existing = tmp_path / ".gitignore"
+    existing.write_text("custom-cache/\n")
+    assert ensure_project_gitignore(tmp_path) == existing
+    assert existing.read_text() == "custom-cache/\n"
 
 
 def test_reconcile_reports_submodule_initialization_failure(tmp_path: Path) -> None:

@@ -21,7 +21,13 @@ from .discovery import inventory, print_json, save_inventory
 from .documents import prepare_project_documents, validate_document_set
 from .execution import evaluate_phase_gate, execute_phase, phase_checkpoint_current
 from .frameworks import resolve_frameworks
-from .git import assert_safe_branch, baseline, prepare_feature_branch, run_git
+from .git import (
+    assert_safe_branch,
+    baseline,
+    ensure_project_gitignore,
+    prepare_feature_branch,
+    run_git,
+)
 from .io import append_jsonl, read_json, write_json
 from .issues import (
     initialize_issue_tracker,
@@ -135,6 +141,7 @@ def initialize(args: argparse.Namespace, mode: str) -> int:
     branch = git["branch"] if isinstance(git["branch"], str) else None
     if branch:
         assert_safe_branch(branch)
+    ensure_project_gitignore(project)
     frameworks = {
         "frontend": args.frontend,
         "mobile": getattr(args, "mobile", "unknown"),

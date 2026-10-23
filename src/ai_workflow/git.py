@@ -1,4 +1,4 @@
-"""Read-only Git inspection and fail-closed release checks."""
+"""Git setup, inspection, and fail-closed release checks."""
 
 from __future__ import annotations
 
@@ -11,6 +11,40 @@ from .io import read_json
 
 PROTECTED = {"main", "master", "dev", "develop", "stage", "staging", "production", "prod"}
 SAFE = re.compile(r"^ai/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$")
+
+DEFAULT_GITIGNORE = """.DS_Store
+.env
+.env.*
+!.env.example
+!**/.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+.dart_tool/
+dist/
+build/
+.agent-bridge-state/
+.ai/logs/
+.ai/prompts/
+.ai/context-bundles/
+.ai/path-leases.json
+.ai/backend-runtime.lock
+"""
+
+
+def ensure_project_gitignore(project: Path) -> Path:
+    """Create a conservative default only when the project has no ignore file."""
+    target = project / ".gitignore"
+    if target.exists() or target.is_symlink():
+        if not target.is_file():
+            raise RuntimeError("project .gitignore exists but is not a regular file")
+        return target
+    target.write_text(DEFAULT_GITIGNORE, encoding="utf-8")
+    return target
 
 
 def _matches(relative: str, pattern: str) -> bool:

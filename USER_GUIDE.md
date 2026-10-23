@@ -19,6 +19,8 @@ python -m pip install -e ./.agents
 
 Keep the environment active for `./.agents/bin/ai` commands, or ask Codex to use that Python.
 Add `.venv/` to the project's `.gitignore`. Codex can do this setup when installing the workflow.
+If the project has no `.gitignore`, setup or pack selection creates a conservative default;
+an existing file is preserved. Git initialization alone does not create this file.
 
 For backend or container-based verification, Docker with Compose v2 must be installed, running,
 and accessible to the coding adapter. PostgreSQL, Redis, Celery, and backend services run in the
