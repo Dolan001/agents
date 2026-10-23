@@ -48,7 +48,8 @@ remain distinguishable.
 11. `## Delivery and verification` — real-data/API verification needs, target environments,
     release approval, migration/backup expectations when relevant, and what is deferred.
 12. `## Assumptions and open decisions` — source/provenance of proposed choices, dependencies,
-    risks, and remaining user-owned questions. Use `None` only when no material decision remains.
+    risks, remaining user-owned questions, and optional improvements outside accepted scope. Use
+    `None` only when no material decision remains.
 
 Put `Review status: Pending user approval` near the top; change it only on explicit approval.
 The file is a product source, not a prewritten PRD: do not copy the PRD's 24 headings, database
@@ -61,6 +62,14 @@ credential variable names or placeholders, never values. When the user delegated
 make a reviewable proposal and mark its provenance rather than silently claiming it came from the
 user. When the user did not delegate a material choice, ask for it across as many short rounds as
 needed. Do not mark the source approved while material questions remain.
+
+Proactively look for product-specific opportunities under four lenses: **value** (missing core
+journey), **safety/privacy** (who can be harmed or exposed), **reliability** (what users see when
+things fail), and **scope** (what could be deferred to deliver sooner). Present only a few
+high-value suggestions at a time. State the benefit, implementation or policy cost, and an MVP
+versus later recommendation. A suggestion is not a requirement until the user accepts it. An
+optional suggestion may remain unaccepted without blocking approval; a missing user-owned
+decision that makes current scope unsafe or contradictory is a blocking question instead.
 
 The PRD turns journeys into `FR`, `AC`, `BR`, and `NFR` IDs and traceability. The TRD derives
 architecture and APIs; UI/UX derives routes, screens, states, and design; backend derives data,

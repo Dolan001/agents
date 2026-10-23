@@ -23,6 +23,8 @@ PRD, start from those files instead. A PRD is required **before building**, not 
 the workflow.
 The requirements source separates functional behavior, business rules, nonfunctional targets,
 structural constraints, UX inputs, and acceptance scenarios with stable IDs before review.
+The intake agent also suggests relevant improvements with benefits and tradeoffs; they enter scope
+only if you accept them.
 
 The workflow repository contains no demonstration application or framework source to
 copy. Its linked or colocated framework directories are code-free behavior packs. During execution,

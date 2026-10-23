@@ -220,6 +220,8 @@ constraints if known. The skill asks only material missing product questions, wr
 `REQUIREMENTS.md`, and returns it for review. Request changes until it matches the intended
 product. The draft includes functional (`FR`), business-rule (`BR`), nonfunctional (`NFR`),
 structural (`SR`), and acceptance (`AC`) registers, with each in-scope `FR` linked to an `AC`.
+It proposes a few relevant improvements and lets you accept, change, defer, or reject them without
+silently adding features to the first release.
 It does not generate the PRD or start building before approval. On approval, it proceeds
 to `$prepare-project-docs --requirements REQUIREMENTS.md` unless the user asked to stop at
 requirements. Successful document preparation selects the required packs.
