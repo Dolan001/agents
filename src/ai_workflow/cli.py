@@ -18,6 +18,7 @@ from .deployment import deployment_status, execute_operation
 from .design import classify_design_inputs, ingest_design_inputs, validate_html_approval
 from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
+from .docker_recovery import execute_recovery, inspect_recovery
 from .documents import prepare_project_documents, validate_document_set
 from .execution import evaluate_phase_gate, execute_phase, phase_checkpoint_current
 from .frameworks import resolve_frameworks
@@ -45,6 +46,7 @@ from .packs import (
 )
 from .pipeline import ready_phases, validate_control_plane
 from .prd import generate_prd
+from .preview import start_backend_preview, start_local_preview
 from .progress import progress_snapshot
 from .provider_selection import PROVIDERS, resolve_adapter, resolve_project_adapter
 from .quality_loop import approve_lesson, evaluate_manifest, propose_lessons
@@ -948,6 +950,8 @@ def command_start(args: argparse.Namespace) -> int:
     selected = [task for task in queue["tasks"] if task["status"] not in {"VERIFIED", "COMMITTED"}]
     completed = set(StateStore(project).load().get("completed_phases", []))
     results = []
+    backend_preview = None
+    local_preview = None
     terminal_phase = "design" if target in {"design-spec", "html"} else target
     progress_scope = "overall" if defer_deployment else terminal_phase
     initial_progress = progress_snapshot(project, progress_scope)
@@ -1018,16 +1022,77 @@ def command_start(args: argparse.Namespace) -> int:
         stop_after = (
             "create-design-specification" if target == "design-spec" and phase == "design" else None
         )
-        phase_result = execute_phase(
-            project,
-            phase,
-            args.adapter,
-            selected,
-            commit_verified=args.commit_verified or args.push,
-            push=args.push,
-            stop_after_node=stop_after,
-            verification_only=verification_only and phase == "backend",
-        )
+
+        def run_phase(
+            active_phase: str = phase,
+            active_selected: list[dict[str, Any]] = selected,
+            active_stop_after: str | None = stop_after,
+        ) -> dict[str, Any]:
+            return execute_phase(
+                project,
+                active_phase,
+                args.adapter,
+                active_selected,
+                commit_verified=args.commit_verified or args.push,
+                push=args.push,
+                stop_after_node=active_stop_after,
+                verification_only=verification_only and active_phase == "backend",
+            )
+
+        try:
+            phase_result = run_phase()
+        except RuntimeError as error:
+            if not re.search(
+                r"no space left|ENOSPC|local storage is exhausted|Docker storage", str(error), re.I
+            ):
+                raise
+            try:
+                plan = inspect_recovery(project)
+            except RuntimeError as inspection_error:
+                raise RuntimeError(
+                    f"{error}; Docker cleanup inspection failed: {inspection_error}"
+                ) from error
+            candidates = plan["candidates"]
+            if not candidates:
+                raise RuntimeError(
+                    f"{error}; no inactive workflow-owned Docker project is eligible for "
+                    "cleanup. Check Docker disk allocation and build cache."
+                ) from error
+            print(
+                "Docker storage recovery candidates (oldest created first; volumes are kept):",
+                file=sys.stderr,
+            )
+            for candidate in candidates:
+                print(
+                    f"  {candidate['name']} ({candidate['checkout']}): "
+                    f"{len(candidate['containers'])} containers, "
+                    f"{len(candidate['images'])} images, "
+                    f"{len(candidate['volumes'])} preserved volumes",
+                    file=sys.stderr,
+                )
+            print(f"Plan: {project / '.ai/docker-recovery/plan.json'}", file=sys.stderr)
+            if not sys.stdin.isatty():
+                raise RuntimeError(
+                    f"{error}; cleanup requires user approval. Review plan {plan['plan_id']}, "
+                    "then run `ai docker-recover --project . --approve PLAN_ID "
+                    "--candidate PROJECT_NAME`; resume this start command afterward."
+                ) from error
+            chosen = input("Type the exact project name to remove, or press Enter to keep all: ")
+            if chosen not in {item["name"] for item in candidates}:
+                raise RuntimeError(f"{error}; Docker cleanup was not approved") from error
+            delete_volumes = (
+                input(
+                    "Keep database volumes by default. To DELETE this project's volumes too, "
+                    f"type 'DELETE VOLUMES {chosen}': "
+                )
+                == f"DELETE VOLUMES {chosen}"
+            )
+            execute_recovery(project, plan["plan_id"], chosen, delete_volumes=delete_volumes)
+            print(
+                "Approved Docker cleanup completed; retrying the saved phase.",
+                file=sys.stderr,
+            )
+            phase_result = run_phase()
         results.append(phase_result)
         progress = progress_snapshot(project, progress_scope)
         if progress["percent"] is not None:
@@ -1038,12 +1103,31 @@ def command_start(args: argparse.Namespace) -> int:
             )
         if phase == "backend" and not phase_result.get("partial"):
             _record_backend_prerequisite_snapshot(project)
+            backend_preview = phase_result.get("backend_preview")
+            if backend_preview:
+                print(f"backend URL: {backend_preview['url']}", file=sys.stderr)
+        if phase == "frontend" and not phase_result.get("partial"):
+            local_preview = start_local_preview(
+                project, StateStore(project).load()["frameworks"]["frontend"]
+            )
+            print(f"local preview: {local_preview['url']}", file=sys.stderr)
         if phase == "requirements":
             refreshed = read_json(project / ".ai" / "task-queue.json", {"tasks": []})
             queue = refreshed
             selected = refreshed["tasks"]
         if phase == terminal_phase:
             break
+    if PHASES.index(terminal_phase) >= PHASES.index("frontend"):
+        current_state = StateStore(project).load()
+        current_completed = set(current_state.get("completed_phases", []))
+        if {"backend", "frontend"} <= current_completed and current_state["frameworks"][
+            "frontend"
+        ] != "unknown":
+            local_preview = start_local_preview(project, current_state["frameworks"]["frontend"])
+            print(f"local preview: {local_preview['url']}", file=sys.stderr)
+    if target == "backend" and backend_preview is None:
+        backend_preview = start_backend_preview(project)
+        print(f"backend URL: {backend_preview['url']}", file=sys.stderr)
     status = "complete" if target == "delivery" else "stopped-at-requested-stage"
     print_json(
         {
@@ -1051,6 +1135,8 @@ def command_start(args: argparse.Namespace) -> int:
             "requested_stage": target,
             "results": results,
             "html_approval": html_approval,
+            "local_preview": local_preview,
+            "backend_preview": backend_preview,
             "progress": progress_snapshot(
                 project, "overall" if defer_deployment else terminal_phase
             ),
@@ -1139,6 +1225,21 @@ def command_review(args: argparse.Namespace) -> int:
         {"passed": not any(item["severity"] == "high" for item in findings), "findings": findings}
     )
     return 0 if not any(item["severity"] == "high" for item in findings) else 2
+
+
+def command_docker_recover(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    if not args.approve:
+        if args.candidate or args.delete_volumes:
+            raise RuntimeError("--candidate and --delete-volumes require --approve PLAN_ID")
+        print_json(inspect_recovery(project))
+        return 0
+    if not args.candidate:
+        raise RuntimeError("--candidate PROJECT_NAME is required with --approve")
+    print_json(
+        execute_recovery(project, args.approve, args.candidate, delete_volumes=args.delete_volumes)
+    )
+    return 0
 
 
 def command_status(args: argparse.Namespace) -> int:
@@ -1580,6 +1681,12 @@ def parser() -> argparse.ArgumentParser:
     review = commands.add_parser("review")
     add_project(review)
     review.set_defaults(handler=command_review)
+    docker_recover = commands.add_parser("docker-recover")
+    add_project(docker_recover)
+    docker_recover.add_argument("--approve", metavar="PLAN_ID")
+    docker_recover.add_argument("--candidate", metavar="PROJECT_NAME")
+    docker_recover.add_argument("--delete-volumes", action="store_true")
+    docker_recover.set_defaults(handler=command_docker_recover)
     status = commands.add_parser("status")
     add_project(status)
     status.add_argument("--json", action="store_true")

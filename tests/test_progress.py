@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 
 from ai_workflow.cli import main
+from ai_workflow.execution import _node_input_files, phase_checkpoint_current
 from ai_workflow.io import write_json
 from ai_workflow.model import StateStore
+from ai_workflow.pipeline import node_cache_key
 from ai_workflow.progress import progress_snapshot
 
 
@@ -68,3 +70,24 @@ def test_scoped_progress_requires_gate_and_fresh_checkpoints(
     assert "deployment" not in {item["phase"] for item in overall["phases"]}
     assert "design" not in {item["phase"] for item in overall["phases"]}
     assert "frontend" not in {item["phase"] for item in overall["phases"]}
+
+
+def test_current_backend_verifier_supersedes_stale_harness_checkpoint(tmp_path: Path) -> None:
+    project = tmp_path
+    (project / "PRD.md").write_text("original", encoding="utf-8")
+    write_json(project / ".ai/evidence/backend-verification.json", {"verified": True})
+    identity = "backend/verify-backend/phase"
+    inputs = [
+        path for path in _node_input_files(project, "backend", "verify-backend")
+        if path != ".ai/evidence/backend-verification.json"
+    ]
+    write_json(project / ".ai/node-state.json", {"nodes": {
+        identity: {
+            "status": "VERIFIED",
+            "cache_key": node_cache_key(project, identity, inputs),
+        },
+    }})
+
+    assert phase_checkpoint_current(project, "backend", [])
+    (project / "PRD.md").write_text("changed", encoding="utf-8")
+    assert not phase_checkpoint_current(project, "backend", [])

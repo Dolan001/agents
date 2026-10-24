@@ -58,6 +58,18 @@ from ai_workflow.tokens import parse_token
 from ai_workflow.visual_diff import compare_pixels
 
 
+@pytest.fixture(autouse=True)
+def _stub_local_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI unit agents produce evidence, not runnable web containers."""
+    backend = {"url": "http://127.0.0.1:8000", "port": 8000}
+    monkeypatch.setattr("ai_workflow.execution.start_backend_preview", lambda project: backend)
+    monkeypatch.setattr("ai_workflow.cli.start_backend_preview", lambda project: backend)
+    monkeypatch.setattr(
+        "ai_workflow.cli.start_local_preview",
+        lambda project, framework: {"url": "http://127.0.0.1:5173"},
+    )
+
+
 @pytest.mark.parametrize(
     ("declarations", "expected"),
     [
@@ -3886,19 +3898,19 @@ def test_backend_scoped_dependency_repair_requires_new_finding(
         }))
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
 
-    def scoped_request(
+    def scoped_requests(
         project: Path, phase: str, evidence_path: Path, contract: dict[str, object]
-    ) -> tuple[list[str], str]:
+    ) -> list[tuple[list[str], str]]:
         del project, phase, contract
         finding = json.loads(evidence_path.read_text())["reviews"][0]["details"]
-        return ["apps/backend/shared_migration.py"], finding
+        return [(["apps/backend/shared_migration.py"], finding)]
 
     def repair(*args: object) -> tuple[bool, str]:
         repairs.append(int(args[-1]))
         return True, "repaired"
 
     monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
-    monkeypatch.setattr("ai_workflow.execution._scope_repair_request", scoped_request)
+    monkeypatch.setattr("ai_workflow.execution._scope_repair_requests", scoped_requests)
     monkeypatch.setattr("ai_workflow.execution._run_scoped_dependency_repair", repair)
     result = main([
         "start-backend", "--project", str(tmp_path), "--github-user", "test-user",

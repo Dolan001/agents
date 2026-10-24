@@ -43,8 +43,15 @@ These entrypoints execute work; they are not explanatory prompt templates.
    shared application file outside the active lease, the orchestrator may run separately leased
    repairs for distinct findings within the existing retry budget and retry the slice before
    treating it as failed. It must not broaden the original task
-   lease or retry permission, storage, quota, or unavailable-service failures within the same
-   invocation without evidence that the environment changed. On remaining failure,
+   lease or retry permission, quota, or unavailable-service failures within the same
+   invocation without evidence that the environment changed. For Docker storage exhaustion,
+   present `.ai/docker-recovery/plan.json` and request approval for one exact inactive,
+   workflow-owned project. Keep volumes unless the user separately approves their deletion.
+   In a terminal, the CLI can collect approval and retry the saved phase once. In a
+   noninteractive run, ask the user, run `ai docker-recover --approve PLAN_ID --candidate
+   PROJECT_NAME` only after approval, then resume the original command. Never treat the
+   oldest candidate as implicit approval, use global Docker prune, or retry without changed
+   storage. On remaining failure,
    stop and report the failing phase,
    evidence, and exact recovery command. Never claim a stage completed unless its gate
    passed. If evidence says `retryable_without_new_evidence: false`, do not invoke an
@@ -58,13 +65,18 @@ These entrypoints execute work; they are not explanatory prompt templates.
    do not spend usage on a separate adapter probe. If it reports quota again, stop and report
    that new result. Treat a parent sandbox denial separately from an adapter quota failure.
 9. Report the requested stopping point and the next optional command after success.
+   Once backend and web frontend are verified, start their local Compose preview on
+   available loopback ports and report the `local_preview.url` returned by the CLI.
+   Local preview startup does not authorize deployment or remote publishing.
    Include the CLI's `progress` percentage and scope: overall for `start-build` and
    `resume-build`, requested stage for an individual start command. Do not call it an
    elapsed-time estimate. If the build stops early, use `ai status --json` to report
    the latest durable checkpoint percentage.
    Backend completion requires disposable PostgreSQL, deterministic synthetic seed data, live HTTP
    success/negative/auth/authorization checks, persistence round-trip, OpenAPI verification, and
-   cleanup. Frontend and mobile completion require hash-bound live integration evidence; fixture-only
+   cleanup. Before recording backend completion, start or reuse its project-scoped local Compose
+   service on an available loopback port, confirm a live HTTP response, and report
+   `backend_preview.url`. Frontend and mobile completion require hash-bound live integration evidence; fixture-only
    client tests never satisfy their gates.
 10. `start-build`, `resume-build`, and legacy `one-shot` always defer deployment, even when the PRD
     declares AWS. AWS preparation begins only with `$start-deployment --deployment aws`. Generation

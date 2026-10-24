@@ -10,9 +10,12 @@ from ai_workflow.execution import (
     _backend_run_lock,
     _client_foundation_ready,
     _complete_task_contract,
+    _leased_test_handoff,
     _release_path_lease,
+    _repair_backend_test_matrix,
     _run_scoped_dependency_repair,
     _scope_repair_request,
+    _scope_repair_requests,
 )
 from ai_workflow.task_projection import phase_tasks
 
@@ -67,6 +70,153 @@ def test_blocked_shared_file_gets_exact_separate_repair_scope(tmp_path: Path) ->
         )
     )
     assert _scope_repair_request(tmp_path, "backend", evidence, contract) is None
+
+
+def test_scoped_diagnostic_hands_test_back_to_owning_slice(tmp_path: Path) -> None:
+    relative = "tests/integration/group-messaging/live_check.py"
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.write_text("# live check\n", encoding="utf-8")
+    evidence = {
+        "reviews": [
+            {
+                "type": "test_scope_request",
+                "status": "blocked",
+                "paths": [relative],
+            }
+        ]
+    }
+    feature = {
+        "allowed_paths": ["tests/integration/group-messaging/**"],
+        "forbidden_paths": [".agents/**"],
+    }
+    assert _leased_test_handoff(tmp_path, evidence, feature) == relative
+    feature["allowed_paths"] = ["tests/integration/other-feature/**"]
+    assert _leased_test_handoff(tmp_path, evidence, feature) is None
+
+
+def test_independent_shared_repairs_keep_separate_two_file_leases(tmp_path: Path) -> None:
+    paths = [
+        "apps/backend/src/example/realtime/routes.py",
+        "apps/backend/src/example/realtime/service.py",
+        "apps/backend/src/example/presence/realtime.py",
+    ]
+    for relative in paths:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# existing source\n", encoding="utf-8")
+    evidence = tmp_path / "backend.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "verified": False,
+                "reviews": [
+                    {
+                        "type": "scope_repair_request",
+                        "status": "blocked",
+                        "paths": paths[:2],
+                        "details": "wire contract",
+                    },
+                    {
+                        "type": "scope_repair_request",
+                        "status": "blocked",
+                        "paths": paths[2:],
+                        "details": "slow consumer",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    contract = {"allowed_paths": [], "forbidden_paths": [".agents/**"]}
+    requests = _scope_repair_requests(tmp_path, "backend", evidence, contract)
+    assert [request[0] for request in requests] == [paths[:2], paths[2:]]
+    assert requests[0][1] != requests[1][1]
+
+
+def test_backend_verifier_can_delegate_an_owned_test_file(tmp_path: Path) -> None:
+    relative = "apps/backend/tests/messages/test_replay.py"
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.write_text("# typed replay assertion\n", encoding="utf-8")
+    evidence = tmp_path / "backend-verification.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "verified": False,
+                "reviews": [
+                    {
+                        "type": "scope_repair_request",
+                        "status": "blocked",
+                        "paths": [relative],
+                        "details": "mypy nested envelope failure",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    contract = {"allowed_paths": ["apps/backend/**"], "forbidden_paths": [".agents/**"]}
+    assert _scope_repair_requests(tmp_path, "backend", evidence, contract) == []
+    requests = _scope_repair_requests(
+        tmp_path, "backend", evidence, contract, allow_owned_paths=True
+    )
+    assert len(requests) == 1 and requests[0][0] == [relative]
+
+
+def test_failed_backend_matrix_repairs_and_reruns_within_same_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = tmp_path / "artifacts/tests/command-results.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "passed": False,
+                "results": [
+                    {
+                        "returncode": 1,
+                        "stdout_tail": "FAILED tests/realtime/test_protocol.py::test_v1_frame",
+                        "stderr_tail": "",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "ai_workflow.execution._prompt",
+        lambda *args: ("repair prompt", {"task_id": "TASK-MATRIX-REPAIR"}),
+    )
+    monkeypatch.setattr("ai_workflow.execution._acquire_path_lease", lambda *args: None)
+    monkeypatch.setattr("ai_workflow.execution._release_path_lease", lambda *args: None)
+    monkeypatch.setattr("ai_workflow.execution.record_attempt", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ai_workflow.execution._artifact_ok", lambda *args: True)
+
+    def repair_agent(*args: object) -> dict[str, object]:
+        calls.append("repair")
+        output = tmp_path / ".ai/evidence/backend-test-matrix-repair-1.json"
+        output.parent.mkdir(parents=True)
+        output.write_text(
+            json.dumps(
+                {
+                    "changed_files": ["apps/backend/tests/realtime/test_protocol.py"],
+                    "checks": [{"name": "focused", "status": "passed"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    def rerun(*args: object) -> None:
+        calls.append("matrix")
+        report.write_text('{"passed": true, "results": []}', encoding="utf-8")
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", repair_agent)
+    monkeypatch.setattr("ai_workflow.execution._run_deterministic", rerun)
+    _repair_backend_test_matrix(tmp_path, "codex", {})
+    assert calls == ["repair", "matrix"]
 
 
 def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(

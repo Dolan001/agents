@@ -34,11 +34,13 @@ from .design_fidelity import (
     verified_baseline_update_current,
 )
 from .discovery import inventory, save_inventory
+from .docker_recovery import _compose_name as _backend_compose_project_name
 from .git import commit_verified_feature
 from .io import append_jsonl, read_json, write_json
 from .issues import resolve_build_issues, resolve_matching_build_issues, try_track_build_issue
 from .model import PHASES, StateStore, utc_now
 from .pipeline import node_cache_key, workflow_root
+from .preview import start_backend_preview
 from .quality_loop import approved_guidance, record_attempt
 from .structure import (
     validate_backend_evidence,
@@ -347,26 +349,30 @@ def _artifact_external_blocker(path: Path) -> str | None:
     return f"{reason}; next action: {next_action}" if next_action else reason
 
 
-def _scope_repair_request(
-    project: Path, phase: str, evidence_path: Path, contract: dict[str, Any]
-) -> tuple[list[str], str] | None:
-    """Accept exact application files and fingerprint the finding that needs repair."""
+def _scope_repair_requests(
+    project: Path,
+    phase: str,
+    evidence_path: Path,
+    contract: dict[str, Any],
+    *,
+    allow_owned_paths: bool = False,
+) -> list[tuple[list[str], str]]:
+    """Validate separately scoped repair findings without combining their path leases."""
     if phase not in {"backend", "frontend", "mobile", "desktop"}:
-        return None
+        return []
     payload = read_json(evidence_path, {})
     if not isinstance(payload, dict) or _implementation_blocker(payload) is None:
-        return None
+        return []
     reviews = payload.get("reviews", [])
     if not isinstance(reviews, list):
-        return None
-    requested: list[str] = []
-    findings: list[str] = []
+        return []
+    requests: list[tuple[list[str], str]] = []
     for review in reviews:
         if not isinstance(review, dict):
             continue
+        requested: list[str] = []
         if review.get("type") == "scope_repair_request":
             requested.extend(_safe_strings(review.get("paths")))
-            findings.append(" ".join(str(review.get("details", "")).split()))
         elif review.get("type") == "dependency_blocker":
             # Support evidence written before the structured repair request existed.
             match = re.search(
@@ -375,28 +381,80 @@ def _scope_repair_request(
             )
             if match:
                 requested.append(match.group(1))
-                findings.append(" ".join(str(review.get("details", "")).split()))
-    requested = list(dict.fromkeys(requested))
-    if not requested or len(requested) > 2:
-        return None
-    for relative in requested:
-        path = PurePosixPath(relative)
-        if (
+        requested = list(dict.fromkeys(requested))
+        if not requested or len(requested) > 2:
+            continue
+        if any(
             not relative.startswith(f"apps/{phase}/")
-            or path.is_absolute()
-            or ".." in path.parts
+            or PurePosixPath(relative).is_absolute()
+            or ".." in PurePosixPath(relative).parts
             or any(char in relative for char in "*?[]")
             or not _inside(project, relative).is_file()
             or any(
                 fnmatch.fnmatchcase(relative, pattern) for pattern in contract["forbidden_paths"]
             )
-            or any(fnmatch.fnmatchcase(relative, pattern) for pattern in contract["allowed_paths"])
+            or (
+                not allow_owned_paths
+                and any(
+                    fnmatch.fnmatchcase(relative, pattern)
+                    for pattern in contract["allowed_paths"]
+                )
+            )
+            for relative in requested
         ):
-            return None
-    signature = hashlib.sha256(
-        json.dumps({"paths": sorted(requested), "findings": findings}, sort_keys=True).encode()
-    ).hexdigest()
-    return requested, signature
+            continue
+        signature = hashlib.sha256(
+            json.dumps(
+                {
+                    "paths": sorted(requested),
+                    "finding": " ".join(str(review.get("details", "")).split()),
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        requests.append((requested, signature))
+    return requests
+
+
+def _scope_repair_request(
+    project: Path, phase: str, evidence_path: Path, contract: dict[str, Any]
+) -> tuple[list[str], str] | None:
+    """Compatibility accessor for the first valid scoped repair finding."""
+    requests = _scope_repair_requests(project, phase, evidence_path, contract)
+    return requests[0] if requests else None
+
+
+def _leased_test_handoff(
+    project: Path, evidence: dict[str, Any], feature: dict[str, Any]
+) -> str | None:
+    """Return an exact test path when a scoped diagnostic identifies the original lease owner."""
+    reviews = evidence.get("reviews", [])
+    if not isinstance(reviews, list):
+        return None
+    allowed = _safe_strings(feature.get("allowed_paths"))
+    forbidden = _safe_strings(feature.get("forbidden_paths"))
+    for review in reviews:
+        if not isinstance(review, dict) or review.get("type") != "test_scope_request":
+            continue
+        if review.get("status") != "blocked":
+            continue
+        paths = _safe_strings(review.get("paths"))
+        if len(paths) != 1:
+            continue
+        relative = paths[0]
+        path = PurePosixPath(relative)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or any(char in relative for char in "*?[]")
+            or not (relative.startswith("tests/") or "/tests/" in relative)
+            or not _inside(project, relative).is_file()
+            or not any(fnmatch.fnmatchcase(relative, pattern) for pattern in allowed)
+            or any(fnmatch.fnmatchcase(relative, pattern) for pattern in forbidden)
+        ):
+            continue
+        return relative
+    return None
 
 
 def _run_scoped_dependency_repair(
@@ -416,7 +474,11 @@ def _run_scoped_dependency_repair(
     output = f".ai/evidence/repairs/{feature_id}/{phase}-shared-dependency-{repair_token}.json"
     repair_node = {
         "id": "repair-shared-dependency",
-        "agent": node["agent"],
+        "agent": (
+            "selected-backend-agent"
+            if phase == "backend" and node.get("id") == "verify-backend"
+            else node["agent"]
+        ),
         "required_output": output,
         "verification": "evidence-schema",
     }
@@ -436,7 +498,11 @@ def _run_scoped_dependency_repair(
         "A required focused check failed in an existing shared application file outside the "
         "original slice lease. Diagnose the failure in the supplied evidence. Repair only the "
         "exact file(s) in this separate contract, rerun the focused check, and write truthful "
-        "schema-valid repair evidence. Do not change the original slice evidence or expand scope.",
+        "schema-valid repair evidence. If diagnosis proves the defect is instead in an exact "
+        "test file already allowed by the original slice, do not change the supplied shared "
+        "file. Record a blocked test_scope_request review with that exact path so the original "
+        "slice can repair it under its own lease. Do not change the original slice evidence or "
+        "expand scope.",
     )
     identity = f"{phase}/repair-shared-dependency/{feature_id}-{repair_token}"
     prompt_path = project / ".ai" / "prompts" / f"{identity.replace('/', '--')}.md"
@@ -473,6 +539,13 @@ def _run_scoped_dependency_repair(
     evidence = read_json(evidence_path, {})
     if not isinstance(evidence, dict):
         return False, "shared dependency repair did not produce structured evidence"
+    test_handoff = _leased_test_handoff(project, evidence, feature)
+    if test_handoff:
+        return (
+            True,
+            "scoped diagnostic found an exact test-contract defect in the original slice lease: "
+            f"{test_handoff}; correct it and rerun the focused live check",
+        )
     changed = evidence.get("changed_files", [])
     checks = evidence.get("checks", [])
     actual_changes = {
@@ -606,7 +679,7 @@ def phase_checkpoint_current(
     nodes = checkpoints.get("nodes", {}) if isinstance(checkpoints, dict) else {}
     if not isinstance(blueprint, dict) or not isinstance(nodes, dict):
         return False
-    if phase in {"frontend", "mobile", "desktop"} and _client_phase_verification_current(
+    if phase in {"backend", "frontend", "mobile", "desktop"} and _phase_verification_current(
         project, phase, nodes
     ):
         return True
@@ -1360,8 +1433,8 @@ def _node_input_files(
     return sorted(files)
 
 
-def _client_phase_verification_current(project: Path, phase: str, nodes: dict[str, Any]) -> bool:
-    """Treat a current whole-client verifier as the durable phase checkpoint."""
+def _phase_verification_current(project: Path, phase: str, nodes: dict[str, Any]) -> bool:
+    """Treat a current whole-phase verifier as the durable phase checkpoint."""
     node_id = f"verify-{phase}"
     identity = f"{phase}/{node_id}/phase"
     output = f".ai/evidence/{phase}-verification.json"
@@ -1710,14 +1783,6 @@ def _release_path_lease(project: Path, task_id: str) -> None:
             ],
         },
     )
-
-
-def _backend_compose_project_name(project: Path) -> str:
-    """Return one stable, collision-resistant Compose project name per checkout."""
-    slug = re.sub(r"[^a-z0-9]+", "-", project.resolve().name.lower()).strip("-")
-    slug = slug or "project"
-    digest = hashlib.sha256(str(project.resolve()).encode()).hexdigest()[:8]
-    return f"ai-{slug[:36]}-backend-{digest}"
 
 
 @contextmanager
@@ -2069,10 +2134,16 @@ Do not claim verification when a required command did not run or failed.
 If a required check exposes a defect in an existing application source file outside this task's
 lease, do not edit that file. In the blocked evidence, add a review with type
 `scope_repair_request`, status `blocked`, `paths` containing at most two exact existing
-project-relative source file paths, and details explaining the failed check. The orchestrator
-may schedule bounded, separately leased repairs for distinct findings and retry this node.
+project-relative source file paths, and details explaining the failed check. Put independent
+findings in separate reviews; the two-file limit applies to each review, not their combined set.
+The orchestrator may schedule bounded, separately leased repairs for distinct findings and retry
+this node.
 Never request a directory, glob,
 workflow file, or an unrelated file; environment and permission failures are not scope repairs.
+If a live check fails because its expectation disagrees with the approved API contract while the
+running service matches that contract, fix the test within this task's own lease before requesting
+an application-source repair. A scoped diagnostic may return an exact test_scope_request for a test
+already inside this task's lease; on retry, fix that test and rerun its focused live check.
 The complete task contract is embedded once in the bounded context bundle; do not search for or
 reload a second copy. It has already passed the workflow's JSON Schema validation and is READY.
 The workflow acquires its path lease before invoking you and releases it after you return. Do not
@@ -2312,6 +2383,104 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
         raise RuntimeError(f"deterministic action has no implementation: {action}")
 
 
+def _repair_backend_test_matrix(project: Path, adapter: str, state: dict[str, Any]) -> None:
+    """Repair project test regressions before the backend verifier, with a fixed retry bound."""
+    report_path = project / "artifacts" / "tests" / "command-results.json"
+    pipeline = read_json(workflow_root() / "config" / "pipeline.json")
+    maximum = int(pipeline["execution"]["maximum_retries_per_failure"])
+    for attempt in range(1, maximum + 1):
+        report = read_json(report_path, {})
+        results = report.get("results", []) if isinstance(report, dict) else []
+        failed = [
+            result
+            for result in results
+            if isinstance(result, dict) and result.get("returncode") != 0
+        ]
+        if not failed:
+            raise RuntimeError("backend test matrix failed without a recorded failing command")
+        failure = failed[-1]
+        output = str(failure.get("stdout_tail", "")) + "\n" + str(failure.get("stderr_tail", ""))
+        for pattern, summary in _NON_RETRYABLE_ADAPTER_PATTERNS:
+            if re.search(pattern, output, re.I):
+                raise RuntimeError(f"backend test matrix blocked: {summary}")
+        repair_output = f".ai/evidence/backend-test-matrix-repair-{attempt}.json"
+        node = {
+            "id": "repair-backend-test-matrix",
+            "agent": "selected-backend-agent",
+            "required_output": repair_output,
+            "verification": "evidence-schema",
+        }
+        prompt, contract = _prompt(
+            project,
+            "backend",
+            node,
+            state,
+            None,
+            ["artifacts/tests/command-results.json", ".ai/test-commands.json"],
+            "The approved backend test matrix failed. Diagnose every failing test in the "
+            "recorded command result. Repair project source or stale tests to the approved "
+            "contract within this backend lease, run focused checks, and write truthful "
+            f"schema-valid evidence to {repair_output}. Do not change the API contract to "
+            "silence a regression. The orchestrator will rerun the complete matrix once after "
+            "this repair. Keep the project-scoped Docker runtime and disposable database rules.",
+        )
+        identity = f"backend/repair-backend-test-matrix/attempt-{attempt}"
+        prompt_path = project / ".ai" / "prompts" / f"{identity.replace('/', '--')}.md"
+        prompt_path.parent.mkdir(parents=True, exist_ok=True)
+        prompt_path.write_text(prompt, encoding="utf-8")
+        _acquire_path_lease(project, contract)
+        try:
+            started = time.monotonic()
+            result = _run_adapter(project, adapter, prompt)
+            record_attempt(
+                project,
+                identity=identity,
+                adapter=adapter,
+                agent=node["agent"],
+                skills=[],
+                prompt=prompt,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                result=result,
+            )
+        finally:
+            _release_path_lease(project, contract["task_id"])
+        write_json(project / ".ai" / "logs" / f"{identity.replace('/', '--')}.json", result)
+        if result["returncode"] != 0:
+            concise, _ = _concise_adapter_failure(result)
+            raise RuntimeError(f"backend test matrix repair agent failed: {concise}")
+        if not _artifact_ok(project / repair_output, "evidence-schema"):
+            raise RuntimeError(f"backend test matrix repair evidence is invalid: {repair_output}")
+        repair_evidence = read_json(project / repair_output, {})
+        checks = repair_evidence.get("checks", []) if isinstance(repair_evidence, dict) else []
+        changed = (
+            repair_evidence.get("changed_files", [])
+            if isinstance(repair_evidence, dict)
+            else []
+        )
+        if (
+            not isinstance(changed, list)
+            or not changed
+            or not isinstance(checks, list)
+            or not any(
+                isinstance(check, dict) and check.get("status") == "passed" for check in checks
+            )
+            or any(isinstance(check, dict) and check.get("status") == "failed" for check in checks)
+            or _artifact_external_blocker(project / repair_output)
+        ):
+            raise RuntimeError(
+                f"backend test matrix repair did not prove a focused fix: {repair_output}"
+            )
+        try:
+            _run_deterministic(project, "backend", "run_project_owned_test_commands", state)
+            return
+        except RuntimeError:
+            if attempt == maximum:
+                raise RuntimeError(
+                    f"backend test matrix still fails after {maximum} scoped repairs; "
+                    f"review {report_path}"
+                ) from None
+
+
 def _execute_phase_unlocked(
     project: Path,
     phase: str,
@@ -2345,7 +2514,7 @@ def _execute_phase_unlocked(
     checkpoints = read_json(project / ".ai" / "node-state.json", {"version": 1, "nodes": {}})
     node_state = checkpoints.setdefault("nodes", {})
     client_phase_verified = phase in {"frontend", "mobile", "desktop"} and (
-        _client_phase_verification_current(project, phase, node_state)
+        _phase_verification_current(project, phase, node_state)
     )
     if verification_only:
         if phase != "backend":
@@ -2386,7 +2555,12 @@ def _execute_phase_unlocked(
         }:
             continue
         if node["type"] == "deterministic":
-            _run_deterministic(project, phase, node["action"], state)
+            try:
+                _run_deterministic(project, phase, node["action"], state)
+            except RuntimeError:
+                if phase != "backend" or node["action"] != "run_project_owned_test_commands":
+                    raise
+                _repair_backend_test_matrix(project, adapter, state)
             node_state[f"{phase}/{node['id']}"] = {
                 "status": "COMPLETED",
                 "action": node["action"],
@@ -2685,13 +2859,38 @@ def _execute_phase_unlocked(
                     if tracked:
                         tracked_issues.append(tracked)
                     if external_blocker:
-                        repair_request = (
-                            _scope_repair_request(project, phase, output_path, contract)
-                            if feature and attempt < maximum_retries
+                        verifier_repair = phase == "backend" and node["id"] == "verify-backend"
+                        repair_feature = feature or (
+                            {
+                                "feature_id": "backend-verification",
+                                "task_id": "TASK-BACKEND-VERIFICATION-REPAIR",
+                                "allowed_paths": [],
+                                "forbidden_paths": contract["forbidden_paths"],
+                            }
+                            if verifier_repair
                             else None
                         )
-                        if repair_request and repair_request[1] not in repaired_findings:
-                            assert feature is not None
+                        repair_requests = (
+                            _scope_repair_requests(
+                                project,
+                                phase,
+                                output_path,
+                                contract,
+                                **({"allow_owned_paths": True} if verifier_repair else {}),
+                            )
+                            if repair_feature and attempt < maximum_retries
+                            else []
+                        )
+                        repair_request = next(
+                            (
+                                request
+                                for request in repair_requests
+                                if request[1] not in repaired_findings
+                            ),
+                            None,
+                        )
+                        if repair_request:
+                            assert repair_feature is not None
                             repair_paths, finding_signature = repair_request
                             repaired_findings.add(finding_signature)
                             try:
@@ -2701,7 +2900,7 @@ def _execute_phase_unlocked(
                                     phase,
                                     node,
                                     state,
-                                    feature,
+                                    repair_feature,
                                     output,
                                     repair_paths,
                                     attempt + 1,
@@ -2715,7 +2914,7 @@ def _execute_phase_unlocked(
                                 continue
                             nonretryable_class = repair_reason
                             break
-                        if repair_request and repair_request[1] in repaired_findings:
+                        if repair_requests and not repair_request:
                             external_blocker = (
                                 "identical scoped repair finding repeated after its focused repair"
                             )
@@ -2797,6 +2996,7 @@ def _execute_phase_unlocked(
     gate = evaluate_phase_gate(project, phase)
     if not gate["passed"]:
         raise RuntimeError(f"phase gate failed for {phase}: missing {gate['missing_artifacts']}")
+    backend_preview = start_backend_preview(project) if phase == "backend" else None
     deliveries = []
     if phase == "testing":
         queue = read_json(project / ".ai" / "task-queue.json", {"version": 1, "tasks": []})
@@ -2820,7 +3020,13 @@ def _execute_phase_unlocked(
     state["status"] = "complete" if phase == "delivery" else "running"
     store.save(state)
     write_json(project / ".ai" / "node-state.json", checkpoints)
-    return {"phase": phase, "executed": executed, "gate": gate, "deliveries": deliveries}
+    return {
+        "phase": phase,
+        "executed": executed,
+        "gate": gate,
+        "deliveries": deliveries,
+        "backend_preview": backend_preview,
+    }
 
 
 def execute_phase(

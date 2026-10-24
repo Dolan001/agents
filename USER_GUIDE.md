@@ -413,7 +413,10 @@ $start-frontend --frontend <react|nextjs> [shared start flags]
 ```
 
 Builds the selected web frontend from approved HTML, runs pixel/semantic design synchronization and
-independent frontend verification, then stops before backend work.
+independent frontend verification. After the backend and frontend gates pass, the workflow starts
+both local services on available localhost ports and prints `local_preview.url` for browser review.
+The preview stays available through the project-scoped Docker Compose stack. A repeated command
+reuses a responding preview. This also happens during `start-build` after its frontend phase.
 
 Before feature work, the workflow creates an executable framework foundation and a typed API
 client from an interim OpenAPI contract based on the specifications. Client tests use fixtures;
@@ -455,8 +458,24 @@ $start-backend --backend <django-drf|fastapi> [--verification-only | --full-reva
 ```
 
 Builds and verifies the PostgreSQL backend before client implementation, then stops at the backend
-gate. `--verification-only` reruns the final backend matrix from existing verified slices;
+gate. It starts or reuses the backend locally on an available localhost port, checks its HTTP
+response, and prints `backend_preview.url` before marking the backend phase complete.
+`--verification-only` reruns the final backend matrix from existing verified slices;
 `--full-revalidation` deliberately reopens every backend slice and the final matrix.
+
+If Docker storage fills during a workflow run, the CLI inventories inactive workflow-owned
+projects and writes `.ai/docker-recovery/plan.json`. In an interactive terminal it asks for the
+exact project to clean and resumes the saved phase after approval. In an agent or other
+noninteractive run, review the plan and approve one candidate explicitly:
+
+```text
+./.agents/bin/ai docker-recover --project . --approve PLAN_ID --candidate PROJECT_NAME
+./.agents/bin/ai start-backend --project .
+```
+
+Cleanup removes only that project's stopped containers, networks, and project-labelled images.
+Database volumes stay intact. Add `--delete-volumes` only after separately approving permanent
+deletion of the listed volumes. The command rejects a stale plan or a project that started running.
 
 ### `$start-integration`
 

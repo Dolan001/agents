@@ -7,7 +7,9 @@ description: Build the selected React or Next.js frontend from existing verified
 
 Read `.agents/commands/references/start-command-contract.md`, resolve the frontend and backend choices,
 then invoke `./.agents/bin/ai start-frontend` with the explicitly selected adapter
-(default `codex-reviewed`). Stop after the frontend gate.
+(default `codex-reviewed`). After the backend and frontend gates pass, the CLI starts
+the project locally on available loopback ports. Report the `local_preview.url` from
+the CLI result so the user can open it in a browser. Stop after the frontend gate.
 
 This command does not generate or repair HTML. If the prerequisite is missing or
 stale, report the `start-generatehtml` recovery command and stop. The user may review
