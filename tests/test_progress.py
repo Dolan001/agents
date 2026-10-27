@@ -72,8 +72,13 @@ def test_scoped_progress_requires_gate_and_fresh_checkpoints(
     assert "frontend" not in {item["phase"] for item in overall["phases"]}
 
 
-def test_current_backend_verifier_supersedes_stale_harness_checkpoint(tmp_path: Path) -> None:
+def test_current_backend_verifier_supersedes_stale_harness_checkpoint(
+    tmp_path: Path, monkeypatch,
+) -> None:
     project = tmp_path
+    # This test isolates cache freshness; backend evidence validity is covered by
+    # its own schema and semantic tests.
+    monkeypatch.setattr("ai_workflow.execution._artifact_ok", lambda *args: True)
     (project / "PRD.md").write_text("original", encoding="utf-8")
     write_json(project / ".ai/evidence/backend-verification.json", {"verified": True})
     identity = "backend/verify-backend/phase"

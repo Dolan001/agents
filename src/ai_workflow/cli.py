@@ -29,6 +29,7 @@ from .git import (
     prepare_feature_branch,
     run_git,
 )
+from .git_actions import commit_or_push
 from .io import append_jsonl, read_json, write_json
 from .issues import (
     initialize_issue_tracker,
@@ -52,6 +53,7 @@ from .provider_selection import PROVIDERS, resolve_adapter, resolve_project_adap
 from .quality_loop import approve_lesson, evaluate_manifest, propose_lessons
 from .requirements import parse_prd, save_requirement_outputs
 from .requirements import reconcile as reconcile_requirements
+from .structure import validate_backend_evidence
 from .tokens import resolve_token
 from .visual_diff import compare_pixels, parse_mask
 
@@ -667,6 +669,18 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         ):
             raise RuntimeError("requirements prerequisite is missing or stale")
         validate_html_approval(project)
+        if not _verified_backend_evidence_available(project):
+            raise RuntimeError("backend prerequisite lacks verified client API journeys")
+        if (
+            "backend" in completed
+            and "design" not in completed
+            and phase_checkpoint_current(project, "design", tasks)
+        ):
+            # Re-verifying backend invalidates later phase markers. Preserve an
+            # independently approved HTML checkpoint when its design inputs remain current.
+            completed.add("design")
+            state["completed_phases"] = sorted(completed, key=PHASES.index)
+            StateStore(project).save(state)
         current = _frontend_prerequisite_fingerprint(project)
         snapshot_path = project / ".ai" / "evidence" / "frontend-prerequisites.json"
         snapshot = read_json(snapshot_path, {})
@@ -696,6 +710,7 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         if (
             frontend_started
             and design_current
+            and _verified_backend_evidence_available(project)
             and isinstance(backend_gate, dict)
             and backend_gate.get("passed") is True
             and isinstance(backend_evidence, dict)
@@ -711,6 +726,11 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
         stale = "backend" if not backend_current else "design"
         raise RuntimeError(f"{stale} prerequisite is missing or stale")
     except RuntimeError as exc:
+        if str(exc).startswith("backend prerequisite"):
+            raise RuntimeError(
+                f"start-frontend requires a current backend contract ({exc}). "
+                "Run start-backend, then resume start-frontend."
+            ) from exc
         raise RuntimeError(
             f"start-frontend requires current verified HTML ({exc}). Run {recovery}, "
             "optionally review the HTML, then run start-frontend again."
@@ -742,7 +762,10 @@ def _frontend_prerequisite_fingerprint(project: Path) -> dict[str, Any]:
     return {"version": 1, "sha256": digest.hexdigest(), "recorded_at": utc_now()}
 
 
-_IGNORED_FINGERPRINT_PARTS = {"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"}
+_IGNORED_FINGERPRINT_PARTS = {
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv",
+    "celerybeat-schedule", "celerybeat-schedule-shm", "celerybeat-schedule-wal",
+}
 
 
 def _verified_backend_evidence_available(project: Path) -> bool:
@@ -750,6 +773,14 @@ def _verified_backend_evidence_available(project: Path) -> bool:
     gate = read_json(project / ".ai" / "evidence" / "gates" / "backend.json", {})
     verification = read_json(project / ".ai" / "evidence" / "backend-verification.json", {})
     database = read_json(project / ".ai" / "evidence" / "database-verification.json", {})
+    try:
+        validate_backend_evidence(
+            project,
+            Path(__file__).resolve().parents[2] / "schemas" / "backend-verification.schema.json",
+            StateStore(project).load()["frameworks"]["backend"],
+        )
+    except (RuntimeError, KeyError, OSError, ValueError):
+        return False
     return bool(
         isinstance(gate, dict)
         and gate.get("passed") is True
@@ -769,10 +800,23 @@ def _can_use_backend_fast_verification(
     """Use the final matrix for an already completed backend instead of reopening slices."""
     state = StateStore(project).load()
     completed = set(state.get("completed_phases", []))
-    return bool(
+    if not (
         {"requirements", "backend"} <= completed
         and phase_checkpoint_current(project, "requirements", tasks)
-        and _verified_backend_evidence_available(project)
+    ):
+        return False
+    if _verified_backend_evidence_available(project):
+        return True
+    # A newly strengthened verifier contract should rerun the final backend gate,
+    # rather than reopen every already verified slice when backend source is unchanged.
+    gate = read_json(project / ".ai/evidence/gates/backend.json", {})
+    evidence = read_json(project / ".ai/evidence/backend-verification.json", {})
+    snapshot = read_json(project / ".ai/evidence/backend-prerequisites.json", {})
+    return bool(
+        isinstance(gate, dict) and gate.get("passed") is True
+        and isinstance(evidence, dict) and evidence.get("verified") is True
+        and isinstance(snapshot, dict)
+        and snapshot.get("sha256") == _backend_prerequisite_fingerprint(project)["sha256"]
     )
 
 
@@ -1341,6 +1385,34 @@ def command_push(args: argparse.Namespace) -> int:
     return code
 
 
+def command_git_commit(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    branch = _git_command_branch(args)
+    print_json(
+        commit_or_push(
+            project, push=False, branch=branch, message=args.message,
+        )
+    )
+    return 0
+
+
+def command_git_push(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    branch = _git_command_branch(args)
+    print_json(
+        commit_or_push(
+            project, push=True, branch=branch, remote=args.remote, message=args.message,
+        )
+    )
+    return 0
+
+
+def _git_command_branch(args: argparse.Namespace) -> str | None:
+    if args.branch and args.expected_branch and args.branch != args.expected_branch:
+        raise RuntimeError("positional branch and --branch must match")
+    return args.expected_branch or args.branch
+
+
 def command_doctor(args: argparse.Namespace) -> int:
     project = resolved_project(args.project)
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -1713,6 +1785,19 @@ def parser() -> argparse.ArgumentParser:
     push.add_argument("--remote", default="origin")
     push.add_argument("--execute", action="store_true")
     push.set_defaults(handler=command_push)
+    for name, handler in (("git-commit", command_git_commit), ("git-push", command_git_push)):
+        git_command = commands.add_parser(name)
+        add_project(git_command)
+        git_command.add_argument("branch", nargs="?", help="Expected current branch")
+        git_command.add_argument(
+            "--branch",
+            dest="expected_branch",
+            help="Expected current branch; never switches branches",
+        )
+        git_command.add_argument("--message", help="Commit message when uncommitted changes exist")
+        if name == "git-push":
+            git_command.add_argument("--remote", default="origin")
+        git_command.set_defaults(handler=handler)
     doctor = commands.add_parser("doctor")
     add_project(doctor)
     doctor.set_defaults(handler=command_doctor)
@@ -1793,7 +1878,11 @@ def main(arguments: list[str] | None = None) -> int:
             )
         handler: Command = args.handler
         result = handler(args)
-        if result == 0 and isinstance(getattr(args, "project", None), str):
+        if (
+            result == 0
+            and args.command not in {"git-commit", "git-push"}
+            and isinstance(getattr(args, "project", None), str)
+        ):
             project = Path(args.project).resolve()
             command = str(args.command)
             complete_build_commands = {
@@ -1810,7 +1899,11 @@ def main(arguments: list[str] | None = None) -> int:
                 sources={"workflow-command"},
                 resolution=f"The controlled {command} command later completed successfully.",
             )
-        if result != 0 and isinstance(getattr(args, "project", None), str):
+        if (
+            result != 0
+            and args.command not in {"git-commit", "git-push"}
+            and isinstance(getattr(args, "project", None), str)
+        ):
             project = Path(args.project).resolve()
             intake = read_json(project / ".ai" / "prd-intake" / "state.json", {})
             expected_clarification = (
@@ -1835,7 +1928,11 @@ def main(arguments: list[str] | None = None) -> int:
                 )
         return result
     except Exception as error:  # noqa: BLE001 - final CLI boundary must preserve every build error
-        if args is not None and isinstance(getattr(args, "project", None), str):
+        if (
+            args is not None
+            and args.command not in {"git-commit", "git-push"}
+            and isinstance(getattr(args, "project", None), str)
+        ):
             try:
                 project = Path(args.project).resolve()
                 if project.is_dir():

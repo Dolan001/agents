@@ -769,6 +769,30 @@ def validate_backend_evidence(
         raise RuntimeError(f"backend verification evidence is invalid: {summaries}")
     if evidence["framework"] != expected_framework:
         raise RuntimeError("backend verification framework does not match the selected backend")
+    state = read_json(project / ".ai" / "state.json", {})
+    frameworks = state.get("frameworks", {}) if isinstance(state, dict) else {}
+    client_selected = isinstance(frameworks, dict) and any(
+        frameworks.get(target, "unknown") != "unknown" for target in ("frontend", "mobile")
+    )
+    journeys = evidence["client_journeys"]
+    if client_selected and not journeys:
+        raise RuntimeError("backend verification omitted client action to API coverage")
+    openapi = read_json(project / "docs" / "api" / "openapi.json", {})
+    paths = openapi.get("paths", {}) if isinstance(openapi, dict) else {}
+    operation_ids = {
+        operation["operationId"]
+        for methods in paths.values() if isinstance(methods, dict)
+        for operation in methods.values() if isinstance(operation, dict)
+        and isinstance(operation.get("operationId"), str)
+    }
+    missing = sorted({
+        operation_id
+        for journey in journeys
+        for operation_id in journey["operation_ids"]
+        if operation_id not in operation_ids
+    })
+    if missing:
+        raise RuntimeError(f"client journey operations are missing from OpenAPI: {missing}")
     _reject_secret_evidence(evidence, "backend verification")
     return evidence
 

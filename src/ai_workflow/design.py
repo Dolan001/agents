@@ -259,18 +259,22 @@ def validate_html_approval(project: Path) -> dict[str, Any]:
 
 
 def _source_checks_passed(checks: dict[str, Any]) -> bool:
-    """Accept legacy command metadata or complete semantic verifier evidence."""
+    """Accept passing source checks independently of later HTML approval."""
     if checks.get("status") == "passed" and checks.get("exit_code") == 0:
         return True
     results = checks.get("checks")
-    if (
-        checks.get("approved") is not True
-        or not (checks.get("verified") is True or checks.get("exit_code") == 0)
-        or not isinstance(results, list)
-        or not results
-    ):
+    if not isinstance(results, list) or not results:
         return False
     statuses = {
         item.get("status") for item in results if isinstance(item, dict)
     }
-    return "passed" in statuses and not statuses.intersection({"failed", "not_run"})
+    complete = checks.get("verified") is True or checks.get("exit_code") == 0 or all(
+        isinstance(item, dict)
+        and item.get("status") == "passed"
+        and item.get("exit_code") == 0
+        for item in results
+    ) or checks.get("failures") == {}
+    return bool(
+        complete and "passed" in statuses
+        and not statuses.intersection({"failed", "not_run"})
+    )

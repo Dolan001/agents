@@ -69,6 +69,11 @@ _IGNORED_CONTEXT_PARTS = {
     "node_modules",
 }
 _IGNORED_CONTEXT_SUFFIXES = {".pyc", ".pyo", ".tsbuildinfo"}
+_IGNORED_CONTEXT_FILES = {
+    "celerybeat-schedule",
+    "celerybeat-schedule-shm",
+    "celerybeat-schedule-wal",
+}
 _PROJECT_DOCUMENT_NAMES = {
     "PRD.md",
     "TRD.md",
@@ -92,7 +97,11 @@ def _context_file_allowed(project: Path, path: Path) -> bool:
     relative = path.relative_to(project)
     if any(part in _IGNORED_CONTEXT_PARTS for part in relative.parts):
         return False
-    if path.suffix in _IGNORED_CONTEXT_SUFFIXES or not path.is_file():
+    if (
+        path.name in _IGNORED_CONTEXT_FILES
+        or path.suffix in _IGNORED_CONTEXT_SUFFIXES
+        or not path.is_file()
+    ):
         return False
     if relative.parts[:2] in {
         (".ai", "context-bundles"),
@@ -176,6 +185,18 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     if verification == "verified-true":
         if not isinstance(payload, dict) or payload.get("verified") is not True:
             return False
+        if path.name == "backend-verification.json" and path.parent.name == "evidence":
+            project = path.parents[2]
+            state = read_json(project / ".ai" / "state.json", {})
+            frameworks = state.get("frameworks", {}) if isinstance(state, dict) else {}
+            try:
+                validate_backend_evidence(
+                    project,
+                    workflow_root() / "schemas" / "backend-verification.schema.json",
+                    frameworks["backend"],
+                )
+            except (RuntimeError, KeyError, OSError, ValueError):
+                return False
         if {"feature_id", "requirement_ids", "changed_files", "checks", "reviews"} <= set(payload):
             schema = _evidence_schema(path)
             return isinstance(schema, dict) and not list(
@@ -279,6 +300,21 @@ def _implementation_blocker(payload: Any) -> str | None:
     return None
 
 
+def _backend_verifier_finding_signature(payload: Any) -> str | None:
+    if not isinstance(payload, dict) or not isinstance(payload.get("reviews"), list):
+        return None
+    findings = [
+        {"type": item.get("type"), "paths": item.get("paths"), "details": item.get("details")}
+        for item in payload["reviews"]
+        if isinstance(item, dict)
+        and str(item.get("status", "")).lower() in {"blocked", "failed"}
+        and item.get("type") != "handoff"
+    ]
+    if not findings:
+        return None
+    return hashlib.sha256(json.dumps(findings, sort_keys=True).encode()).hexdigest()
+
+
 def _evidence_format_errors(path: Path) -> list[str]:
     if path.suffix != ".json" or not path.is_file():
         return []
@@ -320,6 +356,16 @@ def _artifact_external_blocker(path: Path) -> str | None:
         # A schema failure requires evidence repair, not an external dependency.
         return _implementation_blocker(payload)
     recovery = payload.get("recovery")
+    if (
+        path.parts[-4:-1] == (".ai", "evidence", "design")
+        and isinstance(recovery, dict)
+        and recovery.get("retryable_without_new_evidence") is True
+        and isinstance(payload.get("findings"), list)
+        and payload["findings"]
+    ):
+        # Failed design reviews describe the defect, not an unavailable dependency.
+        # A verifier-declared actionable finding belongs to the bounded repair node.
+        return None
     if (
         isinstance(recovery, dict)
         and recovery.get("classification") == "actionable_baseline_findings"
@@ -422,6 +468,139 @@ def _scope_repair_request(
     """Compatibility accessor for the first valid scoped repair finding."""
     requests = _scope_repair_requests(project, phase, evidence_path, contract)
     return requests[0] if requests else None
+
+
+def _backend_contract_repair_request(
+    project: Path, phase: str, evidence_path: Path
+) -> str | None:
+    """Recognize an actionable client-to-backend handoff, never a generic blocked review."""
+    if phase not in {"frontend", "mobile", "desktop"}:
+        return None
+    payload = read_json(evidence_path, {})
+    if not isinstance(payload, dict) or _implementation_blocker(payload) is None:
+        return None
+    for review in payload.get("reviews", []):
+        if not isinstance(review, dict) or review.get("type") != "scope_repair_request":
+            continue
+        if str(review.get("status", "")).lower() != "blocked":
+            continue
+        paths = _safe_strings(review.get("paths"))
+        if not paths or len(paths) > 2:
+            continue
+        if all(
+            relative.startswith("apps/backend/")
+            and not PurePosixPath(relative).is_absolute()
+            and ".." not in PurePosixPath(relative).parts
+            and not any(char in relative for char in "*?[]")
+            and _inside(project, relative).is_file()
+            for relative in paths
+        ):
+            return hashlib.sha256(
+                json.dumps(
+                    {
+                        "paths": sorted(paths),
+                        "finding": " ".join(str(review.get("details", "")).split()),
+                    },
+                    sort_keys=True,
+                ).encode()
+            ).hexdigest()
+    return None
+
+
+def _run_backend_contract_repair(
+    project: Path,
+    adapter: str,
+    state: dict[str, Any],
+    failed_output: str,
+    client_phase: str,
+    feature_id: str,
+    attempt: int,
+) -> tuple[bool, str]:
+    """Repair a missing API under a backend lease, then independently reverify it."""
+    output = f".ai/evidence/repairs/{feature_id}/backend-contract-{attempt}.json"
+    node = {
+        "id": "repair-backend-contract",
+        "agent": "selected-backend-agent",
+        "required_output": output,
+        "verification": "evidence-schema",
+    }
+    inputs = [failed_output, "docs/api/openapi.json", "docs/api/contract-plan.json"]
+    prompt, contract = _prompt(
+        project,
+        "backend",
+        node,
+        state,
+        None,
+        inputs,
+        "A client slice found an implementable gap in the verified backend contract. "
+        f"Read {failed_output} and its scope_repair_request. Under this separate backend "
+        "lease, implement the complete authorized API journey, including migrations, "
+        "OpenAPI, typed client generation, and focused live tests where needed. Preserve "
+        "approved product behavior and HTML. Do not edit client implementation files or "
+        "claim backend approval. Write truthful schema-valid repair evidence; the "
+        "orchestrator will run the full backend test matrix and independent verifier.",
+    )
+    identity = f"backend/repair-backend-contract/{feature_id}-{attempt}"
+    prompt_path = project / ".ai" / "prompts" / f"{identity.replace('/', '--')}.md"
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text(prompt, encoding="utf-8")
+    _acquire_path_lease(project, contract)
+    try:
+        started = time.monotonic()
+        result = _run_adapter(project, adapter, prompt)
+        record_attempt(
+            project,
+            identity=identity,
+            adapter=adapter,
+            agent=node["agent"],
+            skills=[],
+            prompt=prompt,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            result=result,
+        )
+    finally:
+        _release_path_lease(project, contract["task_id"])
+    write_json(project / ".ai" / "logs" / f"{identity.replace('/', '--')}.json", result)
+    if result["returncode"] != 0:
+        concise, _ = _concise_adapter_failure(result)
+        return False, f"backend contract repair failed: {concise}"
+    evidence_path = _inside(project, output)
+    if not _artifact_ok(evidence_path, "evidence-schema"):
+        return False, f"backend contract repair evidence failed validation: {output}"
+    evidence = read_json(evidence_path, {})
+    changed = evidence.get("changed_files", []) if isinstance(evidence, dict) else []
+    checks = evidence.get("checks", []) if isinstance(evidence, dict) else []
+    if (
+        not isinstance(changed, list)
+        or not changed
+        or not isinstance(checks, list)
+        or not any(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
+        or any(isinstance(check, dict) and check.get("status") == "failed" for check in checks)
+    ):
+        return False, "backend contract repair lacks changed files and a passing focused check"
+    queue = read_json(project / ".ai" / "task-queue.json", {})
+    features = queue.get("tasks", []) if isinstance(queue, dict) else []
+    backend = execute_phase(
+        project,
+        "backend",
+        adapter,
+        features if isinstance(features, list) else [],
+        verification_only=True,
+    )
+    if not backend.get("gate", {}).get("passed"):
+        return False, "backend contract repair did not pass independent backend verification"
+    # Keep the CLI's durable prerequisites aligned with the newly verified API, so
+    # a later resume does not mistake this in-run repair for stale HTML/backend.
+    from .cli import _frontend_prerequisite_fingerprint, _record_backend_prerequisite_snapshot
+
+    _record_backend_prerequisite_snapshot(project)
+    if client_phase == "frontend":
+        validate_html_approval(project)
+        write_json(
+            project / ".ai" / "evidence" / "frontend-prerequisites.json",
+            _frontend_prerequisite_fingerprint(project),
+        )
+    return True, "backend contract repaired and independently verified"
 
 
 def _leased_test_handoff(
@@ -679,6 +858,8 @@ def phase_checkpoint_current(
     nodes = checkpoints.get("nodes", {}) if isinstance(checkpoints, dict) else {}
     if not isinstance(blueprint, dict) or not isinstance(nodes, dict):
         return False
+    if phase == "design" and _design_phase_verification_current(project, nodes):
+        return True
     if phase in {"backend", "frontend", "mobile", "desktop"} and _phase_verification_current(
         project, phase, nodes
     ):
@@ -1448,6 +1629,53 @@ def _phase_verification_current(project: Path, phase: str, nodes: dict[str, Any]
     )
 
 
+def _design_phase_verification_current(project: Path, nodes: dict[str, Any]) -> bool:
+    """Accept hash-bound HTML approval, including older pre-promotion checkpoints."""
+    identity = "design/verify-html-baseline/phase"
+    checkpoint = nodes.get(identity, {})
+    output = project / ".ai/evidence/design/verification.json"
+    if not isinstance(checkpoint, dict) or checkpoint.get("status") != "VERIFIED":
+        return False
+    if not _artifact_ok(output, "verified-true"):
+        return False
+    try:
+        validate_html_approval(project)
+    except (RuntimeError, OSError, ValueError):
+        return False
+    current = [
+        path for path in _node_input_files(project, "design", "verify-html-baseline")
+        if path != ".ai/evidence/design/verification.json"
+    ]
+    if checkpoint.get("cache_key") == node_cache_key(project, identity, current):
+        return True
+    # Older runs saved the verifier key just before promotion changed the input
+    # tree from generated pages to approved pages and added owner-approval.json.
+    before_promotion = [
+        path.replace("HTML/approved/", "HTML/generated/")
+        for path in current
+        if path != ".ai/evidence/design/owner-approval.json"
+    ]
+    if checkpoint.get("cache_key") == node_cache_key(project, identity, before_promotion):
+        return True
+    # Backend implementation can add OpenAPI routes or refresh its evidence after
+    # HTML approval. That must not invalidate an unchanged product design. Older
+    # verifier checkpoints did not record separate document hashes, so use the
+    # approval timestamp as their conservative document-change boundary.
+    approval = project / ".ai/evidence/design/owner-approval.json"
+    design_inputs = [
+        project / relative
+        for relative in (
+            "PRD.md", "TRD.md", "UI_UX_SPEC.md", "BACKEND_SPEC.md", "DELIVERY_SPEC.md",
+            "HTML/design-specification.md", "HTML/baseline-manifest.json",
+        )
+    ]
+    approved_at = approval.stat().st_mtime_ns
+    return all(
+        not path.is_file() or path.stat().st_mtime_ns <= approved_at
+        for path in design_inputs
+    )
+
+
 def _build_context_bundle(
     project: Path,
     identity: str,
@@ -1619,6 +1847,10 @@ def _complete_task_contract(
     allowed_paths = _safe_strings(source.get("allowed_paths"))
     if not allowed_paths and isinstance(scope, dict):
         allowed_paths = _safe_strings(scope.get("allowed_paths"))
+    if phase == "frontend" and "/implement-frontend-slices/" in identity:
+        # A feature's live API journey may require a project-local service route
+        # (for example a browser-reachable private upload endpoint).
+        allowed_paths = list(dict.fromkeys([*allowed_paths, "compose.frontend.yaml"]))
     if "/prepare-client-foundation/" in identity:
         allowed_paths = [
             f"apps/{phase}/**",
@@ -1937,6 +2169,15 @@ def _prompt(
             "\nReturn evidence matching this exact JSON Schema (do not add undeclared fields):\n"
             + json.dumps(read_json(root / "schemas/html-evidence.schema.json"))
         )
+    if node["id"] == "repair-html-baseline":
+        role_boundary += (
+            "\nThis is a repair task for the independent HTML findings, not a report-only task. "
+            "Read every open finding and its affected paths. Fix shared generators or CSS when "
+            "the defect spans routes, add a focused regression guard to the project checker, "
+            "regenerate every affected route, and rerun the complete source checks. For "
+            "responsive findings, inspect rendered 320px and 200%-zoom-equivalent layouts "
+            "before returning. Leave independent approval to verify-html-baseline."
+        )
     if phase in {"frontend", "mobile"}:
         role_boundary += (
             "\nThis client phase follows verified backend implementation. Generate its typed "
@@ -1944,7 +2185,9 @@ def _prompt(
             "Use the disposable PostgreSQL environment and deterministic synthetic dataset for "
             "live authenticated, success, negative, authorization, persistence, and error-mapping "
             "journeys. Fixtures are allowed only in isolated unit tests and cannot satisfy the "
-            "client integration gate. "
+            "client integration gate. For file inputs, perform a real browser-reachable "
+            "upload and readback through the advertised URL; a Docker-only hostname, "
+            "metadata-only finalize call, or fixture does not satisfy integration. "
             "The task's original acceptance criteria and required tests describe the whole "
             "product: execute all checks applicable to this client and record current backend "
             "evidence and OpenAPI hashes. Generate only this phase's client language."
@@ -2002,6 +2245,22 @@ def _prompt(
         )
         if node["id"] == "verify-backend":
             role_boundary += (
+                "\nBefore backend approval, independently inventory every user-visible client "
+                "mutation and data retrieval in the PRD, UI/UX specification, and task queue. "
+                "For each action, trace the complete usable API journey in current OpenAPI "
+                "and live tests: initiating an upload is insufficient without a real byte "
+                "transfer to a project-owned storage service reachable from the actual "
+                "client runtime (a Docker-only hostname is insufficient for a browser), "
+                "server-observed "
+                "content validation, authorized finalization, attachment to the owner, "
+                "and retrieval of the same bytes for rendering. Submitting client-claimed "
+                "size, checksum, media type, or scan status without server observation is "
+                "not an upload round-trip. Reject "
+                "opaque IDs that the client cannot obtain through an authorized API. Record "
+                "the requirement, client action, operation IDs, and live check in "
+                "client_journeys and run the client-journey-contract check. If any journey is "
+                "missing, return actionable findings for the backend repair node; do not "
+                "claim verified:true or label an implementable contract gap external."
                 "\nWrite schema-valid `.ai/evidence/database-verification.json` and "
                 "`.ai/evidence/backend-verification.json` from the current live checks before "
                 "claiming approval. Both artifacts are required by the backend gate. "
@@ -2016,6 +2275,29 @@ def _prompt(
                 "Docker prune. If verification fails, remove one-off containers and "
                 "disposable databases but keep the single shared runtime available for resume."
             )
+        if node["id"] == "repair-backend-verification":
+            role_boundary += (
+                "\nRepair every actionable backend verifier finding under this separate backend "
+                "lease. A missing client journey is a backend contract defect: implement the "
+                "full authorized API lifecycle, migrations, OpenAPI, typed-client generation, "
+                "and focused live tests. For uploads, make the storage URL reachable and "
+                "verify a real byte transfer from the client network, server-observed "
+                "content metadata, and readback; do not return a Docker-only hostname to "
+                "a browser client. "
+                "do not accept a metadata-only finalize simulation. Repair backend application "
+                "and contract files as "
+                "needed; do not edit frontend or approved HTML. Return truthful repair evidence "
+                "and leave independent approval to verify-backend."
+            )
+    if phase == "requirements" and node["id"] == "stabilize-contracts":
+        role_boundary += (
+            "\nInventory client actions from the PRD and UI/UX specification before finalizing "
+            "the API contract. For each action, plan a complete operation sequence, including "
+            "how the client obtains required IDs and how it reads back the result. File-based "
+            "actions need authorized upload, validation/finalization, ownership linkage, and "
+            "authorized render/download operations. Put these operations in the contract plan "
+            "and owning backend slices so no client action depends on an uncreatable opaque ID."
+        )
     if node["id"] == "prepare-client-foundation" and phase in {"frontend", "mobile"}:
         role_boundary += (
             f"\nCreate an executable {phase} application using the selected framework's create "
@@ -2138,6 +2420,10 @@ project-relative source file paths, and details explaining the failed check. Put
 findings in separate reviews; the two-file limit applies to each review, not their combined set.
 The orchestrator may schedule bounded, separately leased repairs for distinct findings and retry
 this node.
+For a client slice whose approved behavior lacks a usable backend API journey, name one or two
+existing `apps/backend/` source files in that review and describe the required end-to-end
+contract. The orchestrator owns the backend repair, full backend re-verification, and client
+retry; do not edit backend files under the client lease.
 Never request a directory, glob,
 workflow file, or an unrelated file; environment and permission failures are not scope repairs.
 If a live check fails because its expectation disagrees with the approved API contract while the
@@ -2620,9 +2906,34 @@ def _execute_phase_unlocked(
             ):
                 continue
             if (
+                phase == "backend"
+                and node["id"] == "verify-backend"
+                and _artifact_ok(output_path, node["verification"])
+            ):
+                latest_input = max(
+                    (
+                        _inside(project, relative).stat().st_mtime_ns
+                        for relative in inputs
+                        if relative != "artifacts/tests/command-results.json"
+                        if _inside(project, relative).is_file()
+                    ),
+                    default=0,
+                )
+                if output_path.stat().st_mtime_ns >= latest_input:
+                    # The independent verifier can finish writing valid evidence just
+                    # before the orchestrator is interrupted or rejects a stale rule.
+                    node_state[identity] = {
+                        "status": "VERIFIED",
+                        "output": output,
+                        "cache_key": cache_key,
+                        "inputs": inputs,
+                        "at": utc_now(),
+                    }
+                    write_json(project / ".ai" / "node-state.json", checkpoints)
+                    continue
+            if (
                 phase == "design"
                 and node["id"] == "verify-html-baseline"
-                and checkpoint.get("status") == "VERIFIED"
                 and _artifact_ok(output_path, node["verification"])
             ):
                 payload = read_json(output_path, {})
@@ -2630,31 +2941,64 @@ def _execute_phase_unlocked(
                 checkpoint_at = checkpoint.get("at")
                 if (
                     isinstance(checked_at, str)
-                    and isinstance(checkpoint_at, str)
-                    and checked_at > checkpoint_at
+                    and (
+                        checkpoint.get("status") != "VERIFIED"
+                        or (isinstance(checkpoint_at, str) and checked_at > checkpoint_at)
+                    )
                 ):
                     # Recover an independently verified artifact written immediately before
                     # promotion was interrupted. Its hashes are revalidated by _artifact_ok.
                     approve_generated_html(project)
+                    promoted_inputs = [
+                        path
+                        for path in _node_input_files(project, phase, node["id"], feature)
+                        if path != output
+                    ]
                     node_state[identity] = {
                         "status": "VERIFIED",
                         "output": output,
-                        "cache_key": cache_key,
+                        "cache_key": node_cache_key(project, identity, promoted_inputs),
+                        "inputs": promoted_inputs,
                         "at": utc_now(),
                     }
                     write_json(project / ".ai" / "node-state.json", checkpoints)
                     continue
             pipeline = read_json(workflow_root() / "config" / "pipeline.json")
             maximum_retries = int(pipeline["execution"]["maximum_retries_per_failure"])
+            if phase == "backend" and node["id"] == "verify-backend":
+                maximum_retries = max(maximum_retries, 5)
             failure_reasons: list[str] = []
             tracked_issues: list[str] = []
             nonretryable_class: str | None = None
-            needs_repair = False
+            resume_repair = False
+            if (
+                phase == "backend"
+                and node["id"] == "verify-backend"
+                and output_path.is_file()
+                and _implementation_blocker(read_json(output_path, {}))
+            ):
+                latest_input = max(
+                    (
+                        _inside(project, relative).stat().st_mtime_ns
+                        for relative in inputs
+                        if relative != "artifacts/tests/command-results.json"
+                        if _inside(project, relative).is_file()
+                    ),
+                    default=0,
+                )
+                resume_repair = output_path.stat().st_mtime_ns >= latest_input
+            needs_repair = resume_repair
             repaired_findings: set[str] = set()
+            if resume_repair:
+                signature = _backend_verifier_finding_signature(read_json(output_path, {}))
+                if signature:
+                    repaired_findings.add(signature)
             result: dict[str, Any] = {}
             for attempt in range(maximum_retries + 1):
                 retry_context = failure_reasons[-1] if failure_reasons else None
-                if attempt and needs_repair and isinstance(node.get("repair"), dict):
+                if (attempt or resume_repair) and needs_repair and isinstance(
+                    node.get("repair"), dict
+                ):
                     repair_node = node["repair"]
                     repair_output = repair_node["required_output"].format(feature_id=feature_id)
                     repair_inputs = _repair_input_files(
@@ -2760,6 +3104,7 @@ def _execute_phase_unlocked(
                             tracked_issues.append(tracked)
                         continue
                     needs_repair = False
+                    resume_repair = False
                 inputs = [
                     path
                     for path in _node_input_files(project, phase, node["id"], feature)
@@ -2859,6 +3204,67 @@ def _execute_phase_unlocked(
                     if tracked:
                         tracked_issues.append(tracked)
                     if external_blocker:
+                        if (
+                            phase == "backend"
+                            and node["id"] == "verify-backend"
+                            and isinstance(node.get("repair"), dict)
+                            and str(external_blocker).startswith("Implementation blocked:")
+                            and attempt < maximum_retries
+                        ):
+                            signature = _backend_verifier_finding_signature(
+                                read_json(output_path, {})
+                            )
+                            if signature and signature in repaired_findings:
+                                nonretryable_class = (
+                                    "identical backend verifier finding remained after repair"
+                                )
+                                break
+                            if signature:
+                                repaired_findings.add(signature)
+                            # Whole-backend contract gaps can span migrations, routes,
+                            # services and generated clients. Use the verifier's broad
+                            # backend repair lease instead of an exact-file dependency repair.
+                            needs_repair = True
+                            continue
+                        backend_signature = _backend_contract_repair_request(
+                            project, phase, output_path
+                        )
+                        if backend_signature and attempt < maximum_retries:
+                            if backend_signature in repaired_findings:
+                                nonretryable_class = (
+                                    "identical backend contract gap remained after repair"
+                                )
+                                break
+                            repaired_findings.add(backend_signature)
+                            try:
+                                repaired, repair_reason = _run_backend_contract_repair(
+                                    project,
+                                    adapter,
+                                    state,
+                                    output,
+                                    phase,
+                                    feature_id,
+                                    attempt + 1,
+                                )
+                            except RuntimeError as error:
+                                repaired = False
+                                repair_reason = f"backend contract repair could not pass: {error}"
+                            failure_reasons.append(repair_reason)
+                            if repaired:
+                                # The nested backend pass updated durable checkpoints. Keep
+                                # those entries when this client phase writes its own state.
+                                refreshed = read_json(
+                                    project / ".ai" / "node-state.json", {}
+                                )
+                                if isinstance(refreshed, dict) and isinstance(
+                                    refreshed.get("nodes"), dict
+                                ):
+                                    node_state.update(refreshed["nodes"])
+                                state = store.load()
+                                needs_repair = False
+                                continue
+                            nonretryable_class = repair_reason
+                            break
                         verifier_repair = phase == "backend" and node["id"] == "verify-backend"
                         repair_feature = feature or (
                             {

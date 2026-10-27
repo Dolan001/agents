@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "framework", "runtime", "api", "test_data", "transactions", "background_tasks", "openapi", "security", "checks", "verified"],
+  "required": ["version", "framework", "runtime", "api", "test_data", "transactions", "background_tasks", "openapi", "security", "client_journeys", "checks", "verified"],
   "properties": {
     "version": {"const": 1},
     "framework": {"enum": ["django-drf", "fastapi"]},
@@ -91,6 +91,39 @@
     },
     "openapi": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
     "security": {"type": "object", "additionalProperties": false, "required": ["passed"], "properties": {"passed": {"const": true}}},
+    "client_journeys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirement_id", "action", "operation_ids", "live_check"],
+        "properties": {
+          "requirement_id": {"type": "string", "pattern": "^[A-Z]+-[0-9]{3}$"},
+          "action": {"type": "string", "minLength": 3},
+          "operation_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "live_check": {"type": "string", "minLength": 1},
+          "upload_round_trip": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["storage_service", "client_reachable", "upload_status", "read_status", "server_observed_metadata", "sha256_verified"],
+            "properties": {
+              "storage_service": {"type": "string", "minLength": 1},
+              "client_reachable": {"const": true},
+              "upload_status": {"type": "integer", "minimum": 200, "maximum": 299},
+              "read_status": {"type": "integer", "minimum": 200, "maximum": 299},
+              "server_observed_metadata": {"const": true},
+              "sha256_verified": {"const": true}
+            }
+          }
+        },
+        "allOf": [{
+          "if": {"properties": {"action": {
+            "pattern": "[Uu]pload|[Ss]elect[^.]*[Ff]ile|[Ss]elect[^.]*[Pp]icture|[Aa]ttach[^.]*[Ff]ile"
+          }}},
+          "then": {"required": ["upload_round_trip"]}
+        }]
+      }
+    },
     "checks": {
       "type": "array",
       "minItems": 9,
@@ -99,7 +132,7 @@
         "additionalProperties": false,
         "required": ["name", "argv", "cwd", "exit_code"],
         "properties": {
-          "name": {"enum": ["import", "startup", "seed-data", "api-live", "api", "authorization", "transactions", "broker", "worker", "tasks", "openapi", "security"]},
+          "name": {"enum": ["import", "startup", "seed-data", "api-live", "api", "authorization", "transactions", "broker", "worker", "tasks", "openapi", "security", "client-journey-contract"]},
           "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "cwd": {"type": "string", "minLength": 1, "not": {"pattern": "(^/|(^|/)\\.\\.(/|$))"}},
           "exit_code": {"const": 0}
@@ -114,7 +147,8 @@
         {"contains": {"properties": {"name": {"const": "authorization"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "transactions"}}, "required": ["name"]}},
         {"contains": {"properties": {"name": {"const": "openapi"}}, "required": ["name"]}},
-        {"contains": {"properties": {"name": {"const": "security"}}, "required": ["name"]}}
+        {"contains": {"properties": {"name": {"const": "security"}}, "required": ["name"]}},
+        {"contains": {"properties": {"name": {"const": "client-journey-contract"}}, "required": ["name"]}}
       ]
     },
     "verified": {"const": true}

@@ -243,6 +243,8 @@ explicitly authorized live AWS work.
 | `$deploy-staging` | Deploy the verified immutable release to AWS staging | Verified staging evidence |
 | `$deploy-production` | Promote the staging digest to AWS production | Verified production evidence |
 | `$rollback-deployment` | Restore a named AWS environment | Verified rollback evidence |
+| `$git-commit` | Review and commit the current branch's changes | Local commit only |
+| `$git-push` | Review, commit if needed, and push the current branch | Published branch |
 
 ## Requirements intake
 
@@ -690,6 +692,32 @@ $rollback-deployment --environment <staging|production> [--project <directory>] 
 
 The workflow verifies the prior immutable release and database compatibility. It never performs an
 automatic destructive database reversal.
+
+## Commit or push the current branch
+
+### `$git-commit`
+
+Use `$git-commit` to review and commit current changes without pushing. Use `$git-push`
+to review, commit pending changes if needed, and push the current branch. The agent reads
+the diff and supplies a descriptive commit message. You may provide a branch name, such
+as `$git-push feature/chat` or `$git-push --branch feature/chat`; it must match the
+checked-out branch and does not switch branches.
+
+### `$git-push`
+
+The equivalent CLI commands are:
+
+```text
+./.agents/bin/ai git-commit --project . --message "feat(chat): add message search"
+./.agents/bin/ai git-push --project . --message "feat(chat): add message search"
+./.agents/bin/ai git-push feature/chat --project .
+./.agents/bin/ai git-push --project . --branch feature/chat
+```
+
+`git-push` checks the remote before creating a commit. It refuses a remote branch with
+commits missing locally, an in-progress merge or rebase, a detached HEAD, and likely
+secret files. It never force-pushes. If a push fails after committing, the local commit
+remains; rerun `$git-push` after fixing the remote or network issue.
 
 ## Internal CLI utilities are not skills
 

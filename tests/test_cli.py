@@ -9,10 +9,16 @@ from jsonschema import Draft202012Validator
 from PIL import Image
 
 from ai_workflow.capabilities import detect_prd_capabilities
-from ai_workflow.cli import _frontend_prerequisite_fingerprint, main
+from ai_workflow.cli import (
+    _backend_prerequisite_fingerprint,
+    _frontend_prerequisite_fingerprint,
+    _require_frontend_baseline,
+    main,
+)
 from ai_workflow.commands import run_command_groups
 from ai_workflow.deployment import _load_local_aws_environment
 from ai_workflow.design import (
+    _source_checks_passed,
     approve_generated_html,
     classify_design_inputs,
     validate_html_approval,
@@ -27,6 +33,7 @@ from ai_workflow.documents import DOCUMENTS, _next_build_command, validate_docum
 from ai_workflow.execution import (
     _artifact_ok,
     _build_context_bundle,
+    _complete_task_contract,
     _feature_input_files,
     _node_input_files,
     _run_scoped_dependency_repair,
@@ -44,6 +51,7 @@ from ai_workflow.prd import (
     validate_decision_sources,
     validate_prd,
 )
+from ai_workflow.progress import progress_snapshot
 from ai_workflow.requirements import parse_prd
 from ai_workflow.structure import (
     validate_backend_evidence,
@@ -1669,6 +1677,20 @@ def test_frontend_prerequisite_fingerprint_ignores_generated_client_changes(
     assert _frontend_prerequisite_fingerprint(tmp_path)["sha256"] != first
 
 
+def test_backend_cache_ignores_celery_beat_runtime_files(tmp_path: Path) -> None:
+    backend = tmp_path / "apps/backend"
+    backend.mkdir(parents=True)
+    (backend / "app.py").write_text("app = True\n")
+    first = _backend_prerequisite_fingerprint(tmp_path)["sha256"]
+    for name in ("celerybeat-schedule", "celerybeat-schedule-shm", "celerybeat-schedule-wal"):
+        (backend / name).write_text("runtime state")
+    assert _backend_prerequisite_fingerprint(tmp_path)["sha256"] == first
+    assert not any(
+        "celerybeat-schedule" in path
+        for path in _node_input_files(tmp_path, "backend", "verify-backend")
+    )
+
+
 def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) -> None:
     scripts = tmp_path / "apps" / "backend" / "scripts"
     scripts.mkdir(parents=True)
@@ -1685,9 +1707,39 @@ def test_project_owned_test_script_resolves_from_declared_cwd(tmp_path: Path) ->
             }
         )
     )
-
     report = run_command_groups(tmp_path, ["backend"])
     assert report["passed"] is True
+
+
+def test_test_command_manifest_allows_phase_specific_check_groups() -> None:
+    schema = json.loads(
+        (Path(__file__).resolve().parents[1] / "schemas/test-commands.schema.json").read_text()
+    )
+    command = {"argv": ["true"], "cwd": "."}
+    manifest = {
+        "version": 1,
+        "commands": {
+            "backend": [command],
+            "frontend": [command],
+            "frontend-scaffold": [command],
+            "frontend-live": [command],
+        },
+    }
+    assert not list(Draft202012Validator(schema).iter_errors(manifest))
+
+
+def test_frontend_feature_contract_can_repair_local_service_routing(tmp_path: Path) -> None:
+    contract = _complete_task_contract(
+        tmp_path,
+        "frontend/implement-frontend-slices/auth-profile",
+        "frontend",
+        [],
+        {},
+        {"feature_id": "auth-profile", "allowed_paths": ["apps/frontend/src/features/profile/**"]},
+        required_output=".ai/evidence/features/auth-profile/frontend.json",
+        verification="evidence-schema",
+    )
+    assert "compose.frontend.yaml" in contract["allowed_paths"]
 
 
 def test_failure_hook_persists_and_groups_terminal_command_errors(tmp_path: Path) -> None:
@@ -2625,7 +2677,8 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
             )
             api = project / "docs/api/openapi.json"
             api.parent.mkdir(parents=True, exist_ok=True)
-            api.write_text(json.dumps({"openapi": "3.1.0"}))
+            if not api.is_file():
+                api.write_text(json.dumps({"openapi": "3.1.0"}))
         payload["checks"] = [{"name": "fixture-foundation", "status": "passed"}]
     if node.startswith("verify-") or "verification" in node or node == "security-review":
         payload["verified"] = True
@@ -3033,6 +3086,7 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
         "transactions",
         "openapi",
         "security",
+        "client-journey-contract",
     )
     evidence = {
         "version": 1,
@@ -3059,6 +3113,12 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
         "background_tasks": {"required": False},
         "openapi": {"passed": True},
         "security": {"passed": True},
+        "client_journeys": [{
+            "requirement_id": "FR-001",
+            "action": "Read account",
+            "operation_ids": ["getAccount"],
+            "live_check": "auth-profile-live",
+        }],
         "checks": [
             {"name": name, "argv": ["true"], "cwd": "apps/backend", "exit_code": 0}
             for name in check_names
@@ -3070,8 +3130,13 @@ def _write_backend_evidence(project: Path, prompt: str) -> None:
     path.write_text(json.dumps(evidence))
     openapi = project / "docs" / "api" / "openapi.json"
     openapi.parent.mkdir(parents=True, exist_ok=True)
-    if not openapi.is_file():
-        openapi.write_text(json.dumps({"openapi": "3.1.0"}))
+    contract_payload = (
+        json.loads(openapi.read_text()) if openapi.is_file() else {"openapi": "3.1.0"}
+    )
+    contract_payload.setdefault("paths", {})["/account"] = {
+        "get": {"operationId": "getAccount"}
+    }
+    openapi.write_text(json.dumps(contract_payload))
 
 
 def _write_client_integration_evidence(project: Path, phase: str) -> None:
@@ -3316,6 +3381,66 @@ def test_html_verification_routes_findings_through_bounded_repair(
     assert issues["unresolved"] == 0
 
 
+def test_html_responsive_failure_repairs_within_same_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-010 Responsive account.\n"
+    )
+    calls: list[str] = []
+
+    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        node = re.search(r"Phase/node: [a-z-]+/([a-z-]+)", prompt).group(1)  # type: ignore[union-attr]
+        calls.append(node)
+        if node == "verify-html-baseline" and calls.count(node) == 1:
+            output = re.search(r"Required output: (.+)", prompt).group(1)  # type: ignore[union-attr]
+            path = project / output
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({
+                "feature_id": "design-verify-html-baseline-phase",
+                "requirement_ids": ["ACC-010"],
+                "changed_files": [output],
+                "checks": [{"name": "responsive-layout", "status": "failed"}],
+                "reviews": [{"type": "responsive_layout", "status": "failed"}],
+                "findings": [{"class": "compact_horizontal_overflow", "paths": [
+                    "HTML/generated/index.html", "HTML/check_baseline.py",
+                ]}],
+                "recovery": {
+                    "classification": "responsive_layout_defect",
+                    "retryable_without_new_evidence": True,
+                    "next_action": "Repair the shared compact layout and checker.",
+                },
+                "verified": False,
+                "approved": False,
+            }))
+            return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+        if node == "repair-html-baseline":
+            assert "regression guard" in prompt
+        return _fake_agent_with_html_checks(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
+    assert main([
+        "start-generatehtml", "--project", str(tmp_path),
+        "--github-user", "test-user", "--adapter", "codex",
+    ]) == 0
+    relevant = [node for node in calls if node in {"verify-html-baseline", "repair-html-baseline"}]
+    assert relevant == ["verify-html-baseline", "repair-html-baseline", "verify-html-baseline"]
+    assert (tmp_path / "HTML/approved/index.html").is_file()
+
+
+def test_source_checks_do_not_require_prior_independent_approval() -> None:
+    checks = {
+        "approved": False,
+        "checks": [
+            {"name": "responsive", "status": "passed", "exit_code": 0},
+            {"name": "semantics", "status": "passed", "exit_code": 0},
+        ],
+    }
+    assert _source_checks_passed(checks)
+    checks["checks"][1]["status"] = "failed"
+    assert not _source_checks_passed(checks)
+
+
 def test_html_generation_approves_in_one_invocation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -3348,13 +3473,38 @@ def test_html_generation_approves_in_one_invocation(
     assert main([
         "start-generatehtml", "--project", str(tmp_path), "--github-user", "test-user"
     ]) == 0
+
+    node_path = tmp_path / ".ai/node-state.json"
+    nodes = json.loads(node_path.read_text())
+    verifier = nodes["nodes"]["design/verify-html-baseline/phase"]
+    promoted_inputs = [
+        path for path in _node_input_files(tmp_path, "design", "verify-html-baseline")
+        if path != ".ai/evidence/design/verification.json"
+    ]
+    before_promotion = [
+        path.replace("HTML/approved/", "HTML/generated/")
+        for path in promoted_inputs
+        if path != ".ai/evidence/design/owner-approval.json"
+    ]
+    verifier["cache_key"] = node_cache_key(
+        tmp_path, "design/verify-html-baseline/phase", before_promotion
+    )
+    verifier.pop("inputs", None)
+    node_path.write_text(json.dumps(nodes))
+    assert progress_snapshot(tmp_path, "design")["percent"] == 100
+    backend_evidence = tmp_path / ".ai/evidence/backend-verification.json"
+    backend_evidence.write_text('{"verified": true, "changed_contract": true}')
+    assert progress_snapshot(tmp_path, "design")["percent"] == 100
     assert len(verifications) == 1
     assert (tmp_path / "HTML/approved/index.html").is_file()
     assert validate_html_approval(tmp_path)["approval_method"] == "independent HTML verification"
+    (tmp_path / "PRD.md").write_text("# Changed requirements\n")
+    assert progress_snapshot(tmp_path, "design")["percent"] < 100
 
 
+@pytest.mark.parametrize("missing_verifier_checkpoint", [False, True])
 def test_html_generation_recovers_verified_repair_without_regeneration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_verifier_checkpoint: bool,
 ) -> None:
     (tmp_path / "PRD.md").write_text(
         "# Account\n\nBackend framework: FastAPI\n\n- ACC-001 View account.\n"
@@ -3385,6 +3535,11 @@ def test_html_generation_recovers_verified_repair_without_regeneration(
         phase for phase in state["completed_phases"] if phase != "design"
     ]
     state_path.write_text(json.dumps(state))
+    if missing_verifier_checkpoint:
+        node_path = tmp_path / ".ai/node-state.json"
+        nodes = json.loads(node_path.read_text())
+        nodes["nodes"].pop("design/verify-html-baseline/phase", None)
+        node_path.write_text(json.dumps(nodes))
 
     def unexpected_agent(*args: object, **kwargs: object) -> dict[str, object]:
         raise AssertionError("verified HTML recovery must not launch an agent")
@@ -3392,6 +3547,7 @@ def test_html_generation_recovers_verified_repair_without_regeneration(
     monkeypatch.setattr("ai_workflow.execution._run_adapter", unexpected_agent)
     assert main(["start-generatehtml", "--project", str(tmp_path)]) == 0
     assert (tmp_path / "HTML/approved/index.html").read_text() == generated.read_text()
+    assert progress_snapshot(tmp_path, "design")["percent"] == 100
 
 
 def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phases(
@@ -3543,6 +3699,13 @@ def test_frontend_requires_separate_html_generation(
     ]) == 0
     state_path = tmp_path / ".ai/state.json"
     state = json.loads(state_path.read_text())
+    state["completed_phases"] = [
+        phase for phase in state["completed_phases"] if phase != "design"
+    ]
+    state_path.write_text(json.dumps(state))
+    _require_frontend_baseline(tmp_path, "codex-reviewed")
+    state = json.loads(state_path.read_text())
+    assert "design" in state["completed_phases"]
     state["completed_phases"] = [
         phase for phase in state["completed_phases"] if phase != "backend"
     ]
@@ -5145,6 +5308,29 @@ def test_backend_evidence_requires_runtime_api_transaction_and_security_checks(
     evidence_path = tmp_path / ".ai" / "evidence" / "backend-verification.json"
     evidence = json.loads(evidence_path.read_text())
     evidence["api"]["authorization_passed"] = False
+    evidence_path.write_text(json.dumps(evidence))
+    with pytest.raises(RuntimeError, match="backend verification evidence is invalid"):
+        validate_backend_evidence(tmp_path, schema, "fastapi")
+
+
+def test_backend_client_journey_requires_real_openapi_operation(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    prompt = f"Selected framework pack: {root / 'fastapi'}"
+    _write_backend_evidence(tmp_path, prompt)
+    state = tmp_path / ".ai/state.json"
+    state.write_text(json.dumps({"frameworks": {"frontend": "react", "mobile": "unknown"}}))
+    schema = root / "schemas/backend-verification.schema.json"
+    assert validate_backend_evidence(tmp_path, schema, "fastapi")["verified"] is True
+
+    evidence_path = tmp_path / ".ai/evidence/backend-verification.json"
+    evidence = json.loads(evidence_path.read_text())
+    evidence["client_journeys"][0]["operation_ids"] = ["uploadPicture"]
+    evidence_path.write_text(json.dumps(evidence))
+    with pytest.raises(RuntimeError, match="missing from OpenAPI"):
+        validate_backend_evidence(tmp_path, schema, "fastapi")
+
+    evidence["client_journeys"][0]["operation_ids"] = ["getAccount"]
+    evidence["client_journeys"][0]["action"] = "Upload a profile picture"
     evidence_path.write_text(json.dumps(evidence))
     with pytest.raises(RuntimeError, match="backend verification evidence is invalid"):
         validate_backend_evidence(tmp_path, schema, "fastapi")

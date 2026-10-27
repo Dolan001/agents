@@ -23,6 +23,8 @@
     {"name": "deployment-status", "path": "skills/deployment-status/SKILL.md"},
     {"name": "deploy-staging", "path": "skills/deploy-staging/SKILL.md"},
     {"name": "deploy-production", "path": "skills/deploy-production/SKILL.md"},
-    {"name": "rollback-deployment", "path": "skills/rollback-deployment/SKILL.md"}
+    {"name": "rollback-deployment", "path": "skills/rollback-deployment/SKILL.md"},
+    {"name": "git-commit", "path": "skills/git-commit/SKILL.md"},
+    {"name": "git-push", "path": "skills/git-push/SKILL.md"}
   ]
 }

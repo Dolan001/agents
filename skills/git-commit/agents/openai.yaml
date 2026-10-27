@@ -1,0 +1,4 @@
+interface:
+  display_name: "git-commit"
+  short_description: "Review and commit current changes"
+  default_prompt: "Use $git-commit to review and commit the current project changes."

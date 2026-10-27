@@ -19,3 +19,8 @@ optional. Do not automatically invoke HTML generation on their behalf. Use
 
 Generate the typed client from current OpenAPI and require live authenticated, success, negative,
 authorization, persistence, and error-mapping journeys. Fixtures cannot satisfy the frontend gate.
+If a frontend slice finds an implementable backend API gap, let the CLI perform its bounded
+separately leased backend contract repair, full backend test matrix and independent verification,
+then retry the same frontend slice in this invocation. Do not edit backend files under a frontend
+lease or declare the frontend complete from repair evidence alone. Permission, quota, and
+unavailable-service failures still require a truthful stop.

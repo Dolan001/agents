@@ -42,8 +42,10 @@ These entrypoints execute work; they are not explanatory prompt templates.
 8. Preserve durable `.ai` checkpoints. When an implementation check identifies an exact existing
    shared application file outside the active lease, the orchestrator may run separately leased
    repairs for distinct findings within the existing retry budget and retry the slice before
-   treating it as failed. It must not broaden the original task
-   lease or retry permission, quota, or unavailable-service failures within the same
+   treating it as failed. A client slice with an actionable missing backend API journey may
+   request a separate backend contract repair. Rerun the backend test matrix and independent
+   verifier, preserve their checkpoints, and retry the same client slice in this invocation.
+   It must not broaden the original task lease or retry permission, quota, or unavailable-service failures within the same
    invocation without evidence that the environment changed. For Docker storage exhaustion,
    present `.ai/docker-recovery/plan.json` and request approval for one exact inactive,
    workflow-owned project. Keep volumes unless the user separately approves their deletion.

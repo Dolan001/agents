@@ -1,0 +1,4 @@
+interface:
+  display_name: "git-push"
+  short_description: "Review, commit, and push current branch"
+  default_prompt: "Use $git-push to review, commit if needed, and push the current project branch."

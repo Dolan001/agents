@@ -7,12 +7,14 @@ from ai_workflow.execution import (
     _acquire_path_lease,
     _artifact_ok,
     _backend_compose_project_name,
+    _backend_contract_repair_request,
     _backend_run_lock,
     _client_foundation_ready,
     _complete_task_contract,
     _leased_test_handoff,
     _release_path_lease,
     _repair_backend_test_matrix,
+    _run_backend_contract_repair,
     _run_scoped_dependency_repair,
     _scope_repair_request,
     _scope_repair_requests,
@@ -70,6 +72,80 @@ def test_blocked_shared_file_gets_exact_separate_repair_scope(tmp_path: Path) ->
         )
     )
     assert _scope_repair_request(tmp_path, "backend", evidence, contract) is None
+
+
+def test_client_backend_contract_gap_uses_separate_backend_repair_and_verifier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    relative = "apps/backend/src/example/profiles.py"
+    source = tmp_path / relative
+    source.parent.mkdir(parents=True)
+    source.write_text("# backend route\n", encoding="utf-8")
+    evidence = tmp_path / ".ai/evidence/features/profile/frontend.json"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_text(json.dumps({
+        "verified": False,
+        "reviews": [{
+            "type": "scope_repair_request", "status": "blocked", "paths": [relative],
+            "details": "Add the authorized profile upload and readback API.",
+        }],
+    }), encoding="utf-8")
+    assert _backend_contract_repair_request(tmp_path, "frontend", evidence)
+    assert _backend_contract_repair_request(tmp_path, "backend", evidence) is None
+
+    import ai_workflow.execution as execution
+
+    seen = []
+    output = tmp_path / ".ai/evidence/repairs/profile/backend-contract-1.json"
+    output.parent.mkdir(parents=True)
+    monkeypatch.setattr(execution, "_prompt", lambda *args: (
+        "repair backend", {"task_id": "TASK-BACKEND-REPAIR", "allowed_paths": ["apps/backend/**"]}
+    ))
+    monkeypatch.setattr(execution, "_acquire_path_lease", lambda *args: seen.append("lease"))
+    monkeypatch.setattr(execution, "_release_path_lease", lambda *args: seen.append("release"))
+    monkeypatch.setattr(execution, "record_attempt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(execution, "_artifact_ok", lambda *args: True)
+
+    def adapter(*args):
+        seen.append("repair")
+        output.write_text(json.dumps({
+            "changed_files": [relative], "checks": [{"status": "passed"}],
+        }), encoding="utf-8")
+        return {"returncode": 0}
+
+    def verify(project, phase, adapter_name, features, **kwargs):
+        seen.append("verify")
+        assert phase == "backend" and kwargs["verification_only"] is True
+        return {"gate": {"passed": True}}
+
+    monkeypatch.setattr(execution, "_run_adapter", adapter)
+    monkeypatch.setattr(execution, "execute_phase", verify)
+    monkeypatch.setattr(
+        "ai_workflow.cli._record_backend_prerequisite_snapshot",
+        lambda project: seen.append("snapshot"),
+    )
+    monkeypatch.setattr(execution, "validate_html_approval", lambda project: None)
+    monkeypatch.setattr(
+        "ai_workflow.cli._frontend_prerequisite_fingerprint",
+        lambda project: {"sha256": "verified"},
+    )
+    ok, _ = _run_backend_contract_repair(
+        tmp_path, "codex-reviewed", {"frameworks": {}},
+        ".ai/evidence/features/profile/frontend.json", "frontend", "profile", 1,
+    )
+    assert ok is True
+    assert seen == ["lease", "repair", "release", "verify", "snapshot"]
+    snapshot = tmp_path / ".ai/evidence/frontend-prerequisites.json"
+    assert json.loads(snapshot.read_text())["sha256"] == "verified"
+
+    evidence.write_text(json.dumps({
+        "verified": False,
+        "reviews": [{
+            "type": "scope_repair_request", "status": "blocked",
+            "paths": ["apps/backend/../frontend/src/app.tsx"],
+        }],
+    }), encoding="utf-8")
+    assert _backend_contract_repair_request(tmp_path, "frontend", evidence) is None
 
 
 def test_scoped_diagnostic_hands_test_back_to_owning_slice(tmp_path: Path) -> None:

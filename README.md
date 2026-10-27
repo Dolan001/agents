@@ -771,6 +771,13 @@ evidence and commits them on the current safe feature branch. `--push` implies v
 commits and pushes that same branch to `origin`. Unverified or out-of-scope paths fail
 closed.
 
+For an explicit review of all current repository changes outside build delivery, use
+`$git-commit` to commit only or `$git-push` to commit pending changes and push the checked-out
+branch. An optional `--branch` checks the branch name; it does not switch branches. The
+corresponding CLI commands are `ai git-commit` and `ai git-push` (with `--message` for a
+specific commit subject). These commands check Git state, likely secret files, whitespace,
+and remote divergence; they do not force-push.
+
 ### 16. Inspect, resume, and recover
 
 At any time, inspect state without changing the project:
