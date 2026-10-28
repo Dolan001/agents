@@ -515,6 +515,8 @@ def _run_backend_contract_repair(
     client_phase: str,
     feature_id: str,
     attempt: int,
+    focused_retry_round: int = 0,
+    prior_failures: frozenset[str] = frozenset(),
 ) -> tuple[bool, str]:
     """Repair a missing API under a backend lease, then independently reverify it."""
     output = f".ai/evidence/repairs/{feature_id}/backend-contract-{attempt}.json"
@@ -525,6 +527,29 @@ def _run_backend_contract_repair(
         "verification": "evidence-schema",
     }
     inputs = [failed_output, "docs/api/openapi.json", "docs/api/contract-plan.json"]
+    retrying_live_check = focused_retry_round > 0
+    instruction = (
+        "A prior backend contract repair passed source checks but its focused live check "
+        "failed. Read the repair evidence, diagnose the exact failure, and repair the "
+        "project-owned test runtime or implementation under this backend lease. Reuse the "
+        "project's Compose services; check the disposable database, worker, Redis, mail, "
+        "trusted hosts, and service readiness. For file-backed uploads, verify the backend, "
+        "object-storage service, and test runner mount the same named object volume at the "
+        "configured storage path before rerunning the focused check. "
+        "Write truthful evidence; independent backend verification remains required."
+        if retrying_live_check
+        else (
+            "A client slice found an implementable gap in the verified backend contract. "
+            f"Read {failed_output} and its scope_repair_request. Under this separate backend "
+            "lease, implement the complete authorized API journey, including migrations, "
+            "OpenAPI, typed client generation, and focused live tests where needed. Use the "
+            "project's Compose services and preflight their shared database, worker, Redis, "
+            "mail, trusted hosts, and object-volume mounts before the live run. Preserve "
+            "approved product behavior and HTML. Do not edit client implementation files or "
+            "claim backend approval. Write truthful schema-valid repair evidence; the "
+            "orchestrator will run the full backend test matrix and independent verifier."
+        )
+    )
     prompt, contract = _prompt(
         project,
         "backend",
@@ -532,13 +557,7 @@ def _run_backend_contract_repair(
         state,
         None,
         inputs,
-        "A client slice found an implementable gap in the verified backend contract. "
-        f"Read {failed_output} and its scope_repair_request. Under this separate backend "
-        "lease, implement the complete authorized API journey, including migrations, "
-        "OpenAPI, typed client generation, and focused live tests where needed. Preserve "
-        "approved product behavior and HTML. Do not edit client implementation files or "
-        "claim backend approval. Write truthful schema-valid repair evidence; the "
-        "orchestrator will run the full backend test matrix and independent verifier.",
+        instruction,
     )
     identity = f"backend/repair-backend-contract/{feature_id}-{attempt}"
     prompt_path = project / ".ai" / "prompts" / f"{identity.replace('/', '--')}.md"
@@ -565,17 +584,46 @@ def _run_backend_contract_repair(
         concise, _ = _concise_adapter_failure(result)
         return False, f"backend contract repair failed: {concise}"
     evidence_path = _inside(project, output)
-    if not _artifact_ok(evidence_path, "evidence-schema"):
-        return False, f"backend contract repair evidence failed validation: {output}"
+    artifact_valid = _artifact_ok(evidence_path, "evidence-schema")
     evidence = read_json(evidence_path, {})
+    required_fields = {"feature_id", "requirement_ids", "changed_files", "checks", "reviews"}
+    if not artifact_valid and (
+        not isinstance(evidence, dict)
+        or not required_fields <= set(evidence)
+        or _evidence_format_errors(evidence_path)
+    ):
+        return False, f"backend contract repair evidence failed validation: {output}"
     changed = evidence.get("changed_files", []) if isinstance(evidence, dict) else []
     checks = evidence.get("checks", []) if isinstance(evidence, dict) else []
+    failed_checks = [
+        check for check in checks
+        if isinstance(check, dict) and check.get("status") == "failed"
+    ] if isinstance(checks, list) else []
+    if failed_checks and isinstance(changed, list) and changed:
+        signature = hashlib.sha256(
+            json.dumps(
+                [
+                    {"name": item.get("name"), "reason": item.get("reason")}
+                    for item in failed_checks
+                ],
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if signature in prior_failures:
+            return False, "backend contract focused check repeated the same failure after repair"
+        if focused_retry_round >= 3:
+            return False, "backend contract focused check failed after three distinct repairs"
+        return _run_backend_contract_repair(
+            project, adapter, state, output, client_phase, feature_id, attempt + 1,
+            focused_retry_round + 1, prior_failures.union((signature,)),
+        )
     if (
         not isinstance(changed, list)
         or not changed
         or not isinstance(checks, list)
         or not any(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
-        or any(isinstance(check, dict) and check.get("status") == "failed" for check in checks)
+        or failed_checks
+        or not artifact_valid
     ):
         return False, "backend contract repair lacks changed files and a passing focused check"
     queue = read_json(project / ".ai" / "task-queue.json", {})
@@ -601,6 +649,50 @@ def _run_backend_contract_repair(
             _frontend_prerequisite_fingerprint(project),
         )
     return True, "backend contract repaired and independently verified"
+
+
+def resume_pending_backend_contract_repair(
+    project: Path, adapter: str, client_phase: str
+) -> tuple[bool, str] | None:
+    """Resume a client-triggered repair interrupted after a failed focused live check."""
+    verified = project / ".ai/evidence/backend-verification.json"
+    if not verified.is_file():
+        return None
+    candidates = sorted(
+        (project / ".ai/evidence/repairs").glob("*/backend-contract-*.json"),
+        key=lambda path: path.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for evidence_path in candidates:
+        if evidence_path.stat().st_mtime_ns <= verified.stat().st_mtime_ns:
+            return None
+        match = re.fullmatch(r"backend-contract-(\d+)\.json", evidence_path.name)
+        if match is None:
+            continue
+        evidence = read_json(evidence_path, {})
+        checks = evidence.get("checks", []) if isinstance(evidence, dict) else []
+        if not isinstance(checks, list) or not any(
+            isinstance(check, dict) and check.get("status") == "failed"
+            for check in checks
+        ):
+            return None
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("feature_id") != evidence_path.parent.name
+        ):
+            return None
+        relative = evidence_path.relative_to(project).as_posix()
+        return _run_backend_contract_repair(
+            project,
+            adapter,
+            StateStore(project).load(),
+            relative,
+            client_phase,
+            evidence_path.parent.name,
+            int(match.group(1)) + 1,
+            focused_retry_round=1,
+        )
+    return None
 
 
 def _leased_test_handoff(
@@ -1851,6 +1943,19 @@ def _complete_task_contract(
         # A feature's live API journey may require a project-local service route
         # (for example a browser-reachable private upload endpoint).
         allowed_paths = list(dict.fromkeys([*allowed_paths, "compose.frontend.yaml"]))
+    if phase == "backend" and "/repair-backend-contract/" in identity:
+        # A client-discovered API gap can also require the client test stack's
+        # Compose overlay. Keep this exception limited to the repair node.
+        allowed_paths = list(
+            dict.fromkeys(
+                [
+                    *allowed_paths,
+                    "compose.frontend.yaml",
+                    "compose.mobile.yaml",
+                    "compose.desktop.yaml",
+                ]
+            )
+        )
     if "/prepare-client-foundation/" in identity:
         allowed_paths = [
             f"apps/{phase}/**",
@@ -2989,12 +3094,15 @@ def _execute_phase_unlocked(
                 resume_repair = output_path.stat().st_mtime_ns >= latest_input
             needs_repair = resume_repair
             repaired_findings: set[str] = set()
+            owned_test_retry_granted = False
             if resume_repair:
                 signature = _backend_verifier_finding_signature(read_json(output_path, {}))
                 if signature:
                     repaired_findings.add(signature)
             result: dict[str, Any] = {}
-            for attempt in range(maximum_retries + 1):
+            for attempt in range(maximum_retries + 2):
+                if attempt > maximum_retries and not owned_test_retry_granted:
+                    break
                 retry_context = failure_reasons[-1] if failure_reasons else None
                 if (attempt or resume_repair) and needs_repair and isinstance(
                     node.get("repair"), dict
@@ -3204,6 +3312,22 @@ def _execute_phase_unlocked(
                     if tracked:
                         tracked_issues.append(tracked)
                     if external_blocker:
+                        owned_test = (
+                            _leased_test_handoff(project, read_json(output_path, {}), feature)
+                            if feature is not None
+                            else None
+                        )
+                        if owned_test and attempt <= maximum_retries:
+                            # A corrected test in the original lease needs one chance to
+                            # produce live evidence, even if the normal budget was used
+                            # diagnosing the test. Never extend this path more than once.
+                            if attempt == maximum_retries:
+                                owned_test_retry_granted = True
+                            failure_reasons[-1] += (
+                                f"; rerun the focused live check for {owned_test}"
+                            )
+                            needs_repair = False
+                            continue
                         if (
                             phase == "backend"
                             and node["id"] == "verify-backend"

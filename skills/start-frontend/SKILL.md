@@ -24,3 +24,6 @@ separately leased backend contract repair, full backend test matrix and independ
 then retry the same frontend slice in this invocation. Do not edit backend files under a frontend
 lease or declare the frontend complete from repair evidence alone. Permission, quota, and
 unavailable-service failures still require a truthful stop.
+For a failed focused backend live check, let the CLI perform its bounded test-runtime recovery.
+Reuse the project's Compose services and shared mounts; do not ask the user to rerun the whole
+frontend stage for a fixable test setup mistake.

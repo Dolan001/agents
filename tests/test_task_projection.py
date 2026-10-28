@@ -18,6 +18,7 @@ from ai_workflow.execution import (
     _run_scoped_dependency_repair,
     _scope_repair_request,
     _scope_repair_requests,
+    resume_pending_backend_contract_repair,
 )
 from ai_workflow.task_projection import phase_tasks
 
@@ -148,6 +149,52 @@ def test_client_backend_contract_gap_uses_separate_backend_repair_and_verifier(
     assert _backend_contract_repair_request(tmp_path, "frontend", evidence) is None
 
 
+@pytest.mark.parametrize("failed_attempts", [1, 3])
+def test_backend_contract_repair_retries_distinct_focused_live_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_attempts: int
+) -> None:
+    import ai_workflow.execution as execution
+
+    runs: list[str] = []
+    monkeypatch.setattr(execution, "_prompt", lambda *args: (
+        args[-1], {"task_id": f"TASK-{len(runs)}", "allowed_paths": ["apps/backend/**"]}
+    ))
+    monkeypatch.setattr(execution, "_acquire_path_lease", lambda *args: None)
+    monkeypatch.setattr(execution, "_release_path_lease", lambda *args: None)
+    monkeypatch.setattr(execution, "record_attempt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(execution, "_artifact_ok", lambda *args: True)
+    monkeypatch.setattr(
+        "ai_workflow.cli._record_backend_prerequisite_snapshot", lambda *args: None
+    )
+
+    def adapter(_project: Path, _adapter: str, prompt: str) -> dict:
+        runs.append(prompt)
+        output = tmp_path / f".ai/evidence/repairs/profile/backend-contract-{len(runs)}.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        checks = [{"name": "source", "status": "passed"}]
+        if len(runs) <= failed_attempts:
+            checks.append(
+                {"name": "live", "status": "failed", "reason": f"runtime problem {len(runs)}"}
+            )
+        output.write_text(
+            json.dumps({"changed_files": ["apps/backend/profiles.py"], "checks": checks})
+        )
+        return {"returncode": 0}
+
+    monkeypatch.setattr(execution, "_run_adapter", adapter)
+    monkeypatch.setattr(execution, "execute_phase", lambda *args, **kwargs: (
+        runs.append("verify") or {"gate": {"passed": True}}
+    ))
+    ok, _ = _run_backend_contract_repair(
+        tmp_path, "codex-reviewed", {"frameworks": {}},
+        ".ai/evidence/features/profile/frontend.json", "mobile", "profile", 1,
+    )
+    assert ok is True
+    assert len(runs) == failed_attempts + 2
+    assert "same named object volume" in runs[1]
+    assert runs[-1] == "verify"
+
+
 def test_scoped_diagnostic_hands_test_back_to_owning_slice(tmp_path: Path) -> None:
     relative = "tests/integration/group-messaging/live_check.py"
     target = tmp_path / relative
@@ -169,6 +216,64 @@ def test_scoped_diagnostic_hands_test_back_to_owning_slice(tmp_path: Path) -> No
     assert _leased_test_handoff(tmp_path, evidence, feature) == relative
     feature["allowed_paths"] = ["tests/integration/other-feature/**"]
     assert _leased_test_handoff(tmp_path, evidence, feature) is None
+
+
+def test_backend_contract_repair_can_fix_client_compose_overlay(tmp_path: Path) -> None:
+    state = {"frameworks": {}}
+    repair = _complete_task_contract(
+        tmp_path,
+        "backend/repair-backend-contract/phase",
+        "backend",
+        [],
+        state,
+        None,
+        required_output=".ai/evidence/repairs/profile/backend-contract-1.json",
+        verification="evidence-schema",
+    )
+    normal = _complete_task_contract(
+        tmp_path,
+        "backend/implement-backend-slices/phase",
+        "backend",
+        [],
+        state,
+        None,
+        required_output=".ai/evidence/features/profile/backend.json",
+        verification="evidence-schema",
+    )
+    assert "compose.frontend.yaml" in repair["allowed_paths"]
+    assert "compose.frontend.yaml" not in normal["allowed_paths"]
+
+
+def test_frontend_resume_picks_up_failed_backend_contract_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_workflow.execution as execution
+
+    verified = tmp_path / ".ai/evidence/backend-verification.json"
+    verified.parent.mkdir(parents=True)
+    verified.write_text("{}")
+    repair = tmp_path / ".ai/evidence/repairs/profile/backend-contract-1.json"
+    repair.parent.mkdir(parents=True)
+    repair.write_text(json.dumps({
+        "feature_id": "profile", "checks": [{"status": "failed", "name": "live"}],
+    }))
+    verified.touch()
+    import os
+
+    os.utime(verified, ns=(1, 1))
+    seen: list[tuple] = []
+    monkeypatch.setattr(execution, "_run_backend_contract_repair", lambda *args, **kwargs: (
+        seen.append((args, kwargs)) or (True, "recovered")
+    ))
+    monkeypatch.setattr(execution, "StateStore", lambda _project: type(
+        "Store", (), {"load": lambda self: {"frameworks": {}}}
+    )())
+    assert resume_pending_backend_contract_repair(tmp_path, "codex-reviewed", "frontend") == (
+        True, "recovered"
+    )
+    assert seen[0][0][3] == ".ai/evidence/repairs/profile/backend-contract-1.json"
+    assert seen[0][0][6] == 2
+    assert seen[0][1]["focused_retry_round"] == 1
 
 
 def test_independent_shared_repairs_keep_separate_two_file_leases(tmp_path: Path) -> None:

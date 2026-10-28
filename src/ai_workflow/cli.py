@@ -20,7 +20,12 @@ from .design_fidelity import sync_design
 from .discovery import inventory, print_json, save_inventory
 from .docker_recovery import execute_recovery, inspect_recovery
 from .documents import prepare_project_documents, validate_document_set
-from .execution import evaluate_phase_gate, execute_phase, phase_checkpoint_current
+from .execution import (
+    evaluate_phase_gate,
+    execute_phase,
+    phase_checkpoint_current,
+    resume_pending_backend_contract_repair,
+)
 from .frameworks import resolve_frameworks
 from .git import (
     assert_safe_branch,
@@ -701,6 +706,16 @@ def _require_frontend_baseline(project: Path, adapter: str) -> None:
             for key, value in nodes.items()
             if isinstance(value, dict)
         )
+        if frontend_started and design_current and not backend_current:
+            recovery_result = resume_pending_backend_contract_repair(
+                project, adapter, "frontend"
+            )
+            if recovery_result is not None:
+                recovered, reason = recovery_result
+                if not recovered:
+                    raise RuntimeError(f"backend prerequisite repair recovery failed: {reason}")
+                write_json(snapshot_path, _frontend_prerequisite_fingerprint(project))
+                return
         backend_gate = read_json(project / ".ai/evidence/gates/backend.json", {})
         backend_evidence = read_json(project / ".ai/evidence/backend-verification.json", {})
         database_evidence = read_json(project / ".ai/evidence/database-verification.json", {})
