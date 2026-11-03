@@ -808,18 +808,21 @@ def _run_scoped_dependency_repair(
         concise, _ = _concise_adapter_failure(result)
         return False, f"shared dependency repair failed: {concise}"
     evidence_path = _inside(project, output)
-    if not _artifact_ok(evidence_path, "evidence-schema"):
-        return False, f"shared dependency repair evidence failed validation: {output}"
     evidence = read_json(evidence_path, {})
     if not isinstance(evidence, dict):
         return False, "shared dependency repair did not produce structured evidence"
     test_handoff = _leased_test_handoff(project, evidence, feature)
     if test_handoff:
+        schema = _evidence_schema(evidence_path)
+        if not isinstance(schema, dict) or list(Draft202012Validator(schema).iter_errors(evidence)):
+            return False, f"shared dependency repair evidence failed validation: {output}"
         return (
             True,
             "scoped diagnostic found an exact test-contract defect in the original slice lease: "
             f"{test_handoff}; correct it and rerun the focused live check",
         )
+    if not _artifact_ok(evidence_path, "evidence-schema"):
+        return False, f"shared dependency repair evidence failed validation: {output}"
     changed = evidence.get("changed_files", [])
     checks = evidence.get("checks", [])
     actual_changes = {

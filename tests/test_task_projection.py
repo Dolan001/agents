@@ -480,6 +480,72 @@ def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
     assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
 
 
+@pytest.mark.parametrize("original_owns_test", [True, False])
+def test_shared_repair_returns_blocked_browser_test_to_its_original_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original_owns_test: bool
+) -> None:
+    shared = "apps/frontend/src/features/realtime/RealtimeClient.ts"
+    browser_test = "apps/frontend/tests/presence/run-browser.ts"
+    source = tmp_path / shared
+    source.parent.mkdir(parents=True)
+    source.write_text("// old socket lifecycle\n")
+    test_path = tmp_path / browser_test
+    test_path.parent.mkdir(parents=True)
+    test_path.write_text("// old locator\n")
+    failed = ".ai/evidence/features/presence-privacy/frontend.json"
+    failed_path = tmp_path / failed
+    failed_path.parent.mkdir(parents=True)
+    failed_path.write_text("{}")
+
+    def repair_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        del adapter
+        output_line = next(
+            line.removeprefix("Required output: ")
+            for line in prompt.splitlines()
+            if line.startswith("Required output: ")
+        )
+        source.write_text("// corrected socket lifecycle\n")
+        output = project / output_line
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({
+            "feature_id": "presence-privacy",
+            "requirement_ids": ["FR-024"],
+            "changed_files": [shared, output_line],
+            "checks": [
+                {"name": "post-repair-lifecycle", "status": "passed"},
+                {"name": "post-repair-browser", "status": "failed"},
+            ],
+            "reviews": [
+                {"type": "test_scope_request", "status": "blocked", "paths": [browser_test]},
+                {"type": "handoff", "status": "BLOCKED"},
+            ],
+            "verified": False,
+            "checked_at": "2026-11-03T10:52:33Z",
+        }))
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", repair_agent)
+    allowed = ["apps/frontend/tests/presence/**"] if original_owns_test else []
+    repaired, reason = _run_scoped_dependency_repair(
+        tmp_path,
+        "codex",
+        "frontend",
+        {"agent": "selected-frontend-agent"},
+        {"frameworks": {"frontend": "react", "mobile": "unknown", "desktop": "unknown",
+                        "python_package": "unknown", "backend": "fastapi", "deployment": "unknown"},
+         "capabilities": {}},
+        {"feature_id": "presence-privacy", "task_id": "TASK-PRESENCE-PRIVACY",
+         "allowed_paths": allowed, "requirement_ids": ["FR-024"]},
+        failed,
+        [shared],
+        1,
+    )
+    assert repaired is original_owns_test
+    if original_owns_test:
+        assert browser_test in reason
+    assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
+
+
 def test_client_projection_orders_prerequisites_and_excludes_backend_verifiers():
     tasks = [
         task("TASK-WEB", ["apps/frontend/**"], ["TASK-AUTH-VERIFY"]),
