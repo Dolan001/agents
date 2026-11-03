@@ -97,9 +97,14 @@ pre-design database indexes, API pagination, worker topology, cloud architecture
 - **Mobile/desktop/package:** ask for target platforms and distribution expectations only when
   relevant; do not imply an unrequested app store release or native installer.
 - **Deployment:** AWS is the supported explicit cloud-deployment workflow. If requested, gather
-  only user-owned region/residency, domain, environments, availability/recovery, budget, approval,
-  and backup/retention expectations. If deployment is not requested, say it is deferred. If another
-  provider is mandatory, flag the workflow mismatch before document generation.
+  user-owned region/residency, domain and DNS ownership, environments, availability/recovery,
+  budget, release approval, backup/retention, and the CI/CD provider. Default CI/CD to GitHub
+  Actions only when the user has no preference; Cloudflare is optional and must be explicitly
+  selected when required. Record required account access and credential names and owners for AWS,
+  DNS, domain, and external services, never values. Ask again when a production decision is
+  unknown; do not invent an account, domain, region, budget, or approval owner. If deployment is
+  not requested, say it is deferred. If another cloud provider is mandatory, flag the workflow
+  mismatch before document generation.
 
 ## Readiness check before requesting approval
 

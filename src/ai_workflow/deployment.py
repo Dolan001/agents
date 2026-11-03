@@ -23,6 +23,7 @@ _AWS_LOCAL_ENVIRONMENT_KEYS = {
     "AWS_DEFAULT_REGION",
     "AWS_PROFILE",
     "AWS_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
 }
 _AWS_KEY_PAIR = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
 
@@ -168,6 +169,11 @@ def execute_operation(
         )
         if not staging["verified"]:
             raise RuntimeError("the staging release is not verified")
+        if (
+            staging["source_commit"] != source_commit
+            or staging["artifact_digest"] != release["artifact_digest"]
+        ):
+            raise RuntimeError("staging evidence does not match the current verified release")
     group = f"{operation}-{environment}"
     if not execute:
         return {
@@ -177,15 +183,19 @@ def execute_operation(
             "command_group": group,
             "note": "Dry run only; explicit execution authorization is still required.",
         }
+    evidence_name = environment if operation == "deploy" else f"rollback-{environment}"
+    evidence_path = project / ".ai" / "evidence" / "deployment" / f"{evidence_name}.json"
+    previous_mtime_ns = evidence_path.stat().st_mtime_ns if evidence_path.exists() else -1
     local_environment = _load_local_aws_environment(project)
     if local_environment:
         run_command_groups(project, [group], environment=local_environment)
     else:
         run_command_groups(project, [group])
-    evidence_name = environment if operation == "deploy" else f"rollback-{environment}"
+    if not evidence_path.is_file() or evidence_path.stat().st_mtime_ns <= previous_mtime_ns:
+        raise RuntimeError("deployment command did not produce fresh operation evidence")
     evidence = _validate_operation_evidence(
         project,
-        project / ".ai" / "evidence" / "deployment" / f"{evidence_name}.json",
+        evidence_path,
         environment,
         operation,
     )
@@ -197,6 +207,7 @@ def execute_operation(
         staging = read_json(project / ".ai" / "evidence" / "deployment" / "staging.json")
         if (
             not isinstance(staging, dict)
+            or staging["source_commit"] != source_commit
             or evidence["artifact_digest"] != staging["artifact_digest"]
         ):
             raise RuntimeError("production did not promote the staging-verified artifact digest")

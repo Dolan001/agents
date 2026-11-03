@@ -1507,11 +1507,13 @@ def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
     (tmp_path / ".gitignore").write_text(".env\n")
     access_key = "AKIAEXAMPLELOCAL"
     credential_value = "-".join(("local", "secret", "example"))
+    cloudflare_token = "-".join(("example", "cloudflare", "token"))
     (tmp_path / ".env").write_text(
         f"AWS_ACCESS_KEY_ID={access_key}\n"
         f"AWS_SECRET_ACCESS_KEY={credential_value}\n"
         "AWS_REGION=ap-southeast-1\n"
         "AWS_SESSION_TOKEN=<optional temporary session token>\n"
+        f"CLOUDFLARE_API_TOKEN={cloudflare_token}\n"
         "APPLICATION_SECRET=must-not-be-loaded\n"
     )
     for key in (
@@ -1519,6 +1521,7 @@ def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
         "AWS_REGION",
+        "CLOUDFLARE_API_TOKEN",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -1527,6 +1530,7 @@ def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
         "AWS_ACCESS_KEY_ID": access_key,
         "AWS_SECRET_ACCESS_KEY": credential_value,
         "AWS_REGION": "ap-southeast-1",
+        "CLOUDFLARE_API_TOKEN": cloudflare_token,
     }
     assert "APPLICATION_SECRET" not in loaded
 
@@ -1542,7 +1546,8 @@ def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
                                 sys.executable,
                                 "-c",
                                 "import os; print(os.environ['AWS_ACCESS_KEY_ID']); "
-                                "print(os.environ['AWS_SECRET_ACCESS_KEY'])",
+                                "print(os.environ['AWS_SECRET_ACCESS_KEY']); "
+                                "print(os.environ['CLOUDFLARE_API_TOKEN'])",
                             ],
                             "cwd": ".",
                         }
@@ -1555,7 +1560,8 @@ def test_local_aws_env_is_loaded_only_when_ignored_and_redacted(
     output = str(report["results"][0]["stdout_tail"])
     assert access_key not in output
     assert credential_value not in output
-    assert output.count("[REDACTED]") == 2
+    assert cloudflare_token not in output
+    assert output.count("[REDACTED]") == 3
 
 
 def test_local_aws_env_rejects_incomplete_key_pair(
@@ -4413,6 +4419,24 @@ def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
     assert main(["deploy-staging", "--project", str(tmp_path)]) == 0
     assert main(["deploy-staging", "--project", str(tmp_path), "--execute"]) == 0
     assert main(["deploy-production", "--project", str(tmp_path), "--execute"]) == 1
+    staging_path = evidence_root / "staging.json"
+    staging_evidence = json.loads(staging_path.read_text())
+    staging_evidence["source_commit"] = "0" * 40
+    staging_path.write_text(json.dumps(staging_evidence))
+    assert (
+        main(
+            [
+                "deploy-production",
+                "--project",
+                str(tmp_path),
+                "--execute",
+                "--approve-production",
+            ]
+        )
+        == 1
+    )
+    staging_evidence["source_commit"] = source_commit
+    staging_path.write_text(json.dumps(staging_evidence))
     assert (
         main(
             [
@@ -4430,6 +4454,10 @@ def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
         production["artifact_digest"]
         == json.loads((evidence_root / "staging.json").read_text())["artifact_digest"]
     )
+    monkeypatch.setattr(
+        "ai_workflow.deployment.run_command_groups", lambda *_args: {"passed": True}
+    )
+    assert main(["deploy-staging", "--project", str(tmp_path), "--execute"]) == 1
 
 
 def test_start_build_supports_flutter_only_client(
