@@ -212,6 +212,31 @@ def test_aws_deployment_pack_is_code_free_and_routes_by_role() -> None:
     assert pack / "hooks" / "pre-verify.md" in controls
 
 
+def test_cicd_pack_routes_separate_deployment_agents_and_skills() -> None:
+    root = Path(__file__).resolve().parents[1]
+    pack = root / "cicd"
+    assert json.loads((pack / "agents" / "catalog.json").read_text())["framework"] == "cicd"
+    frameworks = {
+        "frontend": "react",
+        "mobile": "unknown",
+        "desktop": "unknown",
+        "backend": "fastapi",
+        "deployment": "aws",
+    }
+    for node, agent, skill in (
+        ("design-cicd-pipeline", "cicd-pipeline-architect", "design-ci-cd-pipeline"),
+        ("generate-cicd-pipeline", "cicd-pipeline-implementer", "generate-ci-cd-pipeline"),
+        ("verify-cicd-pipeline", "cicd-independent-verifier", "verify-ci-cd-pipeline"),
+    ):
+        assert _agent_path(root, agent, frameworks).parent == pack / "agents"
+        assert pack / "skills" / skill / "SKILL.md" in _skill_paths(
+            root, "deployment", node, frameworks
+        )
+        assert pack / "rules" / "architecture.md" in _control_paths(
+            root, "deployment", node, frameworks
+        )
+
+
 def test_rag_capability_pack_is_code_free_and_routes_only_when_active() -> None:
     root = Path(__file__).resolve().parents[1]
     pack = root / "rag"

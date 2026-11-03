@@ -34,6 +34,11 @@
     }
   },
   "capability_packs": {
+    "cicd": {
+      "path": "cicd",
+      "activation": "explicit-deployment",
+      "phases": ["deployment"]
+    },
     "rag": {
       "path": "rag",
       "activation": "explicit-prd-capability",

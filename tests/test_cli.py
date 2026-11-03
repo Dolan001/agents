@@ -2309,8 +2309,8 @@ def test_control_plane_is_fully_connected() -> None:
     report = validate_control_plane()
     assert report["valid"] is True
     assert report["phases"] == 11
-    assert report["nodes"] == 50
-    assert report["agentic_nodes"] == 35
+    assert report["nodes"] == 53
+    assert report["agentic_nodes"] == 38
     assert report["execution_groups"][2:7] == [
         ["backend"],
         ["design"],
@@ -2785,6 +2785,23 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
         _write_backend_evidence(project, prompt)
     if phase == "deployment" and node == "generate-deployment-assets":
         _create_pack_structure(project, prompt)
+    if phase == "deployment" and node == "generate-cicd-pipeline":
+        _create_pack_structure(project, prompt)
+    if phase == "deployment" and node == "verify-cicd-pipeline":
+        path.write_text(
+            json.dumps(
+                {
+                    "provider": "github-actions",
+                    "verified": True,
+                    "checks": [
+                        {"name": f"ci-check-{index}", "passed": True, "evidence": "verified"}
+                        for index in range(5)
+                    ],
+                    "unresolved_critical": [],
+                    "checked_at": "2026-08-16T00:00:00Z",
+                }
+            )
+        )
     if phase == "deployment" and node == "verify-deployment-assets":
         checks = [
             {"name": name, "passed": True, "evidence": f"pilot {name}"}
@@ -3017,6 +3034,15 @@ def _create_pack_structure(
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(values) + "\n")
+    providers = contract.get("ci_provider_paths", {})
+    if providers:
+        prd_text = (project / "PRD.md").read_text() if (project / "PRD.md").is_file() else ""
+        provider = "gitlab-ci" if "CI/CD provider: GitLab CI" in prd_text else "github-actions"
+        for relative in providers[provider]:
+            path = target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            values = contract.get("ci_provider_required_text", {}).get(provider, {}).get(relative)
+            path.write_text("\n".join(values) + "\n" if values else "pilot pipeline\n")
     path_sets = contract.get("required_path_sets", [])
     for path_set in path_sets:
         for relative in path_set["alternatives"][0]:

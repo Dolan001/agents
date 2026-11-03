@@ -1059,6 +1059,18 @@ def _validate_semantic_artifacts(project: Path, phase: str, state: dict[str, Any
                 state["frameworks"]["backend"],
             )
         if phase == "deployment":
+            ci_structure = validate_structure(project, workflow_root() / "cicd", "cicd")
+            ci_evidence = read_json(
+                project / ".ai" / "evidence" / "deployment" / "ci-verification.json"
+            )
+            ci_schema = read_json(workflow_root() / "schemas" / "ci-verification.schema.json")
+            if not isinstance(ci_evidence, dict) or not isinstance(ci_schema, dict):
+                raise RuntimeError("independent CI/CD verification evidence is missing")
+            ci_errors = list(Draft202012Validator(ci_schema).iter_errors(ci_evidence))
+            if ci_errors or ci_evidence.get("provider") != ci_structure["ci_provider"]:
+                raise RuntimeError(
+                    "CI/CD verification evidence is invalid or targets another provider"
+                )
             validate_deployment_evidence(
                 project,
                 workflow_root() / "schemas" / "deployment-readiness.schema.json",
@@ -1110,6 +1122,8 @@ def _agent_path(root: Path, name: str, frameworks: dict[str, str]) -> Path:
     for pack in selected.values():
         if pack:
             candidates.extend((root / pack / "agents").glob("*.md"))
+    if frameworks.get("deployment") == "aws":
+        candidates.extend((root / "cicd" / "agents").glob("*.md"))
     exact = [
         candidate
         for candidate in candidates
@@ -1161,6 +1175,14 @@ def _selected_pack(root: Path, phase: str, frameworks: dict[str, str]) -> Path |
     if not pack:
         raise RuntimeError(f"{phase} framework must be resolved before execution: {value}")
     return root / pack
+
+
+def _node_pack(root: Path, phase: str, node: str, frameworks: dict[str, str]) -> Path | None:
+    if phase == "deployment" and "cicd" in node:
+        if frameworks.get("deployment") != "aws":
+            raise RuntimeError("CI/CD deployment task requires a selected deployment provider")
+        return root / "cicd"
+    return _selected_pack(root, phase, frameworks)
 
 
 def _skill_paths(
@@ -1273,10 +1295,21 @@ def _skill_paths(
         )
     if phase in {"frontend", "mobile"} and (node.startswith("sync-") or node.startswith("verify-")):
         paths.append(root / "skills" / "sync-design" / "SKILL.md")
-    pack = _selected_pack(root, phase, frameworks)
+    pack = _node_pack(root, phase, node, frameworks)
     if pack is not None:
         available = sorted(pack.glob("skills/*/SKILL.md"))
-        if phase == "deployment" and node.startswith("inspect-"):
+        if phase == "deployment" and "cicd" in node:
+            selected_skill = {
+                "design-cicd-pipeline": "design-ci-cd-pipeline",
+                "generate-cicd-pipeline": "generate-ci-cd-pipeline",
+                "verify-cicd-pipeline": "verify-ci-cd-pipeline",
+            }.get(node)
+            if not selected_skill:
+                raise RuntimeError(f"unsupported CI/CD task: {node}")
+            selected_skills = [
+                path for path in available if path.parent.name == selected_skill
+            ]
+        elif phase == "deployment" and node.startswith("inspect-"):
             selected_skills = [
                 path for path in available if path.parent.name == "inspect-aws-target"
             ]
@@ -1382,7 +1415,7 @@ def _control_paths(
             root / "pipeline" / "loop" / "policy.md",
         ]
     )
-    pack = _selected_pack(root, phase, frameworks)
+    pack = _node_pack(root, phase, node, frameworks)
     if pack is not None:
         pack_lifecycle = read_json(pack / "hooks" / "lifecycle.json")
         pack_instructions = (
@@ -2158,7 +2191,7 @@ def _prompt(
 ) -> tuple[str, dict[str, Any]]:
     root = workflow_root()
     agent = _agent_path(root, node["agent"], state["frameworks"])
-    pack = _selected_pack(root, phase, state["frameworks"])
+    pack = _node_pack(root, phase, node["id"], state["frameworks"])
     manifest = root / "pipeline" / "manifests" / f"{phase}.json"
     gate = root / "gates" / "contracts" / f"{phase}.json"
     pack_line = str(pack) if pack else "Use base only for this phase."

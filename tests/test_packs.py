@@ -77,7 +77,7 @@ from ai_workflow.packs import (
             },
             {},
             True,
-            {"base", "reactjs", "fastapi", "aws"},
+            {"base", "reactjs", "fastapi", "cicd", "aws"},
         ),
     ],
 )

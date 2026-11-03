@@ -42,3 +42,7 @@
 	path = desktop
 	url = https://github.com/Dolan001/desktop.git
 	branch = dev
+[submodule "cicd"]
+	path = cicd
+	url = https://github.com/Dolan001/cicd.git
+	branch = dev

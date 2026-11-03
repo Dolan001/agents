@@ -3,7 +3,10 @@
   "nodes": [
     {"id": "inspect-deployment-target", "type": "agentic", "agent": "aws-platform-architect", "required_output": ".ai/evidence/deployment/target-inventory.json", "verification": "schema"},
     {"id": "design-deployment-architecture", "type": "agentic", "agent": "aws-platform-architect", "required_output": ".ai/evidence/deployment/architecture.json", "verification": "schema"},
+    {"id": "design-cicd-pipeline", "type": "agentic", "agent": "cicd-pipeline-architect", "required_output": ".ai/evidence/deployment/ci-design.json", "verification": "schema"},
     {"id": "generate-deployment-assets", "type": "agentic", "agent": "aws-infrastructure-implementer", "required_output": ".ai/evidence/deployment/iac-validation.json", "verification": "schema"},
+    {"id": "generate-cicd-pipeline", "type": "agentic", "agent": "cicd-pipeline-implementer", "required_output": ".ai/evidence/deployment/ci-generation.json", "verification": "schema"},
+    {"id": "verify-cicd-pipeline", "type": "agentic", "agent": "cicd-independent-verifier", "required_output": ".ai/evidence/deployment/ci-verification.json", "verification": "verified-true"},
     {"id": "verify-deployment-assets", "type": "agentic", "agent": "aws-independent-verifier", "required_output": ".ai/evidence/deployment/readiness.json", "verification": "verified-true"}
   ]
 }

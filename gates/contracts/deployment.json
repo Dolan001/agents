@@ -3,7 +3,10 @@
   "required": [
     ".ai/evidence/deployment/target-inventory.json",
     ".ai/evidence/deployment/architecture.json",
+    ".ai/evidence/deployment/ci-design.json",
     ".ai/evidence/deployment/iac-validation.json",
+    ".ai/evidence/deployment/ci-generation.json",
+    ".ai/evidence/deployment/ci-verification.json",
     ".ai/evidence/deployment/readiness.json",
     "infra/**", "ops/**", "docs/deployment/**"
   ],

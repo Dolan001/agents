@@ -67,6 +67,7 @@ def select_pack_names(
         if capabilities.get(capability) is True:
             selected[pack] = f"PRD capability: {capability}"
     if include_deployment and frameworks.get("deployment") == "aws":
+        selected["cicd"] = "explicit CI/CD preparation for AWS deployment"
         selected["aws"] = "explicit AWS deployment workflow"
     return selected
 
@@ -91,7 +92,7 @@ def _catalog(root: Path) -> dict[str, str]:
     config = read_json(root / "config" / "framework-packs.json")
     if not isinstance(config, dict):
         raise RuntimeError("framework pack catalog is missing")
-    catalog = {"base": "base", "aws": "aws"}
+    catalog = {"base": "base", "cicd": "cicd", "aws": "aws"}
     for section in ("packs", "capability_packs"):
         entries = config.get(section)
         if not isinstance(entries, dict):

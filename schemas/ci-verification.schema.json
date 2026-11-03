@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Independent CI/CD verification evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider", "verified", "checks", "unresolved_critical", "checked_at"],
+  "properties": {
+    "provider": {"enum": ["github-actions", "gitlab-ci"]},
+    "verified": {"const": true},
+    "checks": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "passed", "evidence"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "passed": {"const": true},
+          "evidence": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unresolved_critical": {"type": "array", "maxItems": 0},
+    "checked_at": {"type": "string", "format": "date-time"}
+  }
+}

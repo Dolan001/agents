@@ -31,6 +31,7 @@ separate target monorepo with `apps`, `packages`, `HTML`, `docs`, `tests`, `arti
 - `rag`: requirement-triggered retrieval-augmented generation behavior.
 - `webscraping`: backend-only website discovery, selector, extraction, and verification behavior.
 - `aws`: separately invoked AWS architecture and deployment behavior.
+- `cicd`: provider-neutral GitHub Actions and GitLab CI pipeline behavior, selected for deployment.
 - `agent-bridge`: provider-native projection for Codex, Claude, OpenCode, Gemini, and Cursor.
 - `agents`: commands, manifests, blueprints, gates, rules, hooks, user CLI,
   discovery, reconciliation, state, framework-pack selection, reporting, and recovery.
