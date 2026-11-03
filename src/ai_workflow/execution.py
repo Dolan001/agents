@@ -428,7 +428,24 @@ def _scope_repair_requests(
             if match:
                 requested.append(match.group(1))
         requested = list(dict.fromkeys(requested))
-        if not requested or len(requested) > 2:
+        # A shared client lifecycle defect may require changing the client and its
+        # owners together. Keep the lease exact-file scoped, but include existing
+        # callers when the failure explicitly identifies caller-bound ownership.
+        if (
+            phase == "frontend"
+            and len(requested) == 1
+            and requested[0].endswith("/RealtimeClient.ts")
+            and "caller-bound" in str(review.get("details", "")).lower()
+        ):
+            source_root = project / "apps" / "frontend" / "src"
+            for candidate in source_root.rglob("*.ts*"):
+                if candidate.is_file() and (
+                    "realtimeClient.start()" in candidate.read_text(encoding="utf-8")
+                    or "realtimeClient.stop()" in candidate.read_text(encoding="utf-8")
+                ):
+                    requested.append(candidate.relative_to(project).as_posix())
+            requested = list(dict.fromkeys(requested))
+        if not requested or len(requested) > 8:
             continue
         if any(
             not relative.startswith(f"apps/{phase}/")
@@ -768,7 +785,7 @@ def _run_scoped_dependency_repair(
         state,
         repair_feature,
         [failed_output, *paths],
-        "A required focused check failed in an existing shared application file outside the "
+        "A required focused check failed in existing shared application files outside the "
         "original slice lease. Diagnose the failure in the supplied evidence. Repair only the "
         "exact file(s) in this separate contract, run focused checks for that change, and write "
         "truthful "
@@ -776,7 +793,11 @@ def _run_scoped_dependency_repair(
         "in changed_files. A failed pre-repair diagnostic may be recorded with a pre-repair- "
         "check name only when a corresponding post-repair- check passes. The original slice "
         "owns the full live browser journey after this repair; do not spend this repair's "
-        "retry budget repeating that journey. If diagnosis proves "
+        "retry budget repeating that journey. For shared connection ownership, replace "
+        "split subscribe/start/stop calls with caller-bound acquisition/release handles "
+        "across the leased callers; test persistent and route subscribers in both cleanup "
+        "orders, remounts, and logout. A synthetic client-only assertion is insufficient. "
+        "If diagnosis proves "
         "the defect is instead in an exact "
         "test file already allowed by the original slice, do not change the supplied shared "
         "file. Record a blocked test_scope_request review with that exact path so the original "
@@ -3196,6 +3217,8 @@ def _execute_phase_unlocked(
             maximum_retries = int(pipeline["execution"]["maximum_retries_per_failure"])
             if phase == "backend" and node["id"] == "verify-backend":
                 maximum_retries = max(maximum_retries, 5)
+            if phase == "frontend" and node["id"] == "implement-frontend-slices":
+                maximum_retries = max(maximum_retries, 4)
             failure_reasons: list[str] = []
             tracked_issues: list[str] = []
             nonretryable_class: str | None = None

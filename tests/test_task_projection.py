@@ -315,6 +315,41 @@ def test_independent_shared_repairs_keep_separate_two_file_leases(tmp_path: Path
     assert requests[0][1] != requests[1][1]
 
 
+def test_caller_bound_realtime_repair_includes_existing_owners(tmp_path: Path) -> None:
+    client = "apps/frontend/src/features/realtime/RealtimeClient.ts"
+    owner = "apps/frontend/src/features/chat/useChat.ts"
+    unrelated = "apps/frontend/src/features/chat/other.ts"
+    for relative, content in (
+        (client, "export class RealtimeClient {}"),
+        (owner, "realtimeClient.start(); realtimeClient.stop();"),
+        (unrelated, "export const other = true;"),
+    ):
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    evidence = tmp_path / "frontend.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "verified": False,
+                "reviews": [
+                    {
+                        "type": "scope_repair_request",
+                        "status": "blocked",
+                        "paths": [client],
+                        "details": "Shared ownership must be caller-bound after remount",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    contract = {"allowed_paths": [], "forbidden_paths": [".agents/**"]}
+    requests = _scope_repair_requests(tmp_path, "frontend", evidence, contract)
+    assert len(requests) == 1
+    assert requests[0][0] == [client, owner]
+
+
 def test_backend_verifier_can_delegate_an_owned_test_file(tmp_path: Path) -> None:
     relative = "apps/backend/tests/messages/test_replay.py"
     target = tmp_path / relative
