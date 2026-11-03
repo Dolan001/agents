@@ -480,9 +480,11 @@ def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
     assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
 
 
-@pytest.mark.parametrize("original_owns_test", [True, False])
+@pytest.mark.parametrize(
+    ("original_owns_test", "pending_live"), [(True, False), (False, False), (False, True)]
+)
 def test_shared_repair_returns_blocked_browser_test_to_its_original_lease(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original_owns_test: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original_owns_test: bool, pending_live: bool
 ) -> None:
     shared = "apps/frontend/src/features/realtime/RealtimeClient.ts"
     browser_test = "apps/frontend/tests/presence/run-browser.ts"
@@ -516,8 +518,13 @@ def test_shared_repair_returns_blocked_browser_test_to_its_original_lease(
                 {"name": "post-repair-browser", "status": "failed"},
             ],
             "reviews": [
-                {"type": "test_scope_request", "status": "blocked", "paths": [browser_test]},
-                {"type": "handoff", "status": "BLOCKED"},
+                *([] if pending_live else [
+                    {"type": "test_scope_request", "status": "blocked", "paths": [browser_test]},
+                ]),
+                {"type": "handoff", "status": "BLOCKED", "details": (
+                    "Schedule a bounded fresh live retry after the final source edit."
+                    if pending_live else "Correct the test in its original slice."
+                )},
             ],
             "verified": False,
             "checked_at": "2026-11-03T10:52:33Z",
@@ -540,9 +547,11 @@ def test_shared_repair_returns_blocked_browser_test_to_its_original_lease(
         [shared],
         1,
     )
-    assert repaired is original_owns_test
+    assert repaired is (original_owns_test or pending_live)
     if original_owns_test:
         assert browser_test in reason
+    if pending_live:
+        assert "original slice must rerun" in reason
     assert json.loads((tmp_path / ".ai/path-leases.json").read_text())["leases"] == []
 
 

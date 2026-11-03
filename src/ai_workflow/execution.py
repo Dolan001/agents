@@ -757,7 +757,9 @@ def _run_scoped_dependency_repair(
     repair_feature.update(
         task_id=f"TASK-SHARED-DEPENDENCY-REPAIR-{feature_id.upper()}-{repair_token}",
         allowed_paths=paths,
-        required_tests=["Rerun the focused check that failed in the implementation evidence"],
+        required_tests=[
+            "Run focused checks for the leased source; the original slice reruns its live journey"
+        ],
     )
     prompt, contract = _prompt(
         project,
@@ -768,10 +770,13 @@ def _run_scoped_dependency_repair(
         [failed_output, *paths],
         "A required focused check failed in an existing shared application file outside the "
         "original slice lease. Diagnose the failure in the supplied evidence. Repair only the "
-        "exact file(s) in this separate contract, rerun the focused check, and write truthful "
+        "exact file(s) in this separate contract, run focused checks for that change, and write "
+        "truthful "
         "schema-valid repair evidence. List only source paths and the required evidence output "
         "in changed_files. A failed pre-repair diagnostic may be recorded with a pre-repair- "
-        "check name only when a corresponding post-repair- check passes. If diagnosis proves "
+        "check name only when a corresponding post-repair- check passes. The original slice "
+        "owns the full live browser journey after this repair; do not spend this repair's "
+        "retry budget repeating that journey. If diagnosis proves "
         "the defect is instead in an exact "
         "test file already allowed by the original slice, do not change the supplied shared "
         "file. Record a blocked test_scope_request review with that exact path so the original "
@@ -811,18 +816,16 @@ def _run_scoped_dependency_repair(
     evidence = read_json(evidence_path, {})
     if not isinstance(evidence, dict):
         return False, "shared dependency repair did not produce structured evidence"
+    schema = _evidence_schema(evidence_path)
+    if not isinstance(schema, dict) or list(Draft202012Validator(schema).iter_errors(evidence)):
+        return False, f"shared dependency repair evidence failed validation: {output}"
     test_handoff = _leased_test_handoff(project, evidence, feature)
     if test_handoff:
-        schema = _evidence_schema(evidence_path)
-        if not isinstance(schema, dict) or list(Draft202012Validator(schema).iter_errors(evidence)):
-            return False, f"shared dependency repair evidence failed validation: {output}"
         return (
             True,
             "scoped diagnostic found an exact test-contract defect in the original slice lease: "
             f"{test_handoff}; correct it and rerun the focused live check",
         )
-    if not _artifact_ok(evidence_path, "evidence-schema"):
-        return False, f"shared dependency repair evidence failed validation: {output}"
     changed = evidence.get("changed_files", [])
     checks = evidence.get("checks", [])
     actual_changes = {
@@ -836,12 +839,46 @@ def _run_scoped_dependency_repair(
         check for check in checks
         if isinstance(check, dict) and check.get("status") == "failed"
     ] if isinstance(checks, list) else []
+    source_repaired = bool(
+        isinstance(changed, list)
+        and source_changes
+        and source_changes <= set(paths)
+        and actual_changes
+        and source_changes <= actual_changes
+    )
+    focused_passed = bool(
+        isinstance(checks, list)
+        and any(
+            isinstance(check, dict)
+            and check.get("status") == "passed"
+            and str(check.get("name", "")).startswith("post-repair-")
+            for check in checks
+        )
+    )
+    pending_live_retry = any(
+        isinstance(review, dict)
+        and review.get("type") == "handoff"
+        and str(review.get("status", "")).upper() == "BLOCKED"
+        and "live retry" in str(review.get("details", "")).lower()
+        for review in evidence.get("reviews", [])
+    )
+    only_live_failed = bool(historical_failures) and all(
+        any(term in str(check.get("name", "")).lower() for term in ("live", "browser"))
+        for check in historical_failures
+    )
+    if (
+        source_repaired
+        and focused_passed
+        and pending_live_retry
+        and only_live_failed
+        and evidence.get("verified") is False
+    ):
+        return True, "shared source repaired; original slice must rerun the live journey"
+    if not _artifact_ok(evidence_path, "evidence-schema"):
+        return False, f"shared dependency repair evidence failed validation: {output}"
     if (
         not isinstance(changed, list)
-        or not source_changes
-        or not source_changes <= set(paths)
-        or not actual_changes
-        or not source_changes <= actual_changes
+        or not source_repaired
         or not isinstance(checks, list)
         or not any(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
         or any(
