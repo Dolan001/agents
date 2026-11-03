@@ -400,8 +400,9 @@ def test_failed_backend_matrix_repairs_and_reruns_within_same_phase(
     assert calls == ["repair", "matrix"]
 
 
+@pytest.mark.parametrize("historical_failure", [False, True])
 def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, historical_failure: bool
 ) -> None:
     shared = "apps/backend/src/example/messages/repository.py"
     source = tmp_path / shared
@@ -434,10 +435,16 @@ def test_shared_dependency_repair_uses_its_own_lease_and_focused_evidence(
                 {
                     "feature_id": "group-messaging",
                     "requirement_ids": ["FR-015"],
-                    "changed_files": [shared],
-                    "checks": [{"name": "focused-postgresql", "status": "passed"}],
+                    "changed_files": [shared, output_line] if historical_failure else [shared],
+                    "checks": [
+                        {"name": "pre-repair-format", "status": "failed"},
+                        {"name": "post-repair-format", "status": "passed"},
+                    ] if historical_failure else [
+                        {"name": "focused-postgresql", "status": "passed"},
+                    ],
                     "reviews": [],
                     "verified": False,
+                    **({"checked_at": "2026-11-03T09:15:07Z"} if historical_failure else {}),
                 }
             )
         )

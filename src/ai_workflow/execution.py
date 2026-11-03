@@ -769,7 +769,10 @@ def _run_scoped_dependency_repair(
         "A required focused check failed in an existing shared application file outside the "
         "original slice lease. Diagnose the failure in the supplied evidence. Repair only the "
         "exact file(s) in this separate contract, rerun the focused check, and write truthful "
-        "schema-valid repair evidence. If diagnosis proves the defect is instead in an exact "
+        "schema-valid repair evidence. List only source paths and the required evidence output "
+        "in changed_files. A failed pre-repair diagnostic may be recorded with a pre-repair- "
+        "check name only when a corresponding post-repair- check passes. If diagnosis proves "
+        "the defect is instead in an exact "
         "test file already allowed by the original slice, do not change the supplied shared "
         "file. Record a blocked test_scope_request review with that exact path so the original "
         "slice can repair it under its own lease. Do not change the original slice evidence or "
@@ -825,15 +828,29 @@ def _run_scoped_dependency_repair(
         if _inside(project, relative).is_file()
         and hashlib.sha256(_inside(project, relative).read_bytes()).hexdigest() != before
     }
+    source_changes = set(changed) - {output} if isinstance(changed, list) else set()
+    historical_failures = [
+        check for check in checks
+        if isinstance(check, dict) and check.get("status") == "failed"
+    ] if isinstance(checks, list) else []
     if (
         not isinstance(changed, list)
-        or not changed
-        or not set(changed) <= set(paths)
+        or not source_changes
+        or not source_changes <= set(paths)
         or not actual_changes
-        or not set(changed) <= actual_changes
+        or not source_changes <= actual_changes
         or not isinstance(checks, list)
         or not any(isinstance(check, dict) and check.get("status") == "passed" for check in checks)
-        or any(isinstance(check, dict) and check.get("status") == "failed" for check in checks)
+        or any(
+            not str(check.get("name", "")).startswith("pre-repair-")
+            for check in historical_failures
+        )
+        or (bool(historical_failures) and not any(
+            isinstance(check, dict)
+            and check.get("status") == "passed"
+            and str(check.get("name", "")).startswith("post-repair-")
+            for check in checks
+        ))
     ):
         return (
             False,
