@@ -853,7 +853,6 @@ def _backend_prerequisite_fingerprint(project: Path) -> dict[str, Any]:
         project / ".ai" / "test-commands.json",
         project / "compose.yaml",
         project / "Makefile",
-        project / ".env.example",
     ]
     for root in roots:
         if root.is_dir():

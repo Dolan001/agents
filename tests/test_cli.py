@@ -2788,10 +2788,12 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     if phase == "deployment" and node == "generate-cicd-pipeline":
         _create_pack_structure(project, prompt)
     if phase == "deployment" and node == "verify-cicd-pipeline":
+        prd = (project / "PRD.md").read_text()
+        ci_provider = "gitlab-ci" if "CI/CD provider: GitLab CI" in prd else "github-actions"
         path.write_text(
             json.dumps(
                 {
-                    "provider": "github-actions",
+                    "provider": ci_provider,
                     "verified": True,
                     "checks": [
                         {"name": f"ci-check-{index}", "passed": True, "evidence": "verified"}
@@ -3042,7 +3044,10 @@ def _create_pack_structure(
             path = target / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             values = contract.get("ci_provider_required_text", {}).get(provider, {}).get(relative)
-            path.write_text("\n".join(values) + "\n" if values else "pilot pipeline\n")
+            current = path.read_text() if path.is_file() else ""
+            missing = [value for value in (values or []) if value not in current]
+            content = current + "".join(f"{value}\n" for value in missing)
+            path.write_text(content or "pilot pipeline\n")
     path_sets = contract.get("required_path_sets", [])
     for path_set in path_sets:
         for relative in path_set["alternatives"][0]:
@@ -4305,6 +4310,58 @@ def test_start_build_defers_aws_even_when_explicitly_declared(
         item.get("decision") == "optional_phase_skipped" and item.get("phase") == "deployment"
         for item in decisions
     )
+
+
+@pytest.mark.parametrize("ci_provider", ["GitHub Actions", "GitLab CI"])
+def test_start_deployment_resumes_after_one_shot_build_with_cicd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ci_provider: str
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nFrontend framework: React\nBackend framework: FastAPI\n"
+        f"Deployment provider: AWS\nCI/CD provider: {ci_provider}\n\n"
+        "- ACC-001 User can view an account.\n"
+    )
+    calls: list[str] = []
+
+    def recording_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        calls.append(re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).group(0))  # type: ignore[union-attr]
+        return _fake_agent(project, adapter, prompt)
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", recording_agent)
+    assert main([
+        "start-build", "--project", str(tmp_path), "--github-user", "test-user",
+        "--adapter", "codex",
+    ]) == 0
+
+    assert main([
+        "start-deployment", "--project", str(tmp_path), "--deployment", "aws",
+        "--adapter", "codex",
+    ]) == 0
+    state = json.loads((tmp_path / ".ai" / "state.json").read_text())
+    assert state["frameworks"]["deployment"] == "aws"
+    assert "deployment" in state["completed_phases"]
+    assert (tmp_path / ".ai/evidence/deployment/ci-verification.json").is_file()
+    assert (tmp_path / ".ai/evidence/gates/deployment.json").is_file()
+    selection = json.loads((tmp_path / ".ai/selected-packs.json").read_text())
+    assert {item["name"] for item in selection["selected_packs"]} >= {"aws", "cicd"}
+    calls.clear()
+    assert main([
+        "start-deployment", "--project", str(tmp_path), "--deployment", "aws",
+        "--adapter", "codex",
+    ]) == 0
+    assert calls == []
+    pipeline = (
+        tmp_path / ".gitlab-ci.yml" if ci_provider == "GitLab CI"
+        else tmp_path / ".github/workflows/ci.yml"
+    )
+    pipeline.write_text(pipeline.read_text() + "# changed pipeline\n")
+    assert main([
+        "start-deployment", "--project", str(tmp_path), "--deployment", "aws",
+        "--adapter", "codex",
+    ]) == 0
+    assert "Phase/node: deployment/verify-cicd-pipeline" in calls
+    assert "Phase/node: deployment/verify-deployment-assets" in calls
+    assert "Phase/node: backend/verify-backend" not in calls
 
 
 def test_start_build_rejects_explicit_deployment_flag(tmp_path: Path) -> None:

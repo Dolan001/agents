@@ -1576,6 +1576,13 @@ def _phase_input_files(project: Path, phase: str) -> list[str]:
                     for child in match.rglob("*")
                     if _context_file_allowed(project, child)
                 )
+    if phase == "deployment":
+        # The broad evidence glob also contains gate and structure reports written
+        # during this phase. Use the prior testing gate plus explicit node links.
+        files = {path for path in files if not path.startswith(".ai/evidence/")}
+        testing_gate = project / ".ai/evidence/gates/testing.json"
+        if testing_gate.is_file():
+            files.add(testing_gate.relative_to(project).as_posix())
     return sorted(files)
 
 
@@ -1631,6 +1638,33 @@ def _node_input_files(
     feature: dict[str, Any] | None = None,
 ) -> list[str]:
     files = set(_phase_input_files(project, phase))
+    if phase == "deployment":
+        blueprint = read_json(workflow_root() / "blueprints/deployment.json", {})
+        for predecessor in blueprint.get("nodes", []):
+            if predecessor.get("id") == node:
+                break
+            output = predecessor.get("required_output")
+            if isinstance(output, str) and (project / output).is_file():
+                files.add(output)
+        extra_inputs = {
+            "generate-deployment-assets": ["docs/deployment/aws-architecture.md"],
+            "generate-cicd-pipeline": [
+                "docs/deployment/ci-cd-contract.md",
+                "docs/deployment/deployment-contract.md",
+            ],
+            "verify-cicd-pipeline": [
+                ".github/workflows/**", ".gitlab-ci.yml", "ci/**",
+                "docs/deployment/ci-cd-contract.md",
+            ],
+            "verify-deployment-assets": [
+                "infra/**", "ops/**", "docs/deployment/**",
+                ".github/workflows/**", ".gitlab-ci.yml", "ci/**",
+            ],
+        }.get(node, [])
+        for pattern in extra_inputs:
+            for path in project.glob(pattern):
+                if path.is_file() and _context_file_allowed(project, path):
+                    files.add(path.relative_to(project).as_posix())
     if phase == "backend" and node == "verify-backend":
         report = project / "artifacts" / "tests" / "command-results.json"
         if report.is_file():

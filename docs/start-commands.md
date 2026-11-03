@@ -45,7 +45,7 @@ a backend; a local GUI or Python package does not. Unsupported, conflicting, or 
 declarations fail before build work.
 
 The pack READMEs explain what each selection generates: `drf`, `fastapi`, `reactjs`, `nextjs`,
-`flutter`, `desktop`, `rag`, `webscraping`, and `aws`. These directories are instructions, not
+`flutter`, `desktop`, `rag`, `webscraping`, `cicd`, and `aws`. These directories are instructions, not
 application templates. Generated code belongs in the target project's `apps/` or `packages/`
 directories. `$workflow-status` reports a failed gate and its evidence without changing the build.
 It also reports overall verified progress as a percentage. `start-build` and `resume-build`
