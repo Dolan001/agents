@@ -4460,6 +4460,51 @@ def test_live_deployment_commands_are_explicit_and_promote_the_staging_digest(
     assert main(["deploy-staging", "--project", str(tmp_path), "--execute"]) == 1
 
 
+def test_deployment_structure_uses_the_prd_selected_ci_provider(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    rules = pack / "rules"
+    rules.mkdir(parents=True)
+    (rules / "project-structure.json").write_text(
+        json.dumps(
+            {
+                "framework": "aws",
+                "target_root": ".",
+                "required_paths": [],
+                "required_directories": [],
+                "ci_provider_paths": {
+                    "github-actions": [".github/workflows/deploy-production.yml"],
+                    "gitlab-ci": [".gitlab-ci.yml"],
+                },
+                "ci_provider_required_text": {
+                    "gitlab-ci": {".gitlab-ci.yml": ["stages:", "production"]}
+                },
+            }
+        )
+    )
+    (tmp_path / "PRD.md").write_text("CI/CD provider: GitLab CI\n")
+    with pytest.raises(RuntimeError, match="missing=.*gitlab-ci"):
+        validate_structure(tmp_path, pack, "deployment")
+    (tmp_path / ".gitlab-ci.yml").write_text("stages: [test, production]\n")
+    report = validate_structure(tmp_path, pack, "deployment")
+    assert report["valid"] is True
+    assert report["ci_provider"] == "gitlab-ci"
+    (tmp_path / "PRD.md").write_text("CI/CD provider: Jenkins\n")
+    with pytest.raises(RuntimeError, match="unsupported CI/CD provider"):
+        validate_structure(tmp_path, pack, "deployment")
+    (tmp_path / "PRD.md").write_text("CI/CD provider: GitHub Actions\n")
+    github_workflow = tmp_path / ".github" / "workflows" / "deploy-production.yml"
+    github_workflow.parent.mkdir(parents=True)
+    github_workflow.write_text("name: deploy production\n")
+    report = validate_structure(tmp_path, pack, "deployment")
+    assert report["valid"] is True
+    assert report["ci_provider"] == "github-actions"
+    docs_prd = tmp_path / "docs" / "PRD.md"
+    docs_prd.parent.mkdir()
+    docs_prd.write_text("CI/CD provider: GitLab CI\n")
+    with pytest.raises(RuntimeError, match="conflicting CI/CD providers"):
+        validate_structure(tmp_path, pack, "deployment")
+
+
 def test_start_build_supports_flutter_only_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

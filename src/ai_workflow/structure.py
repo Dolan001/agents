@@ -79,6 +79,34 @@ def _missing_path_sets(target: Path, contract: dict[str, Any]) -> list[str]:
     return missing
 
 
+def _deployment_ci_paths(project: Path, contract: dict[str, Any]) -> tuple[str, list[str]]:
+    providers = contract.get("ci_provider_paths")
+    if not isinstance(providers, dict):
+        return "", []
+    selected_values: set[str] = set()
+    for prd_path in (project / "PRD.md", project / "docs" / "PRD.md"):
+        if not prd_path.is_file():
+            continue
+        match = re.search(r"(?im)^CI/CD provider:\s*(.+)$", prd_path.read_text(encoding="utf-8"))
+        if match:
+            value = match.group(1).strip().lower()
+            if value.startswith("github actions"):
+                selected_values.add("github-actions")
+            elif value.startswith("gitlab ci") or value.startswith("gitlab-ci"):
+                selected_values.add("gitlab-ci")
+            else:
+                raise RuntimeError(f"unsupported CI/CD provider for AWS deployment: {value}")
+    if len(selected_values) > 1:
+        raise RuntimeError("conflicting CI/CD providers in project PRD files")
+    selected = next(iter(selected_values), "github-actions")
+    required = providers.get(selected)
+    if not isinstance(required, list) or not required or not all(
+        isinstance(path, str) and path for path in required
+    ):
+        raise RuntimeError(f"AWS CI/CD structure contract is invalid for {selected}")
+    return selected, required
+
+
 def _conditional_domain_paths(
     instance: Path, contract: dict[str, Any]
 ) -> tuple[list[str], list[str], list[str]]:
@@ -550,6 +578,11 @@ def validate_structure(
         raise RuntimeError("framework required directories are invalid")
     directory_set = set(required_directories)
     missing, wrong_type = _missing_or_wrong_type(target, required, directory_set)
+    ci_provider, ci_required = _deployment_ci_paths(project, contract)
+    if ci_required:
+        ci_missing, ci_wrong_type = _missing_or_wrong_type(target, ci_required, set())
+        missing.extend(ci_missing)
+        wrong_type.extend(ci_wrong_type)
     missing_path_sets = _missing_path_sets(target, contract)
     (
         active_path_groups,
@@ -615,6 +648,14 @@ def validate_structure(
     raw_required_text = contract.get("required_text", {})
     if not isinstance(raw_required_text, dict):
         raise RuntimeError("framework required text contract is invalid")
+    if ci_provider:
+        provider_text = contract.get("ci_provider_required_text", {})
+        if not isinstance(provider_text, dict):
+            raise RuntimeError("framework CI/CD required text contract is invalid")
+        selected_text = provider_text.get(ci_provider, {})
+        if not isinstance(selected_text, dict):
+            raise RuntimeError(f"framework CI/CD required text is invalid for {ci_provider}")
+        raw_required_text = {**raw_required_text, **selected_text}
     for relative, values in raw_required_text.items():
         if (
             not isinstance(relative, str)
@@ -632,6 +673,8 @@ def validate_structure(
         "framework": contract.get("framework"),
         "target_root": target_value,
         "required_paths": required,
+        "ci_provider": ci_provider,
+        "ci_required_paths": ci_required,
         "missing_paths": missing,
         "wrong_type_paths": wrong_type,
         "missing_path_sets": missing_path_sets,

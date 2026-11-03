@@ -93,7 +93,12 @@ def inventory(project: Path) -> dict[str, Any]:
     ]
     migrations = [name for name in files if "/migrations/" in name]
     environments = [name for name in files if Path(name).name.startswith(".env")]
-    ci = [name for name in files if name.startswith(".github/workflows/")]
+    ci = [
+        name
+        for name in files
+        if name.startswith((".github/workflows/", ".circleci/"))
+        or name in {".gitlab-ci.yml", "azure-pipelines.yml"}
+    ]
     designs = [
         name
         for name in files
@@ -116,7 +121,11 @@ def inventory(project: Path) -> dict[str, Any]:
 
 def discover_risks(files: list[str]) -> list[dict[str, str]]:
     risks = []
-    if not any(name.startswith(".github/workflows/") for name in files):
+    if not any(
+        name.startswith((".github/workflows/", ".circleci/"))
+        or name in {".gitlab-ci.yml", "azure-pipelines.yml"}
+        for name in files
+    ):
         risks.append({"code": "NO_CI", "severity": "medium", "message": "No CI workflow detected."})
     if not any(Path(name).name == ".env.example" for name in files):
         risks.append(

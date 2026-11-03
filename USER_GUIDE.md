@@ -634,7 +634,7 @@ the branch that was current during diagnosis.
 assets. The following skills form the separate live-operation boundary.
 The approved requirements and PRD must identify the AWS region, account/environment strategy,
 domain and DNS owner, monthly budget, CI/CD provider, and production approver. GitHub Actions is
-the default CI/CD provider; Cloudflare is optional. Record credential names and owners in the
+the default CI/CD provider; GitLab CI is also supported. Cloudflare is optional. Record credential names and owners in the
 documents, never credential values. The deployment skill asks for missing project choices before
 generating assets. Use a scoped AWS profile or temporary session for local operations; automated
 pipelines use short-lived federation. Run staging and its live checks before production promotion.

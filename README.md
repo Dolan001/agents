@@ -80,7 +80,7 @@ The supported application combinations are:
 | Python package | Library, CLI, or both (no GUI) | `packages/python` |
 | Backend | Django REST Framework or FastAPI | `apps/backend` |
 | AI capability | RAG (optional, requirement-triggered) | Selected backend and clients |
-| Deployment | AWS (optional) | `infra`, `.github/workflows`, `ops` |
+| Deployment | AWS (optional) | `infra`, selected CI/CD pipeline, `ops` |
 
 Both backend choices use PostgreSQL. Generated tables and schema changes are owned by
 reviewed Django migrations or Alembic revisions; neither backend may fall back to SQLite

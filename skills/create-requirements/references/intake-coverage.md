@@ -105,6 +105,8 @@ pre-design database indexes, API pagination, worker topology, cloud architecture
   unknown; do not invent an account, domain, region, budget, or approval owner. If deployment is
   not requested, say it is deferred. If another cloud provider is mandatory, flag the workflow
   mismatch before document generation.
+  GitHub Actions and GitLab CI are currently supported for AWS deployment; a required third
+  provider needs a workflow extension before deployment preparation.
 
 ## Readiness check before requesting approval
 
