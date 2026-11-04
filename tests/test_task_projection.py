@@ -12,9 +12,11 @@ from ai_workflow.execution import (
     _client_foundation_ready,
     _complete_task_contract,
     _leased_test_handoff,
+    _recoverable_project_failure,
     _release_path_lease,
     _repair_backend_test_matrix,
     _run_backend_contract_repair,
+    _run_final_project_recovery,
     _run_scoped_dependency_repair,
     _scope_repair_request,
     _scope_repair_requests,
@@ -348,6 +350,67 @@ def test_caller_bound_realtime_repair_includes_existing_owners(tmp_path: Path) -
     requests = _scope_repair_requests(tmp_path, "frontend", evidence, contract)
     assert len(requests) == 1
     assert requests[0][0] == [client, owner]
+
+
+def test_final_recovery_repairs_project_then_requires_original_recheck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_workflow.execution as execution
+
+    source = "apps/frontend/src/example.ts"
+    target = tmp_path / source
+    target.parent.mkdir(parents=True)
+    target.write_text("before", encoding="utf-8")
+    failed = ".ai/evidence/features/example/frontend.json"
+    failure_path = tmp_path / failed
+    failure_path.parent.mkdir(parents=True)
+    failure_path.write_text(json.dumps({"verified": False, "reviews": []}))
+    selected_output = ""
+
+    def prompt(_project, _phase, node, _state, feature, _inputs, _context):
+        nonlocal selected_output
+        selected_output = node["required_output"]
+        return "repair", {
+            "task_id": feature["task_id"],
+            "allowed_paths": feature["allowed_paths"],
+        }
+
+    def adapter(_project, _adapter, _prompt):
+        target.write_text("after", encoding="utf-8")
+        output_path = tmp_path / selected_output
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps({
+            "feature_id": "example", "requirement_ids": ["FR-001"],
+            "changed_files": [source],
+            "checks": [{"name": "focused-regression", "status": "passed"}],
+            "reviews": [{"type": "handoff", "status": "READY_FOR_VERIFICATION"}],
+            "verified": False,
+        }), encoding="utf-8")
+        return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
+
+    monkeypatch.setattr(execution, "_prompt", prompt)
+    monkeypatch.setattr(execution, "_run_adapter", adapter)
+    monkeypatch.setattr(execution, "_acquire_path_lease", lambda *_: None)
+    monkeypatch.setattr(execution, "_release_path_lease", lambda *_: None)
+    monkeypatch.setattr(execution, "record_attempt", lambda *_, **__: None)
+    repaired, reason = _run_final_project_recovery(
+        tmp_path, "test", "frontend", {"id": "slice"},
+        {"frameworks": {}}, {"feature_id": "example"}, failed,
+        {"allowed_paths": [source], "forbidden_paths": [".agents/**"]},
+    )
+    assert repaired and "original node must reverify" in reason
+    assert target.read_text() == "after"
+
+
+def test_final_recovery_skips_unchanged_external_failures(tmp_path: Path) -> None:
+    assert _recoverable_project_failure("Implementation blocked: socket bug")
+    assert not _recoverable_project_failure("Docker daemon unavailable")
+    assert not _recoverable_project_failure("adapter quota is unavailable")
+    evidence = tmp_path / "blocked.json"
+    evidence.write_text(json.dumps({
+        "recovery": {"retryable_without_new_evidence": False},
+    }))
+    assert not _recoverable_project_failure("Implementation blocked", evidence)
 
 
 def test_backend_verifier_can_delegate_an_owned_test_file(tmp_path: Path) -> None:
