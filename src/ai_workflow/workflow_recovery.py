@@ -84,6 +84,9 @@ def repair_workflow_and_open_pr(
     proposal = read_json(proposal_path, {})
     if not isinstance(proposal, dict) or proposal.get("status") != "PR_REQUIRED":
         raise RuntimeError("workflow PR proposal is missing or already handled")
+    if os.environ.get("AI_WORKFLOW_PR_ATTEMPTED") == "1":
+        raise RuntimeError("this build command already attempted one workflow PR")
+    os.environ["AI_WORKFLOW_PR_ATTEMPTED"] = "1"
     repo, paths = _repair_target(proposal)
     if _command(repo, ["git", "status", "--porcelain"]):
         raise RuntimeError(

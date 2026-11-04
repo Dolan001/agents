@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import tomllib
 from collections.abc import Iterator
@@ -3779,6 +3780,11 @@ def _execute_phase_unlocked(
                             project / ".ai" / "workflow-pr-proposals"
                             / f"{phase}-{feature_id}.json"
                         )
+                    elif "queued workflow PR proposal" in recovery_reason:
+                        workflow_repair_proposal = (
+                            project / ".ai" / "workflow-pr-proposals"
+                            / f"{phase}-{feature_id}.json"
+                        )
                     if recovered:
                         retry_prompt, retry_contract = _prompt(
                             project,
@@ -3824,6 +3830,22 @@ def _execute_phase_unlocked(
                             failure_reasons.append(
                                 "original node still failed after the bounded recovery pass"
                             )
+                if resolved and workflow_repair_proposal is not None:
+                    # A reusable improvement must not invalidate the project fix that
+                    # already passed the original gate. Publish its PR separately.
+                    try:
+                        from .workflow_recovery import repair_workflow_and_open_pr
+
+                        repair_workflow_and_open_pr(
+                            project, adapter, workflow_repair_proposal
+                        )
+                    except Exception as error:  # noqa: BLE001 - keep the verified project gate
+                        proposal = read_json(workflow_repair_proposal, {})
+                        if isinstance(proposal, dict):
+                            proposal["status"] = "PR_BLOCKED"
+                            proposal["error"] = " ".join(str(error).split())[:1000]
+                            write_json(workflow_repair_proposal, proposal)
+                        print(f"workflow improvement PR blocked: {error}", file=sys.stderr)
                 _record_failure(
                     project,
                     identity,
