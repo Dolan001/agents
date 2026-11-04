@@ -30,6 +30,7 @@ def test_repair_target_rejects_paths_outside_workflow(tmp_path: Path, monkeypatc
 def test_workflow_repair_tests_publishes_pr_and_keeps_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("AI_WORKFLOW_PR_ATTEMPTED", raising=False)
     monkeypatch.setattr(recovery, "workflow_root", lambda: tmp_path)
     source = tmp_path / "src/engine.py"
     source.parent.mkdir()
@@ -86,6 +87,7 @@ def test_workflow_repair_tests_publishes_pr_and_keeps_branch(
     assert json.loads(proposal_path.read_text())["status"] == "PR_OPEN"
     assert any(argv[:2] == ["git", "push"] for argv in commands)
     assert any(argv[:3] == ["gh", "pr", "create"] for argv in commands)
+    monkeypatch.delenv("AI_WORKFLOW_PR_ATTEMPTED")
 
 
 def test_cli_restarts_original_command_once_after_workflow_pr(
