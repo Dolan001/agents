@@ -794,10 +794,13 @@ $resume-build
 ```
 
 Verified nodes are keyed by hashes of their declared inputs. Unchanged nodes are
-reused; changed inputs invalidate only affected work. Each failed agentic node gets at
-most two retries. The first attempt does not load recovery guidance. A retry receives
-the concise prior failure and the `recover-failure` skill. Exhausted failures are
-recorded in `.ai/failures.jsonl` and stop the phase.
+reused; changed inputs invalidate only affected work. Each failed agentic node gets
+bounded normal retries. The first attempt does not load recovery guidance. A retry
+receives the concise prior failure and the `recover-failure` skill. Before an
+actionable project failure stops the run, a separate recovery agent gets one scoped
+repair pass. Its focused checks do not approve the feature: the original node reruns
+its full checks before the checkpoint advances. Unchanged external blockers and
+failed recovery are recorded in `.ai/failures.jsonl` with the saved checkpoint.
 
 Completed backend runs automatically use the fast verification path when requirements,
 contracts, backend source, and database evidence are unchanged. It runs the deterministic
@@ -916,6 +919,9 @@ failed artifact and resume after correcting the actual cause.
   project source in orchestration prompts.
 - Agents use search and exact-range reads and must record necessary context expansion.
 - `recover-failure` is loaded only after a real failure, never on the normal path.
+- The recovery agent may repair leased project paths and return control to the
+  original verifier. Reusable workflow defects require a tested change and a
+  separate workflow PR; a PR alone never approves a project gate.
 - Verified-node caching and durable checkpoints prevent unchanged work from repeating.
 - Document candidate repair preserves passing files and regenerates only validation-affected
   candidates; the orchestrator rejects repairs outside the declared target set.

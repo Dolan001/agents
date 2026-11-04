@@ -920,6 +920,130 @@ def _run_scoped_dependency_repair(
     return True, f"shared dependency repaired under a separate exact-file lease: {', '.join(paths)}"
 
 
+def _recoverable_project_failure(reason: str | None, evidence_path: Path | None = None) -> bool:
+    """Do not spend the final recovery pass on an unchanged external condition."""
+    if evidence_path is not None:
+        payload = read_json(evidence_path, {})
+        recovery = payload.get("recovery") if isinstance(payload, dict) else None
+        if isinstance(recovery, dict) and recovery.get("retryable_without_new_evidence") is False:
+            return False
+    if not reason:
+        return True
+    lowered = reason.lower()
+    return not any(
+        marker in lowered
+        for marker in (
+            "quota", "usage limit", "permission", "approval", "access denied",
+            "storage", "no space", "unavailable", "missing tool", "docker daemon",
+            "needs_input", "needs input", "credential", "rate limit",
+        )
+    )
+
+
+def _run_final_project_recovery(
+    project: Path,
+    adapter: str,
+    phase: str,
+    node: dict[str, Any],
+    state: dict[str, Any],
+    feature: dict[str, Any] | None,
+    failed_output: str,
+    failed_contract: dict[str, Any],
+) -> tuple[bool, str]:
+    """One separately leased project repair before a node reports final failure."""
+    token = str(time.time_ns())
+    feature_id = feature["feature_id"] if feature else "phase"
+    output = f".ai/evidence/repairs/{feature_id}/{phase}-recovery-{token}.json"
+    related = _scope_repair_requests(
+        project, phase, _inside(project, failed_output), failed_contract
+    )
+    paths = list(dict.fromkeys([
+        *failed_contract["allowed_paths"],
+        *(path for request, _ in related for path in request),
+    ]))
+    if not paths:
+        return False, "recovery has no leased project paths"
+    recovery_feature = dict(feature or {})
+    recovery_feature.update(
+        task_id=f"TASK-RECOVERY-{phase.upper()}-{token}",
+        feature_id=feature_id,
+        allowed_paths=paths,
+        forbidden_paths=failed_contract["forbidden_paths"],
+        required_tests=["Focused regression for the observed failure"],
+    )
+    recovery_node = {
+        "id": "recover-failed-node",
+        "agent": "recovery-agent",
+        "required_output": output,
+        "verification": "evidence-schema",
+    }
+    prompt, contract = _prompt(
+        project,
+        phase,
+        recovery_node,
+        state,
+        recovery_feature,
+        [failed_output],
+        "The original node failed after its normal retries. Diagnose the exact finding. "
+        "Repair an actionable project defect inside this recovery lease and add a focused "
+        "regression. Write schema-valid evidence at the required output, listing changed "
+        "source paths and passing focused checks. Do not change the failed node evidence "
+        "or claim its independent gate passed. If the fault is in the reusable workflow, "
+        "record a workflow_defect review with reproduction, affected workflow paths, and "
+        "the needed regression; do not edit the project submodule. If an external blocker "
+        "remains unchanged, record it and return without repeating the operation.",
+    )
+    prompt_path = project / ".ai" / "prompts" / f"recovery--{phase}--{feature_id}--{token}.md"
+    prompt_path.parent.mkdir(parents=True, exist_ok=True)
+    prompt_path.write_text(prompt, encoding="utf-8")
+    _acquire_path_lease(project, contract)
+    try:
+        started = time.monotonic()
+        result = _run_adapter(project, adapter, prompt)
+        record_attempt(
+            project,
+            identity=f"{phase}/recover-failed-node/{feature_id}-{token}",
+            adapter=adapter,
+            agent="recovery-agent",
+            skills=[str(workflow_root() / "base/skills/recover-failure/SKILL.md")],
+            prompt=prompt,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            result=result,
+        )
+    finally:
+        _release_path_lease(project, contract["task_id"])
+    log_path = project / ".ai" / "logs" / f"recovery--{phase}--{feature_id}--{token}.json"
+    write_json(log_path, result)
+    if result["returncode"] != 0:
+        concise, _ = _concise_adapter_failure(result)
+        return False, f"recovery agent failed: {concise}"
+    evidence = read_json(_inside(project, output), {})
+    if not isinstance(evidence, dict) or not _artifact_ok(
+        _inside(project, output), "evidence-schema"
+    ):
+        return False, f"recovery evidence failed validation: {output}"
+    if any(
+        isinstance(review, dict) and review.get("type") == "workflow_defect"
+        for review in evidence.get("reviews", [])
+    ):
+        return False, f"reusable workflow defect recorded in {output}; a workflow PR is required"
+    changes = evidence.get("changed_files", [])
+    checks = evidence.get("checks", [])
+    source_changes = set(changes) - {output} if isinstance(changes, list) else set()
+    if not source_changes or any(
+        not any(fnmatch.fnmatchcase(path, allowed) for allowed in paths)
+        for path in source_changes
+    ):
+        return False, "recovery has no in-scope project source change"
+    if not isinstance(checks, list) or not any(
+        isinstance(check, dict) and check.get("status") == "passed" for check in checks
+    ) or any(
+        isinstance(check, dict) and check.get("status") == "failed" for check in checks
+    ):
+        return False, "recovery lacks a passing focused regression"
+    return True, f"recovery changed scoped project source; original node must reverify: {output}"
+
+
 def _repair_input_files(
     project: Path,
     inputs: list[str],
@@ -3247,6 +3371,7 @@ def _execute_phase_unlocked(
                 if signature:
                     repaired_findings.add(signature)
             result: dict[str, Any] = {}
+            current_contract: dict[str, Any] | None = None
             for attempt in range(maximum_retries + 2):
                 if attempt > maximum_retries and not owned_test_retry_granted:
                     break
@@ -3368,6 +3493,7 @@ def _execute_phase_unlocked(
                 prompt, contract = _prompt(
                     project, phase, node, state, feature, inputs, retry_context
                 )
+                current_contract = contract
                 suffix = "" if attempt == 0 else f"--retry-{attempt}"
                 prompt_path = (
                     project / ".ai" / "prompts" / f"{identity.replace('/', '--')}{suffix}.md"
@@ -3605,6 +3731,62 @@ def _execute_phase_unlocked(
                     result.get("returncode") == 0
                     and _artifact_ok(output_path, node["verification"])
                 )
+                if not resolved and _recoverable_project_failure(
+                    nonretryable_class, output_path
+                ) and current_contract is not None:
+                    try:
+                        recovered, recovery_reason = _run_final_project_recovery(
+                            project, adapter, phase, node, state, feature, output, current_contract
+                        )
+                    except RuntimeError as error:
+                        recovered = False
+                        recovery_reason = f"final recovery could not start: {error}"
+                    failure_reasons.append(f"{failure_reasons[-1]}; {recovery_reason}")
+                    if recovered:
+                        retry_prompt, retry_contract = _prompt(
+                            project,
+                            phase,
+                            node,
+                            state,
+                            feature,
+                            inputs,
+                            f"A separately leased recovery pass completed: {recovery_reason}. "
+                            "Rerun the original checks against the changed source and write "
+                            "fresh evidence; do not inherit a pass from recovery evidence.",
+                        )
+                        _acquire_path_lease(project, retry_contract)
+                        try:
+                            started = time.monotonic()
+                            result = _run_adapter(project, adapter, retry_prompt)
+                            record_attempt(
+                                project,
+                                identity=f"{identity}/post-recovery",
+                                adapter=adapter,
+                                agent=node["agent"],
+                                skills=[
+                                    str(workflow_root() / "base/skills/recover-failure/SKILL.md")
+                                ],
+                                prompt=retry_prompt,
+                                elapsed_ms=round((time.monotonic() - started) * 1000),
+                                result=result,
+                            )
+                        finally:
+                            _release_path_lease(project, retry_contract["task_id"])
+                        write_json(
+                            project / ".ai" / "logs"
+                            / f"{identity.replace('/', '--')}--post-recovery.json",
+                            result,
+                        )
+                        resolved = bool(
+                            result.get("returncode") == 0
+                            and _artifact_ok(output_path, node["verification"])
+                        )
+                        if resolved:
+                            nonretryable_class = None
+                        else:
+                            failure_reasons.append(
+                                "original node still failed after the bounded recovery pass"
+                            )
                 _record_failure(
                     project,
                     identity,
