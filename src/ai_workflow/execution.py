@@ -93,6 +93,14 @@ _NON_RETRYABLE_ADAPTER_PATTERNS = (
 )
 
 
+class WorkflowRepairNeeded(RuntimeError):
+    """A recovery agent found a reusable defect needing an isolated workflow PR."""
+
+    def __init__(self, proposal: Path, message: str) -> None:
+        super().__init__(message)
+        self.proposal = proposal
+
+
 def _context_file_allowed(project: Path, path: Path) -> bool:
     relative = path.relative_to(project)
     if any(part in _IGNORED_CONTEXT_PARTS for part in relative.parts):
@@ -2876,7 +2884,9 @@ def _record_failure(
     )
 
 
-def _run_adapter(project: Path, adapter: str, prompt: str) -> dict[str, Any]:
+def _run_adapter(
+    project: Path, adapter: str, prompt: str, *, refresh_projection: bool = True
+) -> dict[str, Any]:
     from .provider_selection import refresh_provider_projection
 
     config = read_json(workflow_root() / "config" / "agent-adapters.json")
@@ -2897,7 +2907,8 @@ def _run_adapter(project: Path, adapter: str, prompt: str) -> dict[str, Any]:
         prompt_input = None
     elif prompt_transport != "stdin":
         raise RuntimeError(f"invalid adapter prompt transport: {adapter}")
-    refresh_provider_projection(project, adapter)
+    if refresh_projection:
+        refresh_provider_projection(project, adapter)
     completed = subprocess.run(  # noqa: S603 - repository-owned fixed adapter argv
         command,
         cwd=project,
@@ -3751,6 +3762,7 @@ def _execute_phase_unlocked(
                     result.get("returncode") == 0
                     and _artifact_ok(output_path, node["verification"])
                 )
+                workflow_repair_proposal: Path | None = None
                 if not resolved and _recoverable_project_failure(
                     nonretryable_class, output_path
                 ) and current_contract is not None:
@@ -3762,6 +3774,11 @@ def _execute_phase_unlocked(
                         recovered = False
                         recovery_reason = f"final recovery could not start: {error}"
                     failure_reasons.append(f"{failure_reasons[-1]}; {recovery_reason}")
+                    if recovery_reason.startswith("workflow defect requires a tested PR;"):
+                        workflow_repair_proposal = (
+                            project / ".ai" / "workflow-pr-proposals"
+                            / f"{phase}-{feature_id}.json"
+                        )
                     if recovered:
                         retry_prompt, retry_contract = _prompt(
                             project,
@@ -3817,6 +3834,12 @@ def _execute_phase_unlocked(
                     nonretryable_class,
                 )
                 if not resolved:
+                    if workflow_repair_proposal is not None:
+                        raise WorkflowRepairNeeded(
+                            workflow_repair_proposal,
+                            f"reusable workflow defect in {identity}; proposal: "
+                            f"{workflow_repair_proposal}",
+                        )
                     label = (
                         "agent node stopped for required external evidence"
                         if nonretryable_class
