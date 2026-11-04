@@ -801,6 +801,13 @@ actionable project failure stops the run, a separate recovery agent gets one sco
 repair pass. Its focused checks do not approve the feature: the original node reruns
 its full checks before the checkpoint advances. Unchanged external blockers and
 failed recovery are recorded in `.ai/failures.jsonl` with the saved checkpoint.
+If the recovery agent identifies a defect in the reusable workflow itself, the
+command may create a tested `ai/<owner>/recovery-*` branch and GitHub PR in the
+affected workflow repository, then restart the same command once from its saved
+checkpoint using that local branch. This publishes workflow code for review; it
+does not merge or deploy anything. GitHub authentication, repository write access,
+and local test dependencies are required. A failed PR or repeated defect leaves the
+checkpoint intact and reports the exact blocker.
 
 Completed backend runs automatically use the fast verification path when requirements,
 contracts, backend source, and database evidence are unchanged. It runs the deterministic
@@ -920,8 +927,8 @@ failed artifact and resume after correcting the actual cause.
 - Agents use search and exact-range reads and must record necessary context expansion.
 - `recover-failure` is loaded only after a real failure, never on the normal path.
 - The recovery agent may repair leased project paths and return control to the
-  original verifier. Reusable workflow defects require a tested change and a
-  separate workflow PR; a PR alone never approves a project gate.
+  original verifier. Reusable workflow defects use a separate repository lease,
+  tested review branch, and PR; a PR alone never approves a project gate.
 - Verified-node caching and durable checkpoints prevent unchanged work from repeating.
 - Document candidate repair preserves passing files and regenerates only validation-affected
   candidates; the orchestrator rejects repairs outside the declared target set.

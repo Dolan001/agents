@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +23,7 @@ from .discovery import inventory, print_json, save_inventory
 from .docker_recovery import execute_recovery, inspect_recovery
 from .documents import prepare_project_documents, validate_document_set
 from .execution import (
+    WorkflowRepairNeeded,
     evaluate_phase_gate,
     execute_phase,
     phase_checkpoint_current,
@@ -61,6 +64,7 @@ from .requirements import reconcile as reconcile_requirements
 from .structure import validate_backend_evidence
 from .tokens import resolve_token
 from .visual_diff import compare_pixels, parse_mask
+from .workflow_recovery import repair_workflow_and_open_pr
 
 Command = Callable[[argparse.Namespace], int]
 ADAPTER_CHOICES = (*PROVIDERS, "codex-reviewed")
@@ -1941,6 +1945,40 @@ def main(arguments: list[str] | None = None) -> int:
                     context={"exit_code": result},
                 )
         return result
+    except WorkflowRepairNeeded as error:
+        if args is None or os.environ.get("AI_WORKFLOW_RECOVERY_DEPTH") == "1":
+            print(
+                json.dumps({"error": {"code": "WORKFLOW_REPAIR_BLOCKED", "message": str(error)}}),
+                file=sys.stderr,
+            )
+            return 1
+        project = Path(args.project).expanduser().resolve()
+        try:
+            repaired = repair_workflow_and_open_pr(project, args.adapter, error.proposal)
+            runner = project / ".agents" / "bin" / "ai"
+            if not runner.is_file():
+                raise RuntimeError(f"corrected workflow runner is missing: {runner}")
+            print(f"workflow repair PR: {repaired['url']}", file=sys.stderr)
+            environment = os.environ.copy()
+            environment["AI_WORKFLOW_RECOVERY_DEPTH"] = "1"
+            resumed = subprocess.run(  # noqa: S603 - fixed runner and original parsed CLI argv
+                [str(runner), *(arguments if arguments is not None else sys.argv[1:])],
+                cwd=project,
+                env=environment,
+                check=False,
+            )
+            return resumed.returncode
+        except Exception as repair_error:  # noqa: BLE001 - preserve the checkpoint on PR failure
+            print(
+                json.dumps({
+                    "error": {
+                        "code": "WORKFLOW_REPAIR_BLOCKED",
+                        "message": f"{error}; workflow PR/restart failed: {repair_error}",
+                    }
+                }),
+                file=sys.stderr,
+            )
+            return 1
     except Exception as error:  # noqa: BLE001 - final CLI boundary must preserve every build error
         if (
             args is not None
