@@ -1022,11 +1022,24 @@ def _run_final_project_recovery(
         _inside(project, output), "evidence-schema"
     ):
         return False, f"recovery evidence failed validation: {output}"
-    if any(
-        isinstance(review, dict) and review.get("type") == "workflow_defect"
-        for review in evidence.get("reviews", [])
-    ):
-        return False, f"reusable workflow defect recorded in {output}; a workflow PR is required"
+    workflow_findings = [
+        review for review in evidence.get("reviews", [])
+        if isinstance(review, dict) and review.get("type") == "workflow_defect"
+    ]
+    if workflow_findings:
+        proposal = project / ".ai" / "workflow-pr-proposals" / f"{phase}-{feature_id}.json"
+        write_json(proposal, {
+            "failed_node": node["id"],
+            "recovery_evidence": output,
+            "findings": [
+                {
+                    "paths": _safe_strings(review.get("paths"))[:8],
+                    "details": " ".join(str(review.get("details", "")).split())[:1200],
+                }
+                for review in workflow_findings
+            ],
+            "status": "PR_REQUIRED",
+        })
     changes = evidence.get("changed_files", [])
     checks = evidence.get("checks", [])
     source_changes = set(changes) - {output} if isinstance(changes, list) else set()
@@ -1034,6 +1047,8 @@ def _run_final_project_recovery(
         not any(fnmatch.fnmatchcase(path, allowed) for allowed in paths)
         for path in source_changes
     ):
+        if workflow_findings:
+            return False, f"workflow defect requires a tested PR; proposal: {proposal}"
         return False, "recovery has no in-scope project source change"
     if not isinstance(checks, list) or not any(
         isinstance(check, dict) and check.get("status") == "passed" for check in checks
@@ -1041,6 +1056,11 @@ def _run_final_project_recovery(
         isinstance(check, dict) and check.get("status") == "failed" for check in checks
     ):
         return False, "recovery lacks a passing focused regression"
+    if workflow_findings:
+        return True, (
+            "recovery changed scoped project source and queued workflow PR proposal; "
+            f"original node must reverify: {output}"
+        )
     return True, f"recovery changed scoped project source; original node must reverify: {output}"
 
 

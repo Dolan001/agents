@@ -383,7 +383,11 @@ def test_final_recovery_repairs_project_then_requires_original_recheck(
             "feature_id": "example", "requirement_ids": ["FR-001"],
             "changed_files": [source],
             "checks": [{"name": "focused-regression", "status": "passed"}],
-            "reviews": [{"type": "handoff", "status": "READY_FOR_VERIFICATION"}],
+            "reviews": [
+                {"type": "handoff", "status": "READY_FOR_VERIFICATION"},
+                {"type": "workflow_defect", "paths": ["src/ai_workflow/execution.py"],
+                 "details": "The shared repair contract omitted callers."},
+            ],
             "verified": False,
         }), encoding="utf-8")
         return {"returncode": 0, "stdout_tail": "", "stderr_tail": ""}
@@ -400,6 +404,8 @@ def test_final_recovery_repairs_project_then_requires_original_recheck(
     )
     assert repaired and "original node must reverify" in reason
     assert target.read_text() == "after"
+    proposal = tmp_path / ".ai/workflow-pr-proposals/frontend-example.json"
+    assert json.loads(proposal.read_text())["status"] == "PR_REQUIRED"
 
 
 def test_final_recovery_skips_unchanged_external_failures(tmp_path: Path) -> None:
