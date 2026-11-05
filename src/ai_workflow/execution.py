@@ -2936,6 +2936,7 @@ def _run_adapter(
         text=True,
         capture_output=True,
         timeout=int(config.get("timeout_seconds", 3600)),
+        env={**os.environ, "AI_WORKFLOW_PYTHON": sys.executable},
         check=False,
     )
     return {
