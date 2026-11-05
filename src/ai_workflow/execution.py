@@ -2711,7 +2711,9 @@ def _prompt(
             "operation required by the selected client tasks; checking only that operation IDs "
             "exist in OpenAPI is insufficient. Record and test operation coverage before marking "
             "the foundation ready. Run focused foundation and contract checks, register "
-            "project commands in .ai/test-commands.json and write truthful foundation evidence."
+            "project commands in .ai/test-commands.json and write truthful foundation evidence. "
+            "Cache only declared read-only static checks with complete inputs; never cache live "
+            "API, browser, security, or device checks."
         )
         if phase == "frontend":
             role_boundary += (
@@ -2774,7 +2776,24 @@ def _prompt(
             "directory cleanup without logging credentials. Derive service assertions and numeric "
             "identifiers from the implementation or configuration; never guess hard-coded lock IDs "
             "or other runtime constants. Do not write backend-verification.json "
-            "or claim independent approval."
+            "or claim independent approval. Mark only read-only static commands with "
+            "cache mode static, read_only true, and complete input patterns in the approved "
+            "manifest; live PostgreSQL, HTTP, browser, security, and migration checks are "
+            "never cacheable. Declare parallel_safe only for independent static checks."
+        )
+    lane = node.get("verification_lane")
+    if lane == "focused":
+        role_boundary += (
+            "\nVerification lane: focused. Finish this feature first, then run the smallest "
+            "relevant static and live checks once. The orchestrator owns the complete phase "
+            "matrix. A failed focused check requires a specific fix and recheck."
+        )
+    elif lane == "phase-gate":
+        role_boundary += (
+            "\nVerification lane: phase-gate. Audit current hash-bound command results and "
+            "run every required live, contract, security, and design check not already "
+            "proved by the owning gate. Do not rerun an unchanged complete matrix solely "
+            "to duplicate its passing evidence; reject stale or incomplete evidence."
         )
     prompt = f"""You are executing one controlled node of a production workflow.
 
@@ -3056,7 +3075,7 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
             for group in phase_groups
             if isinstance(configured, dict) and configured.get(group)
         ]
-        run_command_groups(project, groups)
+        run_command_groups(project, groups, require_fresh=True)
     elif action == "validate_project_test_commands":
         _validate_project_test_commands(project, phase)
     elif action == "aggregate_feature_evidence":
@@ -3310,6 +3329,9 @@ def _execute_phase_unlocked(
                 and checkpoint.get("cache_key") == cache_key
                 and _artifact_ok(output_path, node["verification"])
             ):
+                append_jsonl(project / ".ai/telemetry/checkpoints.jsonl", {
+                    "at": utc_now(), "identity": identity, "reused": True,
+                })
                 continue
             if (
                 phase == "backend"

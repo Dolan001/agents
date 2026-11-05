@@ -135,6 +135,11 @@ def validate_control_plane(root: Path | None = None) -> dict[str, Any]:
                 raise RuntimeError(f"duplicate node id in phase {phase}: {node['id']}")
             identifiers.add(node["id"])
             node_count += 1
+            lane = node.get("verification_lane")
+            if lane is not None and (
+                node.get("type") != "agentic" or lane not in {"focused", "phase-gate"}
+            ):
+                raise RuntimeError(f"invalid verification lane in {phase}/{node['id']}")
             if node.get("type") == "agentic":
                 agentic_count += 1
                 artifact_keys = ("agent", "required_output", "verification")

@@ -930,6 +930,21 @@ failed artifact and resume after correcting the actual cause.
   original verifier. Reusable workflow defects use a separate repository lease,
   tested review branch, and PR; a PR alone never approves a project gate.
 - Verified-node caching and durable checkpoints prevent unchanged work from repeating.
+- Feature agents run focused checks after completing a slice. Full live PostgreSQL, API,
+  browser, and design suites remain required at their owning phase gates. Shared contract,
+  migration, auth, realtime, and design-token changes invalidate dependent checks.
+- Approved read-only static commands may opt in to result reuse with a `cache` declaration in
+  `.ai/test-commands.json`: `{"mode":"static","read_only":true,"inputs":["src/**/*.py"]}`.
+  The runner fingerprints the whole project source tree, those explicit inputs, the executable,
+  and its environment. Live commands and failed checks are never cached. Do not mark a command
+  static if it reads a live service, mutates project files, or depends on undeclared generated data.
+  Command duration and cache hits are recorded in `.ai/telemetry/commands.jsonl`.
+  Final phase test matrices force a fresh run even for declared static checks.
+  Reused verified nodes are counted in `.ai/telemetry/checkpoints.jsonl`; the evaluation
+  report includes command time, cache hits, and checkpoint reuse alongside adapter time.
+  A group whose every command is independently read-only and static may set
+  `parallel_safe:true` on each command; the runner then uses at most two workers and preserves
+  report order. Mixed or live groups stay sequential.
 - Document candidate repair preserves passing files and regenerates only validation-affected
   candidates; the orchestrator rejects repairs outside the declared target set.
 - Inputs, PRD text, HTML, screenshots, and token contents are treated as untrusted data.
