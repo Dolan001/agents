@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -29,6 +30,7 @@ def test_argument_prompt_transport_appends_prompt(tmp_path: Path) -> None:
     assert result["returncode"] == 0
     assert run.call_args.args[0][-1] == "follow this workflow"
     assert run.call_args.kwargs["input"] is None
+    assert run.call_args.kwargs["env"]["AI_WORKFLOW_PYTHON"] == sys.executable
 
 
 def test_opencode_uses_documented_positional_prompt(tmp_path: Path) -> None:
