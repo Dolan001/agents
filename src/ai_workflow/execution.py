@@ -949,6 +949,50 @@ def _recoverable_project_failure(reason: str | None, evidence_path: Path | None 
     )
 
 
+def _project_failure_signature(result: dict[str, Any], evidence_path: Path) -> str:
+    """Identify the actual finding, ignoring timestamps and successful checks."""
+    evidence = read_json(evidence_path, {})
+    findings: list[Any] = []
+    if isinstance(evidence, dict):
+        for key in ("checks", "reviews", "findings"):
+            values = evidence.get(key, [])
+            if isinstance(values, list):
+                findings.extend(
+                    {"kind": key, "finding": value}
+                    for value in values
+                    if isinstance(value, dict)
+                    and (
+                        key == "findings"
+                        or str(value.get("status", "")).lower()
+                        in {"failed", "blocked", "rejected"}
+                    )
+                )
+        recovery = evidence.get("recovery")
+        if isinstance(recovery, dict):
+            findings.append({
+                "kind": "recovery",
+                "finding": {
+                    key: recovery.get(key)
+                    for key in (
+                        "classification", "reason", "next_action",
+                        "retryable_without_new_evidence",
+                    )
+                    if key in recovery
+                },
+            })
+    if not findings:
+        findings = [
+            " ".join(str(result.get(key, "")).split())[-1000:]
+            for key in ("stderr_tail", "stdout_tail")
+        ]
+    encoded = json.dumps(
+        {"returncode": result.get("returncode"), "findings": findings},
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _run_final_project_recovery(
     project: Path,
     adapter: str,
@@ -3787,9 +3831,23 @@ def _execute_phase_unlocked(
                     and _artifact_ok(output_path, node["verification"])
                 )
                 workflow_repair_proposal: Path | None = None
-                if not resolved and _recoverable_project_failure(
-                    nonretryable_class, output_path
-                ) and current_contract is not None:
+                recovery_limit = int(
+                    pipeline["execution"].get("maximum_distinct_recoveries_per_node", 6)
+                )
+                seen_findings: set[str] = set()
+                for recovery_attempt in range(1, recovery_limit + 1):
+                    if resolved or current_contract is None or not _recoverable_project_failure(
+                        nonretryable_class, output_path
+                    ):
+                        break
+                    finding = _project_failure_signature(result, output_path)
+                    if finding in seen_findings:
+                        failure_reasons.append(
+                            "the same finding remained after a focused recovery; "
+                            "stopping to avoid repeating the repair"
+                        )
+                        break
+                    seen_findings.add(finding)
                     try:
                         recovered, recovery_reason = _run_final_project_recovery(
                             project, adapter, phase, node, state, feature, output, current_contract
@@ -3808,51 +3866,61 @@ def _execute_phase_unlocked(
                             project / ".ai" / "workflow-pr-proposals"
                             / f"{phase}-{feature_id}.json"
                         )
-                    if recovered:
-                        retry_prompt, retry_contract = _prompt(
+                    if not recovered:
+                        break
+                    retry_prompt, retry_contract = _prompt(
+                        project,
+                        phase,
+                        node,
+                        state,
+                        feature,
+                        inputs,
+                        f"A separately leased recovery pass completed: {recovery_reason}. "
+                        "Rerun the original checks against the changed source and write "
+                        "fresh evidence; do not inherit a pass from recovery evidence.",
+                    )
+                    _acquire_path_lease(project, retry_contract)
+                    try:
+                        started = time.monotonic()
+                        result = _run_adapter(project, adapter, retry_prompt)
+                        record_attempt(
                             project,
-                            phase,
-                            node,
-                            state,
-                            feature,
-                            inputs,
-                            f"A separately leased recovery pass completed: {recovery_reason}. "
-                            "Rerun the original checks against the changed source and write "
-                            "fresh evidence; do not inherit a pass from recovery evidence.",
+                            identity=f"{identity}/post-recovery-{recovery_attempt}",
+                            adapter=adapter,
+                            agent=node["agent"],
+                            skills=[str(workflow_root() / "base/skills/recover-failure/SKILL.md")],
+                            prompt=retry_prompt,
+                            elapsed_ms=round((time.monotonic() - started) * 1000),
+                            result=result,
                         )
-                        _acquire_path_lease(project, retry_contract)
-                        try:
-                            started = time.monotonic()
-                            result = _run_adapter(project, adapter, retry_prompt)
-                            record_attempt(
-                                project,
-                                identity=f"{identity}/post-recovery",
-                                adapter=adapter,
-                                agent=node["agent"],
-                                skills=[
-                                    str(workflow_root() / "base/skills/recover-failure/SKILL.md")
-                                ],
-                                prompt=retry_prompt,
-                                elapsed_ms=round((time.monotonic() - started) * 1000),
-                                result=result,
-                            )
-                        finally:
-                            _release_path_lease(project, retry_contract["task_id"])
-                        write_json(
-                            project / ".ai" / "logs"
-                            / f"{identity.replace('/', '--')}--post-recovery.json",
-                            result,
+                    finally:
+                        _release_path_lease(project, retry_contract["task_id"])
+                    write_json(
+                        project / ".ai" / "logs"
+                        / f"{identity.replace('/', '--')}--post-recovery-{recovery_attempt}.json",
+                        result,
+                    )
+                    resolved = bool(
+                        result.get("returncode") == 0
+                        and _artifact_ok(output_path, node["verification"])
+                    )
+                    if resolved:
+                        nonretryable_class = None
+                        break
+                    if result.get("returncode") != 0:
+                        concise, retryable = _concise_adapter_failure(result)
+                        nonretryable_class = None if retryable else concise
+                    else:
+                        nonretryable_class = _artifact_external_blocker(output_path)
+                    failure_reasons.append(
+                        "original node found another issue after recovery; "
+                        "checking its fresh evidence"
+                    )
+                else:
+                    if not resolved:
+                        failure_reasons.append(
+                            f"{recovery_limit} distinct recovery passes were used for this node"
                         )
-                        resolved = bool(
-                            result.get("returncode") == 0
-                            and _artifact_ok(output_path, node["verification"])
-                        )
-                        if resolved:
-                            nonretryable_class = None
-                        else:
-                            failure_reasons.append(
-                                "original node still failed after the bounded recovery pass"
-                            )
                 if resolved and workflow_repair_proposal is not None:
                     # A reusable improvement must not invalidate the project fix that
                     # already passed the original gate. Publish its PR separately.
