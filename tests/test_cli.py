@@ -2627,6 +2627,14 @@ def test_design_comparison_rejects_runtime_approved_html_injection(tmp_path: Pat
         validate_design_fidelity_comparison(tmp_path, "frontend", "react")
 
 
+def _capture_html(title: str) -> str:
+    return (
+        '<!doctype html><html data-design-state="success"><head>'
+        f'<title>{title}</title></head><body>'
+        f'<main data-design-screen-state="success"><h1>{title}</h1></main></body></html>'
+    )
+
+
 def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     del adapter
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]
@@ -2700,7 +2708,7 @@ def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
     if phase == "design" and node == "establish-html-baseline":
         generated = project / "HTML" / "generated" / "index.html"
         generated.parent.mkdir(parents=True, exist_ok=True)
-        generated.write_text("<!doctype html><title>Approved account</title>")
+        generated.write_text(_capture_html("Approved account"))
     if phase == "design" and node == "verify-html-baseline":
         generated = project / "HTML" / "generated"
         output_hashes = {
@@ -3465,6 +3473,43 @@ def test_html_responsive_failure_repairs_within_same_run(
     assert (tmp_path / "HTML/approved/index.html").is_file()
 
 
+def test_html_state_gallery_is_repaired_before_approval_in_same_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "PRD.md").write_text(
+        "# Account\n\nBackend framework: FastAPI\n\n- ACC-010 View account states.\n"
+    )
+    calls: list[str] = []
+
+    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+        node = re.search(r"Phase/node: [a-z-]+/([a-z-]+)", prompt).group(1)  # type: ignore[union-attr]
+        calls.append(node)
+        if node == "repair-html-baseline":
+            assert "multiple visible UI states" in prompt
+        result = _fake_agent(project, adapter, prompt)
+        page = project / "HTML/generated/index.html"
+        if node == "establish-html-baseline":
+            page.write_text(
+                '<html data-design-state="success"><body>'
+                '<main data-design-screen-state="success">Ready</main>'
+                '<main data-design-screen-state="error">Retry</main>'
+                "</body></html>"
+            )
+        elif node == "repair-html-baseline":
+            page.write_text(_capture_html("Account"))
+        return result
+
+    monkeypatch.setattr("ai_workflow.execution._run_adapter", agent)
+    assert main([
+        "start-generatehtml", "--project", str(tmp_path),
+        "--github-user", "test-user", "--adapter", "codex",
+    ]) == 0
+    assert [node for node in calls if node in {
+        "verify-html-baseline", "repair-html-baseline",
+    }] == ["verify-html-baseline", "repair-html-baseline", "verify-html-baseline"]
+    assert (tmp_path / "HTML/approved/index.html").read_text() == _capture_html("Account")
+
+
 def test_source_checks_do_not_require_prior_independent_approval() -> None:
     checks = {
         "approved": False,
@@ -3490,7 +3535,7 @@ def test_html_generation_approves_in_one_invocation(
         if "Phase/node: design/establish-html-baseline" in prompt:
             draft = project / "HTML/generated/index.html"
             draft.parent.mkdir(parents=True, exist_ok=True)
-            draft.write_text("<!doctype html><title>Account</title>")
+            draft.write_text(_capture_html("Account"))
             checks = project / ".ai/evidence/design/source-checks.json"
             checks.parent.mkdir(parents=True, exist_ok=True)
             checks.write_text(json.dumps({
@@ -3552,7 +3597,7 @@ def test_html_generation_recovers_verified_repair_without_regeneration(
     ]) == 0
 
     generated = tmp_path / "HTML/generated/index.html"
-    generated.write_text("<!doctype html><title>Verifier repair</title>")
+    generated.write_text(_capture_html("Verifier repair"))
     digest = hashlib.sha256(generated.read_bytes()).hexdigest()
     evidence = tmp_path / ".ai/evidence/design"
     (evidence / "source-checks.json").write_text(json.dumps({
@@ -3604,7 +3649,7 @@ def test_design_evidence_accepts_explicit_deferrals_without_relaxing_other_phase
     generated = tmp_path / "HTML/generated"
     generated.mkdir(parents=True)
     draft = generated / "index.html"
-    draft.write_text("<!doctype html><title>Account</title>")
+    draft.write_text(_capture_html("Account"))
     digest = hashlib.sha256(draft.read_bytes()).hexdigest()
     payload["output_hashes"] = {"HTML/generated/index.html": digest}
     path.write_text(json.dumps(payload))
@@ -3667,7 +3712,7 @@ def _fake_agent_with_html_checks(
     if "Phase/node: design/establish-html-baseline" in prompt:
         draft = project / "HTML/generated/index.html"
         draft.parent.mkdir(parents=True, exist_ok=True)
-        draft.write_text("<!doctype html><title>Account</title>")
+        draft.write_text(_capture_html("Account"))
         checks = project / ".ai/evidence/design/source-checks.json"
         checks.write_text(json.dumps({
             "status": "passed", "exit_code": 0,

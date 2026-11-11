@@ -435,6 +435,10 @@ the HTML yourself if desired; personal review is optional. It runs `$start-desig
 automatically when the design specification is missing or stale. `$start-frontend` consumes
 that verified baseline and runs only frontend work. Missing or stale prerequisites
 produce a recovery command; frontend does not regenerate HTML automatically.
+HTML approval now checks that each comparison page represents one deterministic
+visible UI state. Alternate states belong in separate comparison pages or design
+documentation. The later design-fidelity case must name the same state, so a static
+all-states gallery cannot pass HTML approval and fail only after frontend work.
 
 `$start-build` runs the combined lifecycle. Other stage commands retain prerequisite
 orchestration. For web/mobile, the normal order is requirements and contracts, verified backend,

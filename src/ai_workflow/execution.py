@@ -23,8 +23,10 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
 from .design import (
+    _capture_protocol_required,
     _source_checks_passed,
     _tree_hashes,
+    _validate_capture_ready_html,
     approve_generated_html,
     classify_design_inputs,
     validate_html_approval,
@@ -194,6 +196,15 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     if verification == "verified-true":
         if not isinstance(payload, dict) or payload.get("verified") is not True:
             return False
+        if path.name == "verification.json" and path.parent.name == "design":
+            try:
+                project = path.parents[3]
+                _validate_capture_ready_html(
+                    project / "HTML" / "generated",
+                    require_state_marker=_capture_protocol_required(project),
+                )
+            except RuntimeError:
+                return False
         if path.name == "backend-verification.json" and path.parent.name == "evidence":
             project = path.parents[2]
             state = read_json(project / ".ai" / "state.json", {})
@@ -2592,6 +2603,16 @@ def _prompt(
         if node["id"].startswith("verify-") and node["id"].endswith("-design")
         else "Implementation nodes must not mark independent verification artifacts true."
     )
+    if node["id"] == "establish-html-baseline":
+        role_boundary += (
+            " Each approved comparison page must depict one deterministic live UI state. "
+            "Mark its html or body with data-design-state and mark explicit state regions "
+            "with data-design-screen-state. Keep mutually exclusive loading, success, "
+            "empty, error, and "
+            "authorization examples in separate comparison pages or non-baseline design "
+            "documentation; never show them together in one capture. Preserve coverage of "
+            "every required state in the design specification and route/state inventory."
+        )
     if node["id"] == "verify-html-baseline":
         role_boundary = (
             "Independently review the generated HTML against the project specifications. "
@@ -2606,6 +2627,12 @@ def _prompt(
             "verification artifact is the final commit marker for this node. "
             "PRD-only static fallback may defer unavailable browser checks explicitly; supplied "
             "visual sources still require rendered comparison. Never claim omitted checks ran."
+        )
+        role_boundary += (
+            " Reject any baseline page that visibly combines mutually exclusive UI states. "
+            "Render each proposed comparison page and confirm its marked capture state "
+            "is the only visible route state. Keep alternate required states separately "
+            "documented or captured; do not discard their requirement coverage."
         )
         role_boundary += (
             " Before returning a failure, scan every generated document for every applicable "
@@ -2623,7 +2650,9 @@ def _prompt(
             "the defect spans routes, add a focused regression guard to the project checker, "
             "regenerate every affected route, and rerun the complete source checks. For "
             "responsive findings, inspect rendered 320px and 200%-zoom-equivalent layouts "
-            "before returning. Leave independent approval to verify-html-baseline."
+            "before returning. For a state-gallery finding, split the visible states into "
+            "deterministic capture pages while preserving every required state in the route "
+            "inventory. Leave independent approval to verify-html-baseline."
         )
     if phase in {"frontend", "mobile"}:
         role_boundary += (
@@ -3496,7 +3525,8 @@ def _execute_phase_unlocked(
                             f"Independent verification failed. Read {output} as findings, "
                             "repair each actionable implementation or evidence gap, rerun the "
                             "focused baseline checks, and leave independent verification false "
-                            "for the verifier."
+                            "for the verifier. Latest deterministic finding: "
+                            f"{retry_context or 'none'}."
                         ),
                     )
                     repair_suffix = f"--repair-{attempt}"
@@ -3659,6 +3689,14 @@ def _execute_phase_unlocked(
                     ):
                         external_blocker = None
                     message = f"required output failed {node['verification']}: {output}"
+                    if phase == "design" and node["id"] == "verify-html-baseline":
+                        try:
+                            _validate_capture_ready_html(
+                                project / "HTML" / "generated",
+                                require_state_marker=_capture_protocol_required(project),
+                            )
+                        except RuntimeError as error:
+                            message += f"; {error}"
                     if format_errors:
                         message += (
                             "; Evidence format correction only. Preserve HTML and test results; "
