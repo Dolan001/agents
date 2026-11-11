@@ -797,10 +797,13 @@ Verified nodes are keyed by hashes of their declared inputs. Unchanged nodes are
 reused; changed inputs invalidate only affected work. Each failed agentic node gets
 bounded normal retries. The first attempt does not load recovery guidance. A retry
 receives the concise prior failure and the `recover-failure` skill. Before an
-actionable project failure stops the run, a separate recovery agent gets one scoped
+actionable project failure stops the run, a separate recovery agent gets a scoped
 repair pass. Its focused checks do not approve the feature: the original node reruns
-its full checks before the checkpoint advances. Unchanged external blockers and
-failed recovery are recorded in `.ai/failures.jsonl` with the saved checkpoint.
+its full checks before the checkpoint advances. If that rerun reveals a different
+actionable finding, recovery continues in the same invocation, up to six distinct
+findings per node. An unchanged finding stops repeated repair attempts. External
+blockers and failed recovery are recorded in `.ai/failures.jsonl` with the saved
+checkpoint.
 If the recovery agent identifies a defect in the reusable workflow itself, the
 command may create a tested `ai/<owner>/recovery-*` branch and GitHub PR in the
 affected workflow repository, then restart the same command once from its saved
