@@ -17,6 +17,11 @@ OpenAPI hashes.
 After implementation, run the design-fidelity resolver against approved HTML for deterministic
 mobile, tablet, and desktop cases. Repair meaningful drift before the selected frontend verifier
 independently approves `.ai/evidence/design-fidelity/frontend/verification.json`.
+During a feature slice, check the affected routes and their live API journey once the slice is
+implemented. A shared shell or token edit also checks routes that consume it. The final
+design-fidelity gate still covers every approved HTML document; focused captures do not replace
+that complete comparison. Reuse healthy project-scoped browser/backend services with isolated
+test data, and do not repeat installation or image builds when their locked inputs are unchanged.
 For requirement-backed realtime, use the selected framework realtime skill and produce
 `.ai/evidence/realtime/frontend.json`. Require typed events, secure ticket/cookie authentication,
 bounded reconnect with jitter, cursor resync, gap/deduplication handling, degraded/offline states,

@@ -55,6 +55,15 @@ def test_telemetry_contains_no_prompt_or_adapter_output(tmp_path: Path) -> None:
 def test_evaluate_matching_runs_and_reject_mismatch(tmp_path: Path) -> None:
     _run(tmp_path / "codex", "codex")
     _run(tmp_path / "claude", "claude")
+    append_jsonl(tmp_path / "codex/.ai/telemetry/commands.jsonl", {
+        "elapsed_ms": 25, "cached": False,
+    })
+    append_jsonl(tmp_path / "codex/.ai/telemetry/commands.jsonl", {
+        "elapsed_ms": 0, "cached": True,
+    })
+    append_jsonl(tmp_path / "codex/.ai/telemetry/checkpoints.jsonl", {
+        "reused": True,
+    })
     manifest = tmp_path / "comparison.json"
     write_json(
         manifest,
@@ -74,6 +83,9 @@ def test_evaluate_matching_runs_and_reject_mismatch(tmp_path: Path) -> None:
     report = evaluate_manifest(manifest)
     assert report["all_checkpoint_parity"] is True
     assert report["cases"][0]["runs"][0]["prompt_characters"] == len("secret prompt")
+    assert report["cases"][0]["runs"][0]["command_runs"] == 1
+    assert report["cases"][0]["runs"][0]["command_cache_hits"] == 1
+    assert report["cases"][0]["runs"][0]["verified_checkpoint_reuse"] == 1
     assert main(["evaluate-adapters", "--manifest", str(manifest)]) == 0
     (tmp_path / "claude/PRD.md").write_text("# Different product\n", encoding="utf-8")
     assert evaluate_manifest(manifest)["all_comparable"] is False
@@ -146,3 +158,23 @@ def test_only_approved_phase_lessons_enter_prompt(tmp_path: Path) -> None:
     prompt, _ = _prompt(tmp_path, "requirements", node, state, None, [])
     assert "Check requirement identifiers." in prompt
     assert "Do not leak this to requirements." not in prompt
+
+
+def test_verification_lane_keeps_full_suite_at_gate(tmp_path: Path) -> None:
+    node = {
+        "id": "reconcile-current-state", "agent": "requirements-reconciliation-agent",
+        "required_output": "docs/generated/requirement-reconciliation.json",
+        "verification": "schema", "verification_lane": "focused",
+    }
+    state = {
+        "frameworks": {"frontend": "unknown", "mobile": "unknown", "desktop": "unknown",
+                       "python_package": "unknown", "backend": "unknown", "deployment": "unknown"},
+        "capabilities": {"rag": False, "webscraping": False}, "assumptions": [],
+    }
+    focused, _ = _prompt(tmp_path, "requirements", node, state, None, [])
+    assert "Verification lane: focused" in focused
+    assert "orchestrator owns the complete phase matrix" in focused
+    node["verification_lane"] = "phase-gate"
+    full, _ = _prompt(tmp_path, "requirements", node, state, None, [])
+    assert "Verification lane: phase-gate" in full
+    assert "reject stale or incomplete evidence" in full

@@ -23,8 +23,10 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from .commands import run_command_groups
 from .design import (
+    _capture_protocol_required,
     _source_checks_passed,
     _tree_hashes,
+    _validate_capture_ready_html,
     approve_generated_html,
     classify_design_inputs,
     validate_html_approval,
@@ -194,6 +196,15 @@ def _artifact_ok(path: Path, verification: str) -> bool:
     if verification == "verified-true":
         if not isinstance(payload, dict) or payload.get("verified") is not True:
             return False
+        if path.name == "verification.json" and path.parent.name == "design":
+            try:
+                project = path.parents[3]
+                _validate_capture_ready_html(
+                    project / "HTML" / "generated",
+                    require_state_marker=_capture_protocol_required(project),
+                )
+            except RuntimeError:
+                return False
         if path.name == "backend-verification.json" and path.parent.name == "evidence":
             project = path.parents[2]
             state = read_json(project / ".ai" / "state.json", {})
@@ -947,6 +958,50 @@ def _recoverable_project_failure(reason: str | None, evidence_path: Path | None 
             "needs_input", "needs input", "credential", "rate limit",
         )
     )
+
+
+def _project_failure_signature(result: dict[str, Any], evidence_path: Path) -> str:
+    """Identify the actual finding, ignoring timestamps and successful checks."""
+    evidence = read_json(evidence_path, {})
+    findings: list[Any] = []
+    if isinstance(evidence, dict):
+        for key in ("checks", "reviews", "findings"):
+            values = evidence.get(key, [])
+            if isinstance(values, list):
+                findings.extend(
+                    {"kind": key, "finding": value}
+                    for value in values
+                    if isinstance(value, dict)
+                    and (
+                        key == "findings"
+                        or str(value.get("status", "")).lower()
+                        in {"failed", "blocked", "rejected"}
+                    )
+                )
+        recovery = evidence.get("recovery")
+        if isinstance(recovery, dict):
+            findings.append({
+                "kind": "recovery",
+                "finding": {
+                    key: recovery.get(key)
+                    for key in (
+                        "classification", "reason", "next_action",
+                        "retryable_without_new_evidence",
+                    )
+                    if key in recovery
+                },
+            })
+    if not findings:
+        findings = [
+            " ".join(str(result.get(key, "")).split())[-1000:]
+            for key in ("stderr_tail", "stdout_tail")
+        ]
+    encoded = json.dumps(
+        {"returncode": result.get("returncode"), "findings": findings},
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _run_final_project_recovery(
@@ -2548,6 +2603,16 @@ def _prompt(
         if node["id"].startswith("verify-") and node["id"].endswith("-design")
         else "Implementation nodes must not mark independent verification artifacts true."
     )
+    if node["id"] == "establish-html-baseline":
+        role_boundary += (
+            " Each approved comparison page must depict one deterministic live UI state. "
+            "Mark its html or body with data-design-state and mark explicit state regions "
+            "with data-design-screen-state. Keep mutually exclusive loading, success, "
+            "empty, error, and "
+            "authorization examples in separate comparison pages or non-baseline design "
+            "documentation; never show them together in one capture. Preserve coverage of "
+            "every required state in the design specification and route/state inventory."
+        )
     if node["id"] == "verify-html-baseline":
         role_boundary = (
             "Independently review the generated HTML against the project specifications. "
@@ -2562,6 +2627,12 @@ def _prompt(
             "verification artifact is the final commit marker for this node. "
             "PRD-only static fallback may defer unavailable browser checks explicitly; supplied "
             "visual sources still require rendered comparison. Never claim omitted checks ran."
+        )
+        role_boundary += (
+            " Reject any baseline page that visibly combines mutually exclusive UI states. "
+            "Render each proposed comparison page and confirm its marked capture state "
+            "is the only visible route state. Keep alternate required states separately "
+            "documented or captured; do not discard their requirement coverage."
         )
         role_boundary += (
             " Before returning a failure, scan every generated document for every applicable "
@@ -2579,7 +2650,9 @@ def _prompt(
             "the defect spans routes, add a focused regression guard to the project checker, "
             "regenerate every affected route, and rerun the complete source checks. For "
             "responsive findings, inspect rendered 320px and 200%-zoom-equivalent layouts "
-            "before returning. Leave independent approval to verify-html-baseline."
+            "before returning. For a state-gallery finding, split the visible states into "
+            "deterministic capture pages while preserving every required state in the route "
+            "inventory. Leave independent approval to verify-html-baseline."
         )
     if phase in {"frontend", "mobile"}:
         role_boundary += (
@@ -2711,7 +2784,9 @@ def _prompt(
             "operation required by the selected client tasks; checking only that operation IDs "
             "exist in OpenAPI is insufficient. Record and test operation coverage before marking "
             "the foundation ready. Run focused foundation and contract checks, register "
-            "project commands in .ai/test-commands.json and write truthful foundation evidence."
+            "project commands in .ai/test-commands.json and write truthful foundation evidence. "
+            "Cache only declared read-only static checks with complete inputs; never cache live "
+            "API, browser, security, or device checks."
         )
         if phase == "frontend":
             role_boundary += (
@@ -2774,7 +2849,24 @@ def _prompt(
             "directory cleanup without logging credentials. Derive service assertions and numeric "
             "identifiers from the implementation or configuration; never guess hard-coded lock IDs "
             "or other runtime constants. Do not write backend-verification.json "
-            "or claim independent approval."
+            "or claim independent approval. Mark only read-only static commands with "
+            "cache mode static, read_only true, and complete input patterns in the approved "
+            "manifest; live PostgreSQL, HTTP, browser, security, and migration checks are "
+            "never cacheable. Declare parallel_safe only for independent static checks."
+        )
+    lane = node.get("verification_lane")
+    if lane == "focused":
+        role_boundary += (
+            "\nVerification lane: focused. Finish this feature first, then run the smallest "
+            "relevant static and live checks once. The orchestrator owns the complete phase "
+            "matrix. A failed focused check requires a specific fix and recheck."
+        )
+    elif lane == "phase-gate":
+        role_boundary += (
+            "\nVerification lane: phase-gate. Audit current hash-bound command results and "
+            "run every required live, contract, security, and design check not already "
+            "proved by the owning gate. Do not rerun an unchanged complete matrix solely "
+            "to duplicate its passing evidence; reject stale or incomplete evidence."
         )
     prompt = f"""You are executing one controlled node of a production workflow.
 
@@ -3056,7 +3148,7 @@ def _run_deterministic(project: Path, phase: str, action: str, state: dict[str, 
             for group in phase_groups
             if isinstance(configured, dict) and configured.get(group)
         ]
-        run_command_groups(project, groups)
+        run_command_groups(project, groups, require_fresh=True)
     elif action == "validate_project_test_commands":
         _validate_project_test_commands(project, phase)
     elif action == "aggregate_feature_evidence":
@@ -3310,6 +3402,9 @@ def _execute_phase_unlocked(
                 and checkpoint.get("cache_key") == cache_key
                 and _artifact_ok(output_path, node["verification"])
             ):
+                append_jsonl(project / ".ai/telemetry/checkpoints.jsonl", {
+                    "at": utc_now(), "identity": identity, "reused": True,
+                })
                 continue
             if (
                 phase == "backend"
@@ -3430,7 +3525,8 @@ def _execute_phase_unlocked(
                             f"Independent verification failed. Read {output} as findings, "
                             "repair each actionable implementation or evidence gap, rerun the "
                             "focused baseline checks, and leave independent verification false "
-                            "for the verifier."
+                            "for the verifier. Latest deterministic finding: "
+                            f"{retry_context or 'none'}."
                         ),
                     )
                     repair_suffix = f"--repair-{attempt}"
@@ -3593,6 +3689,14 @@ def _execute_phase_unlocked(
                     ):
                         external_blocker = None
                     message = f"required output failed {node['verification']}: {output}"
+                    if phase == "design" and node["id"] == "verify-html-baseline":
+                        try:
+                            _validate_capture_ready_html(
+                                project / "HTML" / "generated",
+                                require_state_marker=_capture_protocol_required(project),
+                            )
+                        except RuntimeError as error:
+                            message += f"; {error}"
                     if format_errors:
                         message += (
                             "; Evidence format correction only. Preserve HTML and test results; "
@@ -3764,9 +3868,23 @@ def _execute_phase_unlocked(
                     and _artifact_ok(output_path, node["verification"])
                 )
                 workflow_repair_proposal: Path | None = None
-                if not resolved and _recoverable_project_failure(
-                    nonretryable_class, output_path
-                ) and current_contract is not None:
+                recovery_limit = int(
+                    pipeline["execution"].get("maximum_distinct_recoveries_per_node", 6)
+                )
+                seen_findings: set[str] = set()
+                for recovery_attempt in range(1, recovery_limit + 1):
+                    if resolved or current_contract is None or not _recoverable_project_failure(
+                        nonretryable_class, output_path
+                    ):
+                        break
+                    finding = _project_failure_signature(result, output_path)
+                    if finding in seen_findings:
+                        failure_reasons.append(
+                            "the same finding remained after a focused recovery; "
+                            "stopping to avoid repeating the repair"
+                        )
+                        break
+                    seen_findings.add(finding)
                     try:
                         recovered, recovery_reason = _run_final_project_recovery(
                             project, adapter, phase, node, state, feature, output, current_contract
@@ -3785,51 +3903,61 @@ def _execute_phase_unlocked(
                             project / ".ai" / "workflow-pr-proposals"
                             / f"{phase}-{feature_id}.json"
                         )
-                    if recovered:
-                        retry_prompt, retry_contract = _prompt(
+                    if not recovered:
+                        break
+                    retry_prompt, retry_contract = _prompt(
+                        project,
+                        phase,
+                        node,
+                        state,
+                        feature,
+                        inputs,
+                        f"A separately leased recovery pass completed: {recovery_reason}. "
+                        "Rerun the original checks against the changed source and write "
+                        "fresh evidence; do not inherit a pass from recovery evidence.",
+                    )
+                    _acquire_path_lease(project, retry_contract)
+                    try:
+                        started = time.monotonic()
+                        result = _run_adapter(project, adapter, retry_prompt)
+                        record_attempt(
                             project,
-                            phase,
-                            node,
-                            state,
-                            feature,
-                            inputs,
-                            f"A separately leased recovery pass completed: {recovery_reason}. "
-                            "Rerun the original checks against the changed source and write "
-                            "fresh evidence; do not inherit a pass from recovery evidence.",
+                            identity=f"{identity}/post-recovery-{recovery_attempt}",
+                            adapter=adapter,
+                            agent=node["agent"],
+                            skills=[str(workflow_root() / "base/skills/recover-failure/SKILL.md")],
+                            prompt=retry_prompt,
+                            elapsed_ms=round((time.monotonic() - started) * 1000),
+                            result=result,
                         )
-                        _acquire_path_lease(project, retry_contract)
-                        try:
-                            started = time.monotonic()
-                            result = _run_adapter(project, adapter, retry_prompt)
-                            record_attempt(
-                                project,
-                                identity=f"{identity}/post-recovery",
-                                adapter=adapter,
-                                agent=node["agent"],
-                                skills=[
-                                    str(workflow_root() / "base/skills/recover-failure/SKILL.md")
-                                ],
-                                prompt=retry_prompt,
-                                elapsed_ms=round((time.monotonic() - started) * 1000),
-                                result=result,
-                            )
-                        finally:
-                            _release_path_lease(project, retry_contract["task_id"])
-                        write_json(
-                            project / ".ai" / "logs"
-                            / f"{identity.replace('/', '--')}--post-recovery.json",
-                            result,
+                    finally:
+                        _release_path_lease(project, retry_contract["task_id"])
+                    write_json(
+                        project / ".ai" / "logs"
+                        / f"{identity.replace('/', '--')}--post-recovery-{recovery_attempt}.json",
+                        result,
+                    )
+                    resolved = bool(
+                        result.get("returncode") == 0
+                        and _artifact_ok(output_path, node["verification"])
+                    )
+                    if resolved:
+                        nonretryable_class = None
+                        break
+                    if result.get("returncode") != 0:
+                        concise, retryable = _concise_adapter_failure(result)
+                        nonretryable_class = None if retryable else concise
+                    else:
+                        nonretryable_class = _artifact_external_blocker(output_path)
+                    failure_reasons.append(
+                        "original node found another issue after recovery; "
+                        "checking its fresh evidence"
+                    )
+                else:
+                    if not resolved:
+                        failure_reasons.append(
+                            f"{recovery_limit} distinct recovery passes were used for this node"
                         )
-                        resolved = bool(
-                            result.get("returncode") == 0
-                            and _artifact_ok(output_path, node["verification"])
-                        )
-                        if resolved:
-                            nonretryable_class = None
-                        else:
-                            failure_reasons.append(
-                                "original node still failed after the bounded recovery pass"
-                            )
                 if resolved and workflow_repair_proposal is not None:
                     # A reusable improvement must not invalidate the project fix that
                     # already passed the original gate. Publish its PR separately.

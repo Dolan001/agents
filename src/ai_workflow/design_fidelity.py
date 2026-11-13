@@ -9,6 +9,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
+from .design import _capture_protocol_required, capture_state
 from .io import read_json, write_json
 from .model import StateStore, utc_now
 from .pipeline import node_cache_key, workflow_root
@@ -169,6 +170,20 @@ def validate_design_fidelity_comparison(
             or baseline_path.suffix.lower() not in {".html", ".htm"}
         ):
             failures.append(f"design case has invalid approved HTML: {case.get('id')}")
+        else:
+            try:
+                baseline_state = capture_state(
+                    baseline_path,
+                    require_explicit_region=_capture_protocol_required(project),
+                )
+            except RuntimeError as error:
+                failures.append(str(error))
+            else:
+                if baseline_state and baseline_state != case.get("state"):
+                    failures.append(
+                        f"design case state does not match approved HTML: {case.get('id')} "
+                        f"expected={baseline_state} actual={case.get('state')}"
+                    )
         case_id = case.get("id")
         artifacts = {
             key: _owned(project, str(case.get(key, "")))

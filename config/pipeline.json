@@ -101,6 +101,7 @@
     "parallelism_requires_disjoint_path_leases": true,
     "prioritize_critical_path": true,
     "maximum_retries_per_failure": 2,
+    "maximum_distinct_recoveries_per_node": 6,
     "agentic_nodes_require_artifact_contracts": true,
     "resume_from_last_verified_node": true,
     "remote_push_enabled_by_default": false,

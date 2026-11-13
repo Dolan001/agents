@@ -80,8 +80,10 @@ def evaluate_manifest(path: Path) -> dict[str, Any]:
         if len(set(adapters)) != len(case["runs"]):
             raise ValueError("each evaluation case requires distinct adapter names")
         required_nodes = case.get("required_nodes", [])
-        if not isinstance(required_nodes, list) or not required_nodes or not all(
-            isinstance(item, str) for item in required_nodes
+        if (
+            not isinstance(required_nodes, list)
+            or not required_nodes
+            or not all(isinstance(item, str) for item in required_nodes)
         ):
             raise ValueError("required_nodes must name at least one checkpoint identity")
         rows = []
@@ -101,6 +103,8 @@ def evaluate_manifest(path: Path) -> dict[str, Any]:
             if not isinstance(nodes, dict):
                 nodes = {}
             attempts = _jsonl(project / ".ai" / "telemetry" / "attempts.jsonl")
+            command_attempts = _jsonl(project / ".ai" / "telemetry" / "commands.jsonl")
+            checkpoints_used = _jsonl(project / ".ai" / "telemetry" / "checkpoints.jsonl")
             failures = _jsonl(project / ".ai" / "failures.jsonl")
             verified = sorted(
                 key
@@ -123,6 +127,16 @@ def evaluate_manifest(path: Path) -> dict[str, Any]:
                     "failure_records": len(failures),
                     "prompt_characters": sum(item.get("prompt_characters", 0) for item in attempts),
                     "elapsed_ms": sum(item.get("elapsed_ms", 0) for item in attempts),
+                    "command_runs": sum(not item.get("cached", False) for item in command_attempts),
+                    "command_cache_hits": sum(
+                        bool(item.get("cached")) for item in command_attempts
+                    ),
+                    "command_elapsed_ms": sum(
+                        item.get("elapsed_ms", 0) for item in command_attempts
+                    ),
+                    "verified_checkpoint_reuse": sum(
+                        bool(item.get("reused")) for item in checkpoints_used
+                    ),
                 }
             )
         comparable = (
