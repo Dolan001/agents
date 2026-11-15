@@ -35,8 +35,8 @@ def test_workflow_repair_tests_publishes_pr_and_keeps_branch(
     source = tmp_path / "src/engine.py"
     source.parent.mkdir()
     source.write_text("before\n")
-    proposal_path = tmp_path / ".ai/proposal.json"
-    proposal_path.parent.mkdir()
+    proposal_path = tmp_path / ".ai/workflow-pr-proposals/feature.json"
+    proposal_path.parent.mkdir(parents=True)
     proposal_path.write_text(json.dumps({
         "status": "PR_REQUIRED",
         "findings": [{"paths": ["src/engine.py"], "details": "Retry loop drops state."}],
@@ -84,10 +84,121 @@ def test_workflow_repair_tests_publishes_pr_and_keeps_branch(
     )
     result = recovery.repair_workflow_and_open_pr(tmp_path, "codex-reviewed", proposal_path)
     assert result["url"] == "https://github.com/Dolan001/agents/pull/3"
-    assert json.loads(proposal_path.read_text())["status"] == "PR_OPEN"
+    proposal = json.loads(proposal_path.read_text())
+    assert proposal["status"] == "PR_OPEN"
+    assert proposal["merge_approval"] == {"status": "required"}
+    assert recovery.pending_workflow_merge_approvals(tmp_path) == [{
+        "pr_url": "https://github.com/Dolan001/agents/pull/3",
+        "repository": "Dolan001/agents",
+        "base_branch": "dev",
+        "proposal": ".ai/workflow-pr-proposals/feature.json",
+    }]
     assert any(argv[:2] == ["git", "push"] for argv in commands)
     assert any(argv[:3] == ["gh", "pr", "create"] for argv in commands)
+    assert not any(argv[:3] == ["gh", "pr", "merge"] for argv in commands)
     monkeypatch.delenv("AI_WORKFLOW_PR_ATTEMPTED")
+
+
+def test_only_open_agent_prs_request_merge_approval(tmp_path: Path) -> None:
+    directory = tmp_path / ".ai/workflow-pr-proposals"
+    directory.mkdir(parents=True)
+    (directory / "closed.json").write_text(json.dumps({
+        "status": "MERGED", "pr_url": "https://github.com/Dolan001/agents/pull/5",
+        "merge_approval": {"status": "required"},
+    }))
+    (directory / "other.json").write_text(json.dumps({
+        "status": "PR_OPEN", "pr_url": "https://github.com/Dolan001/base/pull/7",
+    }))
+    assert recovery.pending_workflow_merge_approvals(tmp_path) == []
+
+
+def test_project_status_exposes_pending_workflow_merge_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    directory = tmp_path / ".ai/workflow-pr-proposals"
+    directory.mkdir(parents=True)
+    (directory / "backend.json").write_text(json.dumps({
+        "status": "PR_OPEN",
+        "pr_url": "https://github.com/Dolan001/agents/pull/8",
+        "repository": "Dolan001/agents",
+        "base_branch": "dev",
+        "merge_approval": {"status": "required"},
+    }))
+    monkeypatch.setattr(cli, "resolved_project", lambda _project: tmp_path)
+    monkeypatch.setattr(cli, "StateStore", lambda _project: argparse.Namespace(
+        load=lambda: {"project_id": "example", "status": "running", "current_phase": "backend"}
+    ))
+    monkeypatch.setattr(cli, "issue_summary", lambda _project: {})
+    monkeypatch.setattr(cli, "selected_pack_status", lambda _project: {})
+    monkeypatch.setattr(cli, "progress_snapshot", lambda _project: {})
+    assert cli.command_status(argparse.Namespace(project=str(tmp_path), json=True)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["workflow_merge_approvals"][0]["pr_url"].endswith("/pull/8")
+
+
+def test_project_merge_requires_exact_head_and_records_github_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / ".ai/workflow-pr-proposals"
+    directory.mkdir(parents=True)
+    proposal_path = directory / "backend.json"
+    url = "https://github.com/Dolan001/agents/pull/8"
+    proposal_path.write_text(json.dumps({
+        "status": "PR_OPEN", "pr_url": url, "commit": "abc123",
+        "repository": "Dolan001/agents", "base_branch": "dev",
+        "merge_approval": {"status": "required"},
+    }))
+    commands: list[list[str]] = []
+    merged = False
+
+    def command(_repo: Path, argv: list[str], **_kwargs: object) -> str:
+        nonlocal merged
+        commands.append(argv)
+        if argv[:3] == ["gh", "pr", "view"]:
+            return json.dumps({
+                "state": "MERGED" if merged else "OPEN",
+                "baseRefName": "dev", "headRefOid": "abc123",
+                "mergeable": "MERGEABLE", "mergeCommit": {"oid": "merge456"},
+            })
+        if argv[:3] == ["gh", "pr", "merge"]:
+            assert argv[-2:] == ["--match-head-commit", "abc123"]
+            merged = True
+            return ""
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(recovery, "_command", command)
+    assert recovery.merge_approved_workflow_pr(tmp_path, url)["base_branch"] == "dev"
+    saved = json.loads(proposal_path.read_text())
+    assert saved["status"] == "MERGED"
+    assert saved["merge_commit"] == "merge456"
+    assert recovery.pending_workflow_merge_approvals(tmp_path) == []
+    assert len([argv for argv in commands if argv[:3] == ["gh", "pr", "merge"]]) == 1
+
+
+def test_project_merge_rejects_changed_pr_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / ".ai/workflow-pr-proposals"
+    directory.mkdir(parents=True)
+    url = "https://github.com/Dolan001/agents/pull/8"
+    (directory / "backend.json").write_text(json.dumps({
+        "status": "PR_OPEN", "pr_url": url, "commit": "abc123",
+        "repository": "Dolan001/agents", "base_branch": "dev",
+        "merge_approval": {"status": "required"},
+    }))
+    commands: list[list[str]] = []
+
+    def command(_repo: Path, argv: list[str], **_kwargs: object) -> str:
+        commands.append(argv)
+        return json.dumps({
+            "state": "OPEN", "baseRefName": "dev", "headRefOid": "changed",
+            "mergeable": "MERGEABLE",
+        })
+
+    monkeypatch.setattr(recovery, "_command", command)
+    with pytest.raises(RuntimeError, match="head changed"):
+        recovery.merge_approved_workflow_pr(tmp_path, url)
+    assert not any(argv[:3] == ["gh", "pr", "merge"] for argv in commands)
 
 
 def test_cli_restarts_original_command_once_after_workflow_pr(

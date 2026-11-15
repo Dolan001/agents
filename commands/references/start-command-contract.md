@@ -44,6 +44,17 @@ These entrypoints execute work; they are not explanatory prompt templates.
    Inspect evidence when the node finishes, stalls beyond its timeout, or reports a
    new failure. Concise progress updates may report a real transition without
    re-reading unchanged files.
+   When a project run creates a review PR in the shared `agents` repository, continue
+   the saved project build without waiting for a merge. Before the project-session
+   response ends, verify that PR is still open and ask the user there for explicit
+   approval to merge that exact PR into its recorded base branch. The CLI records
+   pending requests in `.ai/workflow-pr-proposals/` and `ai status --json` under
+   `workflow_merge_approvals`. Never merge from the recovery agent, infer approval
+   from a successful project gate, or ask in a separate shared-workflow session.
+   If the user approves, run `./.agents/bin/ai workflow-pr-merge --project .
+   --approve PR_URL` in that project. It must recheck the exact PR head, repository,
+   base branch, and mergeability before merging and clear the pending request only
+   after GitHub confirms the merge.
 8. Preserve durable `.ai` checkpoints. When an implementation check identifies an exact existing
    shared application file outside the active lease, the orchestrator may run separately leased
    repairs for distinct findings within the existing retry budget and retry the slice before
