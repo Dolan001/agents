@@ -39,6 +39,11 @@ These entrypoints execute work; they are not explanatory prompt templates.
 7. Pass arguments directly to the Codex workflow CLI. Never add `--push`,
    `--commit-verified`, live deployment, cloud mutation, or merge behavior
    unless explicitly requested.
+   Keep one attached workflow process. Wait for its output or a meaningful checkpoint
+   transition; do not repeatedly run status, list logs, or narrate an unchanged lease.
+   Inspect evidence when the node finishes, stalls beyond its timeout, or reports a
+   new failure. Concise progress updates may report a real transition without
+   re-reading unchanged files.
 8. Preserve durable `.ai` checkpoints. When an implementation check identifies an exact existing
    shared application file outside the active lease, the orchestrator may run separately leased
    repairs for distinct findings within the existing retry budget and retry the slice before

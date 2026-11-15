@@ -24,8 +24,13 @@ Build dependencies only when the Dockerfile or dependency manifests/locks change
 changes, mount current source into the project-owned service or test container. Never run `docker
 compose up --build` for every feature. Remove one-off containers and disposable databases
 after each check without stopping shared services. Tag the dependency image with the deterministic
-project name and label it `ai.workflow.project=<compose-project>`. After the final backend verifier
-passes, run a project-scoped Compose down with volumes and orphans removed. Delete only dangling
+project name and label it `ai.workflow.project=<compose-project>`.
+Run focused PostgreSQL/API checks after each completed slice and the approved full matrix at the
+backend gate. A migration, OpenAPI, shared model, auth, or realtime change rechecks every
+dependent journey. Reuse a current healthy Compose stack with isolated verification data; a
+cached static result never substitutes for a live database round-trip.
+After the final backend verifier passes, run a project-scoped Compose down with volumes and
+orphans removed. Delete only dangling
 images carrying that exact workflow-project label; retain one current tagged dependency image for
 later frontend/mobile integration. Never use unfiltered/global Docker prune as workflow cleanup and
 never remove unrelated running workloads, volumes, images, or caches.

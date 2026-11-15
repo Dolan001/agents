@@ -15,6 +15,9 @@ iframe, displaying a screenshot, or placing a transparent copy over the applicat
 Map every approved route or screen and required state to deterministic cases. Cover loading, empty,
 success, validation, unauthorized, forbidden, error, retry, disabled, selected, focus, hover where
 applicable, long content, overflow, zoom/text scaling, and localization required by the PRD.
+Each case's `state` must match the approved page's `data-design-state` marker. A comparison
+page must show only that state; separate pages represent mutually exclusive states. Do not
+compare a live route to a static gallery of all possible outcomes.
 
 ## Deterministic captures
 

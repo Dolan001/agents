@@ -435,6 +435,10 @@ the HTML yourself if desired; personal review is optional. It runs `$start-desig
 automatically when the design specification is missing or stale. `$start-frontend` consumes
 that verified baseline and runs only frontend work. Missing or stale prerequisites
 produce a recovery command; frontend does not regenerate HTML automatically.
+HTML approval now checks that each comparison page represents one deterministic
+visible UI state. Alternate states belong in separate comparison pages or design
+documentation. The later design-fidelity case must name the same state, so a static
+all-states gallery cannot pass HTML approval and fail only after frontend work.
 
 `$start-build` runs the combined lifecycle. Other stage commands retain prerequisite
 orchestration. For web/mobile, the normal order is requirements and contracts, verified backend,
@@ -797,10 +801,13 @@ Verified nodes are keyed by hashes of their declared inputs. Unchanged nodes are
 reused; changed inputs invalidate only affected work. Each failed agentic node gets
 bounded normal retries. The first attempt does not load recovery guidance. A retry
 receives the concise prior failure and the `recover-failure` skill. Before an
-actionable project failure stops the run, a separate recovery agent gets one scoped
+actionable project failure stops the run, a separate recovery agent gets a scoped
 repair pass. Its focused checks do not approve the feature: the original node reruns
-its full checks before the checkpoint advances. Unchanged external blockers and
-failed recovery are recorded in `.ai/failures.jsonl` with the saved checkpoint.
+its full checks before the checkpoint advances. If that rerun reveals a different
+actionable finding, recovery continues in the same invocation, up to six distinct
+findings per node. An unchanged finding stops repeated repair attempts. External
+blockers and failed recovery are recorded in `.ai/failures.jsonl` with the saved
+checkpoint.
 If the recovery agent identifies a defect in the reusable workflow itself, the
 command may create a tested `ai/<owner>/recovery-*` branch and GitHub PR in the
 affected workflow repository, then restart the same command once from its saved
@@ -930,6 +937,21 @@ failed artifact and resume after correcting the actual cause.
   original verifier. Reusable workflow defects use a separate repository lease,
   tested review branch, and PR; a PR alone never approves a project gate.
 - Verified-node caching and durable checkpoints prevent unchanged work from repeating.
+- Feature agents run focused checks after completing a slice. Full live PostgreSQL, API,
+  browser, and design suites remain required at their owning phase gates. Shared contract,
+  migration, auth, realtime, and design-token changes invalidate dependent checks.
+- Approved read-only static commands may opt in to result reuse with a `cache` declaration in
+  `.ai/test-commands.json`: `{"mode":"static","read_only":true,"inputs":["src/**/*.py"]}`.
+  The runner fingerprints the whole project source tree, those explicit inputs, the executable,
+  and its environment. Live commands and failed checks are never cached. Do not mark a command
+  static if it reads a live service, mutates project files, or depends on undeclared generated data.
+  Command duration and cache hits are recorded in `.ai/telemetry/commands.jsonl`.
+  Final phase test matrices force a fresh run even for declared static checks.
+  Reused verified nodes are counted in `.ai/telemetry/checkpoints.jsonl`; the evaluation
+  report includes command time, cache hits, and checkpoint reuse alongside adapter time.
+  A group whose every command is independently read-only and static may set
+  `parallel_safe:true` on each command; the runner then uses at most two workers and preserves
+  report order. Mixed or live groups stay sequential.
 - Document candidate repair preserves passing files and regenerates only validation-affected
   candidates; the orchestrator rejects repairs outside the declared target set.
 - Inputs, PRD text, HTML, screenshots, and token contents are treated as untrusted data.

@@ -7,6 +7,12 @@
 - Every write must belong to a validated task contract and an active path lease.
 - An agent may not verify its own implementation.
 - Deterministic checks produce captured evidence; self-reported success is insufficient.
+- Finish a leased feature before running its focused checks. Run a check sooner only when
+  a failure prevents further implementation. Keep passing full-matrix evidence for the
+  owning phase gate; do not rerun the same full suite after each edit or retry.
+- A changed API contract, migration, shared authentication/realtime module, or shared
+  design token invalidates all dependent focused checks. Never reuse a live result
+  solely because source files are unchanged.
 - Retry the same failure at most twice, then escalate with evidence.
 - Never push by default. A push requires an explicit execute flag and a safe
   `ai/<user>/<feature>` branch.

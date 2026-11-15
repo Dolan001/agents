@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import shutil
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +87,109 @@ def _validate_prd_only_html_semantics(project: Path, root: Path) -> None:
         raise RuntimeError("PRD-only HTML semantic checks failed: " + "; ".join(failures))
 
 
+class _CaptureStateParser(HTMLParser):
+    """Count explicitly marked states visible in a static comparison document."""
+
+    _VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+        "meta", "param", "source", "track", "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.expected: str | None = None
+        self.expected_values: set[str] = set()
+        self.visible: set[str] = set()
+        self.marked = False
+        self._hidden: list[bool] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag in {"html", "body"} and values.get("data-design-state"):
+            self.expected = values["data-design-state"]
+            self.expected_values.add(self.expected)
+        style = (values.get("style") or "").replace(" ", "").lower()
+        hidden = bool(self._hidden and self._hidden[-1]) or (
+            "hidden" in values
+            or (values.get("aria-hidden") or "").lower() == "true"
+            or "display:none" in style
+            or "visibility:hidden" in style
+        )
+        if tag not in self._VOID_TAGS:
+            self._hidden.append(hidden)
+        state = values.get("data-design-screen-state")
+        classes = set((values.get("class") or "").split())
+        if not state and classes.intersection({"state-card", "state-example", "state-panel"}):
+            # Catch older design galleries without treating component-library
+            # data-state attributes (for example, an open menu) as screen states.
+            state = values.get("data-state")
+        if state:
+            self.marked = True
+            if not hidden:
+                self.visible.add(state)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in self._VOID_TAGS:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in self._VOID_TAGS and self._hidden:
+            self._hidden.pop()
+
+
+def capture_state(path: Path, *, require_explicit_region: bool = False) -> str | None:
+    """Reject an approved page that cannot represent one live UI state."""
+    parser = _CaptureStateParser()
+    parser.feed(path.read_text(encoding="utf-8", errors="replace"))
+    if len(parser.expected_values) > 1:
+        raise RuntimeError(
+            f"HTML comparison baseline declares conflicting capture states: {path}"
+        )
+    if require_explicit_region and not parser.marked:
+        raise RuntimeError(
+            f"HTML comparison baseline lacks a data-design-screen-state region: {path}"
+        )
+    if len(parser.visible) > 1:
+        raise RuntimeError(
+            f"HTML comparison baseline shows multiple visible UI states: {path}; "
+            "create one deterministic state per comparison page"
+        )
+    if require_explicit_region and not parser.visible:
+        raise RuntimeError(
+            f"HTML comparison baseline has no visible screen-state region: {path}"
+        )
+    if parser.marked and not parser.expected:
+        raise RuntimeError(
+            f"HTML comparison baseline lacks data-design-state: {path}"
+        )
+    if parser.visible and parser.expected not in parser.visible:
+        raise RuntimeError(
+            f"HTML comparison baseline state marker disagrees with visible state: {path}"
+        )
+    return parser.expected
+
+
+def _validate_capture_ready_html(root: Path, *, require_state_marker: bool = False) -> None:
+    pages = sorted(
+        path for path in root.rglob("*")
+        if path.is_file() and path.suffix.lower() in HTML_SUFFIXES
+    ) if root.is_dir() else []
+    if not pages:
+        raise RuntimeError(f"HTML comparison baseline has no HTML pages: {root}")
+    for path in pages:
+        state = capture_state(path, require_explicit_region=require_state_marker)
+        if require_state_marker and not state:
+            raise RuntimeError(
+                f"HTML comparison baseline lacks data-design-state: {path}"
+            )
+
+
+def _capture_protocol_required(project: Path) -> bool:
+    routing = read_json(project / ".ai" / "design-inputs.json", {})
+    return isinstance(routing, dict) and routing.get("capture_protocol") == "single-state-v1"
+
+
 def ingest_design_inputs(
     project: Path, html: list[str] | None = None, screenshots: list[str] | None = None
 ) -> list[str]:
@@ -143,6 +247,7 @@ def classify_design_inputs(project: Path) -> dict[str, Any]:
 
     report = {
         "version": 1,
+        "capture_protocol": "single-state-v1",
         "mode": mode,
         "required_action": action,
         "html": [describe(path) for path in html],
@@ -194,6 +299,9 @@ def approve_generated_html(project: Path) -> dict[str, Any]:
             "HTML/generated changed after source checks; rerun $start-generatehtml before approval"
         )
     _validate_prd_only_html_semantics(project, generated)
+    _validate_capture_ready_html(
+        generated, require_state_marker=_capture_protocol_required(project)
+    )
 
     approved = project / "HTML" / "approved"
     staging = project / "HTML" / ".approved-workflow-staging"
@@ -255,6 +363,9 @@ def validate_html_approval(project: Path) -> dict[str, Any]:
     if approval.get("approved_hashes") != _tree_hashes(approved, approved):
         raise RuntimeError("HTML owner approval is stale because the approved baseline changed")
     _validate_prd_only_html_semantics(project, approved)
+    _validate_capture_ready_html(
+        approved, require_state_marker=_capture_protocol_required(project)
+    )
     return approval
 
 
