@@ -211,10 +211,9 @@ def _validate_capture_ready_html(root: Path, *, require_state_marker: bool = Fal
             raise RuntimeError(
                 f"HTML comparison baseline lacks data-design-state: {path}"
             )
-        source = path.read_text(encoding="utf-8", errors="replace")
-        if state in {"success", "default", "empty"} and "Task status and next action" in source:
+        if state in {"success", "default", "empty"}:
             parser = _PrimaryTaskParser()
-            parser.feed(source)
+            parser.feed(path.read_text(encoding="utf-8", errors="replace"))
             if parser.generic_status and not parser.primary_task:
                 raise RuntimeError(
                     f"HTML comparison baseline is a generic status card without the route's "
