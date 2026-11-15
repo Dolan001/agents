@@ -2611,7 +2611,10 @@ def _prompt(
             "empty, error, and "
             "authorization examples in separate comparison pages or non-baseline design "
             "documentation; never show them together in one capture. Preserve coverage of "
-            "every required state in the design specification and route/state inventory."
+            "every required state in the design specification and route/state inventory. "
+            "Render the route's real primary task and layout (for example, the chat list, "
+            "message thread, composer, or dashboard controls) in that state. A generic "
+            "status/next-action card is not a substitute for functional screen content."
         )
     if node["id"] == "verify-html-baseline":
         role_boundary = (
@@ -2632,7 +2635,11 @@ def _prompt(
             " Reject any baseline page that visibly combines mutually exclusive UI states. "
             "Render each proposed comparison page and confirm its marked capture state "
             "is the only visible route state. Keep alternate required states separately "
-            "documented or captured; do not discard their requirement coverage."
+            "documented or captured; do not discard their requirement coverage. "
+            "For every route, compare the rendered primary task, controls, and content "
+            "structure against its PRD and UI/UX requirements. Reject generic status-card "
+            "screens that omit the route-specific layout, even when state markers and "
+            "responsive source checks pass."
         )
         role_boundary += (
             " Before returning a failure, scan every generated document for every applicable "
@@ -2652,7 +2659,9 @@ def _prompt(
             "responsive findings, inspect rendered 320px and 200%-zoom-equivalent layouts "
             "before returning. For a state-gallery finding, split the visible states into "
             "deterministic capture pages while preserving every required state in the route "
-            "inventory. Leave independent approval to verify-html-baseline."
+            "inventory. If pages contain only generic status cards, implement each route's "
+            "real primary task layout from the PRD and UI/UX specification before "
+            "regenerating. Leave independent approval to verify-html-baseline."
         )
     if phase in {"frontend", "mobile"}:
         role_boundary += (

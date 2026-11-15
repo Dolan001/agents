@@ -170,6 +170,34 @@ def capture_state(path: Path, *, require_explicit_region: bool = False) -> str |
     return parser.expected
 
 
+class _PrimaryTaskParser(HTMLParser):
+    """Find route content outside a generic status-only comparison card."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, str]] = []
+        self.primary_task = False
+        self.generic_status = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        in_main = any(name == "main" for name, _ in self.stack)
+        in_status = any(identifier == "screen-state" for _, identifier in self.stack)
+        if (in_main and not in_status and values.get("id") != "screen-state"
+                and tag in {"form", "table", "section", "article"}):
+            self.primary_task = True
+        if in_main and values.get("id") == "screen-state":
+            self.generic_status = True
+        if tag not in _CaptureStateParser._VOID_TAGS:
+            self.stack.append((tag, values.get("id") or ""))
+
+    def handle_endtag(self, tag: str) -> None:
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+
+
 def _validate_capture_ready_html(root: Path, *, require_state_marker: bool = False) -> None:
     pages = sorted(
         path for path in root.rglob("*")
@@ -183,6 +211,15 @@ def _validate_capture_ready_html(root: Path, *, require_state_marker: bool = Fal
             raise RuntimeError(
                 f"HTML comparison baseline lacks data-design-state: {path}"
             )
+        source = path.read_text(encoding="utf-8", errors="replace")
+        if state in {"success", "default", "empty"} and "Task status and next action" in source:
+            parser = _PrimaryTaskParser()
+            parser.feed(source)
+            if parser.generic_status and not parser.primary_task:
+                raise RuntimeError(
+                    f"HTML comparison baseline is a generic status card without the route's "
+                    f"primary task layout: {path}"
+                )
 
 
 def _capture_protocol_required(project: Path) -> bool:

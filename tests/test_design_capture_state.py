@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_workflow.design import approve_generated_html, capture_state, classify_design_inputs
+from ai_workflow.design import (
+    _validate_capture_ready_html,
+    approve_generated_html,
+    capture_state,
+    classify_design_inputs,
+)
 from ai_workflow.execution import _artifact_ok
 
 
@@ -43,6 +48,30 @@ def test_capture_state_allows_one_visible_state_and_hidden_examples(tmp_path: Pa
         "</body></html>"
     )
     assert capture_state(page) == "success"
+
+
+def test_success_capture_rejects_generic_status_without_primary_task(tmp_path: Path) -> None:
+    page = tmp_path / "chats.html"
+    page.write_text(
+        '<html data-design-state="success"><body><main><h1>Chats</h1>'
+        '<section id="screen-state"><h2>Task status and next action</h2>'
+        '<article data-design-screen-state="success">Recent conversations</article>'
+        '</section></main></body></html>'
+    )
+    with pytest.raises(RuntimeError, match="generic status card"):
+        _validate_capture_ready_html(tmp_path, require_state_marker=True)
+
+
+def test_success_capture_accepts_functional_layout_with_status(tmp_path: Path) -> None:
+    page = tmp_path / "chats.html"
+    page.write_text(
+        '<html data-design-state="success"><body><main><h1>Chats</h1>'
+        '<section aria-label="Recent conversations"><a href="/chats/1">Amina</a></section>'
+        '<section id="screen-state"><h2>Task status and next action</h2>'
+        '<article data-design-screen-state="success">Ready</article>'
+        '</section></main></body></html>'
+    )
+    _validate_capture_ready_html(tmp_path, require_state_marker=True)
 
 
 def test_capture_state_rejects_mismatched_marker(tmp_path: Path) -> None:
