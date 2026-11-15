@@ -18,7 +18,10 @@ durable checkpoints, and safe Git delivery.
   python -m pip install -e ./.agents
   ```
 
-  Keep that environment active when running `./.agents/bin/ai`, or have Codex use its `python3`.
+  The launcher selects the project's `.venv` when present and passes that same Python
+  interpreter to coding-adapter child processes, so workflow commands use the installed
+  dependencies consistently. You can also set `AI_WORKFLOW_PYTHON` to an explicit Python
+  executable with the workflow dependencies installed.
   Ignore `.venv/` in the project Git repository. Codex can perform these setup steps for you.
 - Install and sign in to the coding provider you select (Codex by default). Initial setup and
   dependency/image downloads need network access. GitHub CLI (`gh`) is needed only for GitHub
