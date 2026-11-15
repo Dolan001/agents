@@ -64,7 +64,11 @@ from .requirements import reconcile as reconcile_requirements
 from .structure import validate_backend_evidence
 from .tokens import resolve_token
 from .visual_diff import compare_pixels, parse_mask
-from .workflow_recovery import repair_workflow_and_open_pr
+from .workflow_recovery import (
+    merge_approved_workflow_pr,
+    pending_workflow_merge_approvals,
+    repair_workflow_and_open_pr,
+)
 
 Command = Callable[[argparse.Namespace], int]
 ADAPTER_CHOICES = (*PROVIDERS, "codex-reviewed")
@@ -1317,6 +1321,7 @@ def command_status(args: argparse.Namespace) -> int:
         "tasks": queue["tasks"],
         "issues": issues,
         "packs": packs,
+        "workflow_merge_approvals": pending_workflow_merge_approvals(project),
     }
     if args.json:
         print_json(payload)
@@ -1332,12 +1337,23 @@ def command_status(args: argparse.Namespace) -> int:
             )
         print(f"tasks: {len(queue['tasks'])}")
         print(f"issues: {issues['unresolved']} unresolved / {issues['resolved']} resolved")
+        for approval in payload["workflow_merge_approvals"]:
+            print(
+                "workflow PR needs merge approval in this project: "
+                f"{approval['pr_url']} -> {approval['base_branch']}"
+            )
         if packs:
             selected = ", ".join(item["name"] for item in packs["selected_packs"])
             missing = ", ".join(packs["missing_selected_packs"]) or "none"
             print(f"packs: {selected}")
             print(f"missing selected packs: {missing}")
         print(f"issue report: {issues['report']}")
+    return 0
+
+
+def command_workflow_pr_merge(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(merge_approved_workflow_pr(project, args.approve))
     return 0
 
 
@@ -1781,6 +1797,10 @@ def parser() -> argparse.ArgumentParser:
     add_project(status)
     status.add_argument("--json", action="store_true")
     status.set_defaults(handler=command_status)
+    workflow_pr_merge = commands.add_parser("workflow-pr-merge")
+    add_project(workflow_pr_merge)
+    workflow_pr_merge.add_argument("--approve", required=True, metavar="PR_URL")
+    workflow_pr_merge.set_defaults(handler=command_workflow_pr_merge)
     evaluation = commands.add_parser("evaluate-adapters")
     evaluation.add_argument("--manifest", required=True)
     evaluation.set_defaults(handler=command_evaluate_adapters)

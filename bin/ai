@@ -1,8 +1,18 @@
 #!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -z "${AI_WORKFLOW_PYTHON:-}" ]; then
+  if [ -x "$SCRIPT_DIR/../.venv/bin/python" ]; then
+    AI_WORKFLOW_PYTHON="$SCRIPT_DIR/../.venv/bin/python"
+  elif [ -x "$SCRIPT_DIR/../../.venv/bin/python" ]; then
+    AI_WORKFLOW_PYTHON="$SCRIPT_DIR/../../.venv/bin/python"
+  else
+    AI_WORKFLOW_PYTHON=$(command -v python3)
+  fi
+fi
+export AI_WORKFLOW_PYTHON
 if [ "${1:-}" = "select-packs" ]; then
   shift
-  PYTHONPATH="$SCRIPT_DIR/../src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m ai_workflow.packs "$@"
+  PYTHONPATH="$SCRIPT_DIR/../src${PYTHONPATH:+:$PYTHONPATH}" exec "$AI_WORKFLOW_PYTHON" -m ai_workflow.packs "$@"
 fi
-PYTHONPATH="$SCRIPT_DIR/../src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m ai_workflow.cli "$@"
+PYTHONPATH="$SCRIPT_DIR/../src${PYTHONPATH:+:$PYTHONPATH}" exec "$AI_WORKFLOW_PYTHON" -m ai_workflow.cli "$@"

@@ -70,6 +70,78 @@ def _changed_paths(repo: Path) -> list[str]:
     return list(dict.fromkeys([*tracked.splitlines(), *untracked.splitlines()]))
 
 
+def pending_workflow_merge_approvals(project: Path) -> list[dict[str, str]]:
+    """Expose open workflow PRs that need a question in the project session."""
+    directory = project / ".ai" / "workflow-pr-proposals"
+    pending: list[dict[str, str]] = []
+    for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+        proposal = read_json(path, {})
+        if not isinstance(proposal, dict) or proposal.get("status") != "PR_OPEN":
+            continue
+        approval = proposal.get("merge_approval")
+        if not isinstance(approval, dict) or approval.get("status") != "required":
+            continue
+        url = proposal.get("pr_url")
+        if not isinstance(url, str) or not re.fullmatch(
+            r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+", url
+        ):
+            continue
+        pending.append({
+            "pr_url": url,
+            "repository": str(proposal.get("repository", "")),
+            "base_branch": str(proposal.get("base_branch", "")),
+            "proposal": path.relative_to(project).as_posix(),
+        })
+    return pending
+
+
+def merge_approved_workflow_pr(project: Path, pr_url: str) -> dict[str, str]:
+    """Merge one exact, user-approved agents PR from its owning project."""
+    pending = next(
+        (item for item in pending_workflow_merge_approvals(project)
+         if item["pr_url"] == pr_url),
+        None,
+    )
+    if pending is None or not pending["repository"].endswith("/agents"):
+        raise RuntimeError("no pending agents PR merge approval matches that URL")
+    proposal_path = project / pending["proposal"]
+    proposal = read_json(proposal_path, {})
+    assert isinstance(proposal, dict)
+    repository = pending["repository"]
+    match = re.fullmatch(
+        r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/[0-9]+",
+        pr_url,
+    )
+    if match is None or repository.lower() != f"{match.group(1)}/{match.group(2)}".lower():
+        raise RuntimeError("workflow PR URL does not match its recorded repository")
+    view_args = [
+        "gh", "pr", "view", pr_url, "--repo", repository,
+        "--json", "state,baseRefName,headRefOid,mergeable,mergeCommit",
+    ]
+    current = json.loads(_command(project, view_args, timeout=120))
+    if current.get("state") != "OPEN" or current.get("baseRefName") != pending["base_branch"]:
+        raise RuntimeError("workflow PR is no longer open against its approved base branch")
+    head = current.get("headRefOid")
+    if head != proposal.get("commit") or current.get("mergeable") != "MERGEABLE":
+        raise RuntimeError("workflow PR head changed or is not currently mergeable")
+    _command(
+        project,
+        ["gh", "pr", "merge", pr_url, "--repo", repository, "--merge",
+         "--match-head-commit", head],
+        timeout=120,
+    )
+    merged = json.loads(_command(project, view_args, timeout=120))
+    if merged.get("state") != "MERGED":
+        raise RuntimeError("GitHub did not confirm the workflow PR merge")
+    proposal["status"] = "MERGED"
+    proposal["merge_approval"] = {"status": "approved"}
+    merge_commit = merged.get("mergeCommit")
+    if isinstance(merge_commit, dict) and isinstance(merge_commit.get("oid"), str):
+        proposal["merge_commit"] = merge_commit["oid"]
+    write_json(proposal_path, proposal)
+    return {"pr_url": pr_url, "repository": repository, "base_branch": pending["base_branch"]}
+
+
 def repair_workflow_and_open_pr(
     project: Path, adapter: str, proposal_path: Path
 ) -> dict[str, str]:
@@ -184,5 +256,18 @@ def repair_workflow_and_open_pr(
     proposal["status"] = "PR_OPEN"
     proposal["pr_url"] = url
     proposal["commit"] = commit
+    proposal["repository"] = f"{owner}/{name}"
+    proposal["base_branch"] = base
+    if name == "agents":
+        proposal["merge_approval"] = {"status": "required"}
     write_json(proposal_path, proposal)
+    if name == "agents":
+        print(json.dumps({
+            "workflow_pr_merge_approval_required": {
+                "pr_url": url,
+                "repository": f"{owner}/{name}",
+                "base_branch": base,
+                "project": str(project),
+            }
+        }), file=sys.stderr)
     return {"url": url, "commit": commit, "repository": str(repo)}
