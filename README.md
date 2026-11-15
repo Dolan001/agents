@@ -815,7 +815,11 @@ If the recovery agent identifies a defect in the reusable workflow itself, the
 command may create a tested `ai/<owner>/recovery-*` branch and GitHub PR in the
 affected workflow repository, then restart the same command once from its saved
 checkpoint using that local branch. This publishes workflow code for review; it
-does not merge or deploy anything. GitHub authentication, repository write access,
+does not merge or deploy anything. For an `agents` repository PR, the project-session
+assistant asks the user to approve merging the exact PR after the saved run proceeds;
+`ai status --json` retains that pending merge request. After explicit approval, run
+`./.agents/bin/ai workflow-pr-merge --project . --approve PR_URL` in the project;
+the command verifies the exact head and base before merging. GitHub authentication, repository write access,
 and local test dependencies are required. A failed PR or repeated defect leaves the
 checkpoint intact and reports the exact blocker.
 
