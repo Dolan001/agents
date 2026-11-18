@@ -786,6 +786,25 @@ corresponding CLI commands are `ai git-commit` and `ai git-push` (with `--messag
 specific commit subject). These commands check Git state, likely secret files, whitespace,
 and remote divergence; they do not force-push.
 
+For reviewed workflow PRs, `$git-merge` merges exact repository/PR pairs, for example
+`git-merge base pr-2 agents pr-6`. With no pairs it merges only pending workflow PRs
+recorded in the current project's `.ai/workflow-pr-proposals/`; it never merges every
+open GitHub PR. It preflights heads, base branches, reviews, CI, and mergeability, and
+merges framework/base PRs before an `agents` PR. A user invocation authorizes these
+merges; the recovery agent itself never merges.
+
+Use `$git-pull` to update workflow repositories. From a project it fetches reviewed
+`agents/dev` and every selected pack's `dev`, then syncs its nested packs to the
+pinned commits; `git-pull --repo base drf` syncs only those packs to the current
+`agents` pin. From the shared workflow workspace it fast-forwards every independent
+sibling workflow clone from `dev` by default. Run it there as
+`./agents/bin/ai git-pull --project .`, or add `--repo base drf` to select clones.
+Every workflow repository has `dev` as its default branch. It refuses dirty worktrees,
+unfinished Git operations, unexpected remotes, feature branches, and divergence. It
+does not reset or stash changes, and it does not pull unrelated application projects.
+An open feature branch such as a workflow PR must be merged or switched away from
+explicitly before an all-repository pull can update that checkout.
+
 ### 16. Inspect, resume, and recover
 
 At any time, inspect state without changing the project:
@@ -815,13 +834,14 @@ If the recovery agent identifies a defect in the reusable workflow itself, the
 command may create a tested `ai/<owner>/recovery-*` branch and GitHub PR in the
 affected workflow repository, then restart the same command once from its saved
 checkpoint using that local branch. This publishes workflow code for review; it
-does not merge or deploy anything. For an `agents` repository PR, the project-session
-assistant asks the user to approve merging the exact PR after the saved run proceeds;
-`ai status --json` retains that pending merge request. After explicit approval, run
-`./.agents/bin/ai workflow-pr-merge --project . --approve PR_URL` in the project;
-the command verifies the exact head and base before merging. GitHub authentication, repository write access,
-and local test dependencies are required. A failed PR or repeated defect leaves the
-checkpoint intact and reports the exact blocker.
+does not merge or deploy anything. The project-session assistant asks the user to
+approve merging the exact workflow PRs after the saved run proceeds; `ai status --json`
+retains pending merge requests. Once the user invokes `$git-merge`, the command
+checks the recorded heads and bases again before merging. The older
+`workflow-pr-merge --approve PR_URL` command remains available for compatibility.
+GitHub authentication, repository write access, and local test dependencies are
+required. A failed PR or repeated defect leaves the checkpoint intact and reports
+the exact blocker.
 
 Completed backend runs automatically use the fast verification path when requirements,
 contracts, backend source, and database evidence are unchanged. It runs the deterministic
@@ -1064,7 +1084,24 @@ available at `./.agents/bin/ai`:
 # Dry-run and explicitly execute a safe push
 ./.agents/bin/ai push --project .
 ./.agents/bin/ai push --project . --execute
+
+# Review and commit or push the checked-out project branch
+./.agents/bin/ai git-commit --project . --message "feat: describe the change"
+./.agents/bin/ai git-push --project . --message "feat: describe the change"
+
+# Merge only user-authorized workflow PRs; omit pairs for this project's recorded pending PRs
+./.agents/bin/ai git-merge --project . base pr-2 agents pr-6
+./.agents/bin/ai git-merge --project .
+
+# Update all reviewed workflow pins in a project, or selected current pins
+./.agents/bin/ai git-pull --project .
+./.agents/bin/ai git-pull --project . --repo base drf
 ```
+
+From the shared workflow workspace, use `./agents/bin/ai git-pull --project .` to
+fast-forward all clean sibling workflow checkouts from `dev`. To update only named
+siblings, add `--repo base drf`. Project mode follows the reviewed `agents` pins;
+it does not silently move an individual pack to a newer, unreviewed commit.
 
 The lower-level `one-shot` command is a dry run unless `--execute` is supplied. It requires at
 least one deliverable. A backend is required for web/mobile, but not for a local-only PySide6 app or
@@ -1094,9 +1131,10 @@ retained. It is not a normal recovery step.
 
 ## Linked repositories
 
-The workflow catalogs ten behavior repositories, including the pinned
-[`desktop` pack](https://github.com/Dolan001/desktop). Each project initializes only its selected
-subset. The behavior submodules record `branch = dev` for explicit update operations:
+The workflow catalogs 12 behavior repositories, including the provider
+`agent-bridge` and the separate `cicd` pack. Each project initializes only its
+selected subset. Every workflow repository has `dev` as its default branch, and
+the behavior submodules record `branch = dev` for explicit update operations:
 
 ```text
 .agents/
@@ -1109,7 +1147,9 @@ subset. The behavior submodules record `branch = dev` for explicit update operat
 ├── rules/                   # shared and phase scope rules
 ├── skills/                  # Codex-discoverable user entrypoints
 ├── base/                    # shared agents and skills
+├── agent-bridge/            # provider adapter projection
 ├── aws/                     # AWS infrastructure and deployment behavior pack
+├── cicd/                    # CI/CD pipeline behavior pack
 ├── drf/                     # Django DRF behavior pack
 ├── fastapi/                 # FastAPI behavior pack
 ├── flutter/                 # Flutter Android/iOS behavior pack
@@ -1120,13 +1160,14 @@ subset. The behavior submodules record `branch = dev` for explicit update operat
 └── webscraping/             # backend-only scraping capability pack
 ```
 
-The linked repositories are `Dolan001/base`, `Dolan001/desktop`, `Dolan001/drf`,
-`Dolan001/fastapi`, `Dolan001/flutter`, `Dolan001/nextjs`,
-`Dolan001/reactjs`, `Dolan001/rag`, `Dolan001/aws`, and `Dolan001/webscraping`.
+The linked repositories are `Dolan001/agent-bridge`, `Dolan001/aws`, `Dolan001/base`,
+`Dolan001/cicd`, `Dolan001/desktop`, `Dolan001/drf`, `Dolan001/fastapi`,
+`Dolan001/flutter`, `Dolan001/nextjs`, `Dolan001/rag`, `Dolan001/reactjs`, and
+`Dolan001/webscraping`.
 
-To update the workflow in a target project, review the new `agents` commit and its
-nested pins, then update the `.agents` gitlink explicitly. Do not copy skills into a
-second `.agents` directory.
+To update the workflow in a target project, run `$git-pull`, review the new `agents`
+commit and its nested pins, then commit the changed `.agents` gitlink in the project.
+Do not copy skills into a second `.agents` directory.
 
 ## Pipeline contract
 

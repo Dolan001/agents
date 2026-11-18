@@ -99,7 +99,7 @@ def test_workflow_repair_tests_publishes_pr_and_keeps_branch(
     monkeypatch.delenv("AI_WORKFLOW_PR_ATTEMPTED")
 
 
-def test_only_open_agent_prs_request_merge_approval(tmp_path: Path) -> None:
+def test_only_open_recorded_workflow_prs_request_merge_approval(tmp_path: Path) -> None:
     directory = tmp_path / ".ai/workflow-pr-proposals"
     directory.mkdir(parents=True)
     (directory / "closed.json").write_text(json.dumps({
@@ -110,6 +110,16 @@ def test_only_open_agent_prs_request_merge_approval(tmp_path: Path) -> None:
         "status": "PR_OPEN", "pr_url": "https://github.com/Dolan001/base/pull/7",
     }))
     assert recovery.pending_workflow_merge_approvals(tmp_path) == []
+    (directory / "other.json").write_text(json.dumps({
+        "status": "PR_OPEN", "pr_url": "https://github.com/Dolan001/base/pull/7",
+        "merge_approval": {"status": "required"}, "repository": "Dolan001/base",
+        "base_branch": "dev",
+    }))
+    assert recovery.pending_workflow_merge_approvals(tmp_path) == [{
+        "pr_url": "https://github.com/Dolan001/base/pull/7",
+        "repository": "Dolan001/base", "base_branch": "dev",
+        "proposal": ".ai/workflow-pr-proposals/other.json",
+    }]
 
 
 def test_project_status_exposes_pending_workflow_merge_question(

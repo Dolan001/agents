@@ -37,7 +37,7 @@
 [submodule "agent-bridge"]
 	path = agent-bridge
 	url = https://github.com/Dolan001/agent-bridge.git
-	branch = main
+	branch = dev
 [submodule "desktop"]
 	path = desktop
 	url = https://github.com/Dolan001/desktop.git

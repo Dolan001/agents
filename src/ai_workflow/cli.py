@@ -38,6 +38,7 @@ from .git import (
     run_git,
 )
 from .git_actions import commit_or_push
+from .git_maintenance import merge_workflow_prs, pull_workflow_repos
 from .io import append_jsonl, read_json, write_json
 from .issues import (
     initialize_issue_tracker,
@@ -1441,6 +1442,18 @@ def command_git_push(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_git_merge(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(merge_workflow_prs(project, args.targets))
+    return 0
+
+
+def command_git_pull(args: argparse.Namespace) -> int:
+    project = resolved_project(args.project)
+    print_json(pull_workflow_repos(project, args.repos or []))
+    return 0
+
+
 def _git_command_branch(args: argparse.Namespace) -> str | None:
     if args.branch and args.expected_branch and args.branch != args.expected_branch:
         raise RuntimeError("positional branch and --branch must match")
@@ -1836,6 +1849,20 @@ def parser() -> argparse.ArgumentParser:
         if name == "git-push":
             git_command.add_argument("--remote", default="origin")
         git_command.set_defaults(handler=handler)
+    git_merge = commands.add_parser("git-merge")
+    add_project(git_merge)
+    git_merge.add_argument(
+        "targets", nargs="*",
+        help="Repository/PR pairs (base pr-2 agents pr-6); omit for recorded pending PRs",
+    )
+    git_merge.set_defaults(handler=command_git_merge)
+    git_pull = commands.add_parser("git-pull")
+    add_project(git_pull)
+    git_pull.add_argument(
+        "--repo", dest="repos", nargs="+",
+        help="Selected workflow repositories, such as base drf",
+    )
+    git_pull.set_defaults(handler=command_git_pull)
     doctor = commands.add_parser("doctor")
     add_project(doctor)
     doctor.set_defaults(handler=command_doctor)
@@ -1918,7 +1945,7 @@ def main(arguments: list[str] | None = None) -> int:
         result = handler(args)
         if (
             result == 0
-            and args.command not in {"git-commit", "git-push"}
+            and args.command not in {"git-commit", "git-push", "git-merge", "git-pull"}
             and isinstance(getattr(args, "project", None), str)
         ):
             project = Path(args.project).resolve()
@@ -1939,7 +1966,7 @@ def main(arguments: list[str] | None = None) -> int:
             )
         if (
             result != 0
-            and args.command not in {"git-commit", "git-push"}
+            and args.command not in {"git-commit", "git-push", "git-merge", "git-pull"}
             and isinstance(getattr(args, "project", None), str)
         ):
             project = Path(args.project).resolve()
@@ -2002,7 +2029,7 @@ def main(arguments: list[str] | None = None) -> int:
     except Exception as error:  # noqa: BLE001 - final CLI boundary must preserve every build error
         if (
             args is not None
-            and args.command not in {"git-commit", "git-push"}
+            and args.command not in {"git-commit", "git-push", "git-merge", "git-pull"}
             and isinstance(getattr(args, "project", None), str)
         ):
             try:

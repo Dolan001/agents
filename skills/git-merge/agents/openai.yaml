@@ -1,0 +1,4 @@
+interface:
+  display_name: "git-merge"
+  short_description: "Review and merge workflow PRs"
+  default_prompt: "Use $git-merge to verify and merge the specified workflow PRs, or all pending workflow PRs when none are named."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "git-pull"
+  short_description: "Update workflow repositories safely"
+  default_prompt: "Use $git-pull to preflight and update the workflow repositories requested by the user."
