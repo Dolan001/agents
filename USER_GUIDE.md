@@ -753,23 +753,31 @@ agent may commit, push, and open a review PR, but never merges it.
 
 From a project, `$git-pull` updates `.agents` from its reviewed `dev` branch and
 fetches each pack's `dev` branch before aligning it to that commit's pinned
-revision. `--repo base drf` fetches and syncs
-only those packs to the current pin; add `agents` or omit `--repo` to get the newest
+revision. `--repo base drf` fetches and syncs only those packs to the current
+pin; add `agents` or omit `--repo` to get the newest
 reviewed pins. From the shared workflow workspace, the same command fast-forwards
-the independent sibling workflow clones (`agents`, `base`, `drf`, `reactjs`, `rag`,
-and the other cataloged packs) from `dev`. Every workflow repository uses `dev` as
-its default branch. `react` is an alias for `reactjs`.
+all 13 independent workflow clones (`agents` and its 12 behavior packs) from `dev`.
+Every workflow repository uses `dev` as its default branch. `react` is an alias
+for `reactjs`.
 
 ```text
 ./.agents/bin/ai git-pull --project .
 ./.agents/bin/ai git-pull --project . --repo base drf
 ```
 
+From the shared workflow workspace, use its own CLI path:
+
+```text
+./agents/bin/ai git-pull --project .
+./agents/bin/ai git-pull --project . --repo base drf
+```
+
 Before changing a checkout, the command checks its origin, branch, unfinished Git
 operations, local changes, and fast-forward ancestry. It leaves dirty or divergent
 repositories untouched and does not reset, stash, or update unrelated application
-projects. A project may show a changed `.agents` Git pin afterward; review and
-commit that pointer through `$git-commit` when appropriate.
+projects. An active feature branch must be switched away from explicitly before
+an all-repository pull can update it. A project may show a changed `.agents` Git
+pin afterward; review and commit that pointer through `$git-commit` when appropriate.
 
 ## Internal CLI utilities are not skills
 
