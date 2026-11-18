@@ -25,6 +25,8 @@
     {"name": "deploy-production", "path": "skills/deploy-production/SKILL.md"},
     {"name": "rollback-deployment", "path": "skills/rollback-deployment/SKILL.md"},
     {"name": "git-commit", "path": "skills/git-commit/SKILL.md"},
-    {"name": "git-push", "path": "skills/git-push/SKILL.md"}
+    {"name": "git-push", "path": "skills/git-push/SKILL.md"},
+    {"name": "git-merge", "path": "skills/git-merge/SKILL.md"},
+    {"name": "git-pull", "path": "skills/git-pull/SKILL.md"}
   ]
 }

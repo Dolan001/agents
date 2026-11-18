@@ -258,16 +258,14 @@ def repair_workflow_and_open_pr(
     proposal["commit"] = commit
     proposal["repository"] = f"{owner}/{name}"
     proposal["base_branch"] = base
-    if name == "agents":
-        proposal["merge_approval"] = {"status": "required"}
+    proposal["merge_approval"] = {"status": "required"}
     write_json(proposal_path, proposal)
-    if name == "agents":
-        print(json.dumps({
-            "workflow_pr_merge_approval_required": {
-                "pr_url": url,
-                "repository": f"{owner}/{name}",
-                "base_branch": base,
-                "project": str(project),
-            }
-        }), file=sys.stderr)
+    print(json.dumps({
+        "workflow_pr_merge_approval_required": {
+            "pr_url": url,
+            "repository": f"{owner}/{name}",
+            "base_branch": base,
+            "project": str(project),
+        }
+    }), file=sys.stderr)
     return {"url": url, "commit": commit, "repository": str(repo)}

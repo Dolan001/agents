@@ -245,6 +245,8 @@ explicitly authorized live AWS work.
 | `$rollback-deployment` | Restore a named AWS environment | Verified rollback evidence |
 | `$git-commit` | Review and commit the current branch's changes | Local commit only |
 | `$git-push` | Review, commit if needed, and push the current branch | Published branch |
+| `$git-merge` | Merge exact or recorded pending workflow PRs after GitHub preflight | Merged workflow PRs |
+| `$git-pull` | Fast-forward workflow clones or sync a project's pinned packs | Updated workflow checkouts |
 
 ## Requirements intake
 
@@ -727,6 +729,45 @@ The equivalent CLI commands are:
 commits missing locally, an in-progress merge or rebase, a detached HEAD, and likely
 secret files. It never force-pushes. If a push fails after committing, the local commit
 remains; rerun `$git-push` after fixing the remote or network issue.
+
+## Merge reviewed workflow PRs
+
+### `$git-merge`
+
+Invoke `$git-merge base pr-2 agents pr-6` to merge those exact PRs. Invoke `$git-merge`
+without pairs to merge all pending workflow PRs recorded in this project's
+`.ai/workflow-pr-proposals/`; it never selects unrelated open PRs. The CLI checks the
+PR head, target branch, review, CI, and mergeability before any merge and again before
+each individual merge. Framework/base PRs merge before the agents PR. It reports any
+partial completion if a later PR changes during the operation. An automated recovery
+agent may commit, push, and open a review PR, but never merges it.
+
+```text
+./.agents/bin/ai git-merge --project . base pr-2 agents pr-6
+./.agents/bin/ai git-merge --project .
+```
+
+## Pull workflow repositories
+
+### `$git-pull`
+
+From a project, `$git-pull` updates `.agents` from its reviewed `dev` branch and
+aligns every nested pack to that commit's pinned revision. `--repo base drf` syncs
+only those packs to the current pin; add `agents` or omit `--repo` to get the newest
+reviewed pins. From the shared workflow workspace, the same command fast-forwards
+the independent sibling workflow clones (`agents`, `base`, `drf`, `reactjs`, `rag`,
+and the other cataloged packs). `react` is an alias for `reactjs`.
+
+```text
+./.agents/bin/ai git-pull --project .
+./.agents/bin/ai git-pull --project . --repo base drf
+```
+
+Before changing a checkout, the command checks its origin, branch, unfinished Git
+operations, local changes, and fast-forward ancestry. It leaves dirty or divergent
+repositories untouched and does not reset, stash, or update unrelated application
+projects. A project may show a changed `.agents` Git pin afterward; review and
+commit that pointer through `$git-commit` when appropriate.
 
 ## Internal CLI utilities are not skills
 

@@ -786,6 +786,20 @@ corresponding CLI commands are `ai git-commit` and `ai git-push` (with `--messag
 specific commit subject). These commands check Git state, likely secret files, whitespace,
 and remote divergence; they do not force-push.
 
+For reviewed workflow PRs, `$git-merge` merges exact repository/PR pairs, for example
+`git-merge base pr-2 agents pr-6`. With no pairs it merges only pending workflow PRs
+recorded in the current project's `.ai/workflow-pr-proposals/`; it never merges every
+open GitHub PR. It preflights heads, base branches, reviews, CI, and mergeability, and
+merges framework/base PRs before an `agents` PR. A user invocation authorizes these
+merges; the recovery agent itself never merges.
+
+Use `$git-pull` to update workflow repositories. From a project it fetches reviewed
+`agents/dev` and syncs its nested packs to the pinned commits; `git-pull --repo base drf`
+syncs only those packs to the current `agents` pin. From the shared workflow workspace
+it fast-forwards the independent sibling workflow clones. It refuses dirty worktrees,
+unfinished Git operations, unexpected remotes, feature branches, and divergence. It
+does not reset or stash changes, and it does not pull unrelated application projects.
+
 ### 16. Inspect, resume, and recover
 
 At any time, inspect state without changing the project:
@@ -815,13 +829,14 @@ If the recovery agent identifies a defect in the reusable workflow itself, the
 command may create a tested `ai/<owner>/recovery-*` branch and GitHub PR in the
 affected workflow repository, then restart the same command once from its saved
 checkpoint using that local branch. This publishes workflow code for review; it
-does not merge or deploy anything. For an `agents` repository PR, the project-session
-assistant asks the user to approve merging the exact PR after the saved run proceeds;
-`ai status --json` retains that pending merge request. After explicit approval, run
-`./.agents/bin/ai workflow-pr-merge --project . --approve PR_URL` in the project;
-the command verifies the exact head and base before merging. GitHub authentication, repository write access,
-and local test dependencies are required. A failed PR or repeated defect leaves the
-checkpoint intact and reports the exact blocker.
+does not merge or deploy anything. The project-session assistant asks the user to
+approve merging the exact workflow PRs after the saved run proceeds; `ai status --json`
+retains pending merge requests. Once the user invokes `$git-merge`, the command
+checks the recorded heads and bases again before merging. The older
+`workflow-pr-merge --approve PR_URL` command remains available for compatibility.
+GitHub authentication, repository write access, and local test dependencies are
+required. A failed PR or repeated defect leaves the checkpoint intact and reports
+the exact blocker.
 
 Completed backend runs automatically use the fast verification path when requirements,
 contracts, backend source, and database evidence are unchanged. It runs the deterministic
