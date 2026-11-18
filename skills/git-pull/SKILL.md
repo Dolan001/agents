@@ -12,12 +12,13 @@ Read `.agents/agents/git-maintenance-agent.md`, then run:
 ./.agents/bin/ai git-pull --project . --repo base drf
 ```
 
-From a project, the default updates `.agents` from `dev` and aligns every pack to
-its reviewed Git pin. `--repo base drf` aligns just those packs to the currently
-pinned revisions; include `agents` or omit `--repo` to fetch the newest reviewed
-agents commit and sync the complete pack set. From the shared workflow workspace,
-the command fast-forwards the named independent sibling clones from their declared
-branches. `react` is accepted as an alias for `reactjs`.
+Every workflow repository uses `dev` as its default and update branch. From a
+project, the default updates `.agents` from `dev`, fetches each pack's `dev`, and
+aligns the packs to the reviewed Git pins in that agents commit. `--repo base drf`
+fetches and aligns just those packs to the current pins; include `agents` or omit
+`--repo` to get the newest reviewed pins. From the shared workflow workspace, the
+command fast-forwards the independent sibling clones from `dev`. `react` is an
+alias for `reactjs`.
 
 The CLI checks remotes, branch state, divergence, unfinished Git operations, and
 uncommitted work before updating. A dirty or divergent repository is a blocker to

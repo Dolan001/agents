@@ -794,9 +794,11 @@ merges framework/base PRs before an `agents` PR. A user invocation authorizes th
 merges; the recovery agent itself never merges.
 
 Use `$git-pull` to update workflow repositories. From a project it fetches reviewed
-`agents/dev` and syncs its nested packs to the pinned commits; `git-pull --repo base drf`
+`agents/dev` and every selected pack's `dev`, then syncs its nested packs to the
+pinned commits; `git-pull --repo base drf`
 syncs only those packs to the current `agents` pin. From the shared workflow workspace
-it fast-forwards the independent sibling workflow clones. It refuses dirty worktrees,
+it fast-forwards every independent sibling workflow clone from `dev` by default.
+Every workflow repository has `dev` as its default branch. It refuses dirty worktrees,
 unfinished Git operations, unexpected remotes, feature branches, and divergence. It
 does not reset or stash changes, and it does not pull unrelated application projects.
 

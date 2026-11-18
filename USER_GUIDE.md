@@ -752,11 +752,13 @@ agent may commit, push, and open a review PR, but never merges it.
 ### `$git-pull`
 
 From a project, `$git-pull` updates `.agents` from its reviewed `dev` branch and
-aligns every nested pack to that commit's pinned revision. `--repo base drf` syncs
+fetches each pack's `dev` branch before aligning it to that commit's pinned
+revision. `--repo base drf` fetches and syncs
 only those packs to the current pin; add `agents` or omit `--repo` to get the newest
 reviewed pins. From the shared workflow workspace, the same command fast-forwards
 the independent sibling workflow clones (`agents`, `base`, `drf`, `reactjs`, `rag`,
-and the other cataloged packs). `react` is an alias for `reactjs`.
+and the other cataloged packs) from `dev`. Every workflow repository uses `dev` as
+its default branch. `react` is an alias for `reactjs`.
 
 ```text
 ./.agents/bin/ai git-pull --project .

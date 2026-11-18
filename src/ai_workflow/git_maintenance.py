@@ -59,11 +59,11 @@ def _catalog(root: Path) -> dict[str, dict[str, str]]:
         name = section.removeprefix('submodule "').removesuffix('"')
         path = config.get(section, "path", fallback="")
         url = config.get(section, "url", fallback="")
-        branch = config.get(section, "branch", fallback="dev")
+        branch = config.get(section, "branch", fallback="")
         if not _NAME.fullmatch(name) or path != name or not _GITHUB.fullmatch(url):
             raise RuntimeError(f"unsafe workflow submodule declaration: {section}")
-        if not _NAME.fullmatch(branch):
-            raise RuntimeError(f"unsafe workflow branch declaration: {section}")
+        if branch != "dev":
+            raise RuntimeError(f"workflow repository must use the dev branch: {section}")
         result[name] = {"url": url, "branch": branch}
     root_url = _git(root, "remote", "get-url", "origin")
     if not _GITHUB.fullmatch(root_url):
@@ -287,14 +287,16 @@ def _prepare_pin(root: Path, name: str, entry: dict[str, str], revision: str) ->
         return target  # initialization is handled when applying the reviewed pin
     _clean(path)
     _assert_origin(path, entry["url"])
-    code, _ = _run(path, "git", "cat-file", "-e", f"{target}^{{commit}}", allow_failure=True)
-    if code:
-        _run(
-            path, "git", "-c", "fetch.recurseSubmodules=false",
-            "fetch", "--no-tags", "origin", entry["branch"],
-        )
+    _run(
+        path, "git", "-c", "fetch.recurseSubmodules=false",
+        "fetch", "--no-tags", "origin", "dev",
+    )
     if _run(path, "git", "cat-file", "-e", f"{target}^{{commit}}", allow_failure=True)[0]:
-        raise RuntimeError(f"pinned commit is not available from the configured remote: {name}")
+        raise RuntimeError(f"pinned commit is not available from {name}/dev")
+    dev_head = _git(path, "rev-parse", "FETCH_HEAD")
+    if _run(path, "git", "merge-base", "--is-ancestor", target, dev_head,
+            allow_failure=True)[0]:
+        raise RuntimeError(f"{name} pin is not reachable from its dev branch")
     current = _git(path, "rev-parse", "HEAD")
     if _run(path, "git", "merge-base", "--is-ancestor", current, target, allow_failure=True)[0]:
         raise RuntimeError(f"{name} has commits outside its reviewed agents pin")
@@ -305,6 +307,7 @@ def _sync_pinned(root: Path, name: str, entry: dict[str, str], target: str) -> s
     path = root / name
     if not path.is_dir() or not (path / ".git").exists():
         _git(root, "submodule", "update", "--init", "--", name)
+        _prepare_pin(root, name, entry, "HEAD")
     _clean(path)
     _assert_origin(path, entry["url"])
     current = _git(path, "rev-parse", "HEAD")

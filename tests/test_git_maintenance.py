@@ -26,6 +26,21 @@ def test_cli_accepts_explicit_and_pending_merge_and_selected_pull() -> None:
     ]
 
 
+@pytest.mark.parametrize("branch", ["main", "", "release"])
+def test_catalog_requires_dev_for_every_workflow_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, branch: str,
+) -> None:
+    (tmp_path / ".gitmodules").write_text(
+        '[submodule "base"]\n'
+        '\tpath = base\n'
+        '\turl = https://github.com/Dolan001/base.git\n'
+        f'\tbranch = {branch}\n'
+    )
+    monkeypatch.setattr(maintenance, "_git", lambda *_args: "https://github.com/Dolan001/agents.git")
+    with pytest.raises(RuntimeError, match="must use the dev branch"):
+        maintenance._catalog(tmp_path)
+
+
 def test_merge_preflights_every_pr_and_orders_base_before_agents(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
