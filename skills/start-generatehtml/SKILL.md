@@ -20,3 +20,7 @@ Record that state with `data-design-state` on `html` or `body`, and keep mutuall
 exclusive state examples in separate pages or non-baseline design documentation.
 The verifier must inspect rendered state visibility so an all-states gallery cannot
 pass as a pixel reference for the later frontend or mobile implementation.
+For each route, the approved capture must also show its primary task and controls
+from the PRD and UI/UX specification. A generic status or next-action card alone
+is not a usable comparison baseline. Repair shared generators and regenerate
+affected routes before independent approval.
