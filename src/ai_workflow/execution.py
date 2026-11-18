@@ -1055,7 +1055,12 @@ def _run_final_project_recovery(
         "or claim its independent gate passed. If the fault is in the reusable workflow, "
         "record a workflow_defect review with reproduction, affected workflow paths, and "
         "the needed regression; do not edit the project submodule. If an external blocker "
-        "remains unchanged, record it and return without repeating the operation.",
+        "remains unchanged, record it and return without repeating the operation. "
+        "For a dependency-audit blocker, identify the exact advisory IDs and check "
+        "their current authoritative status once before concluding that a breaking "
+        "dependency change needs approval. The same lockfile does not prove unchanged "
+        "advisory metadata. If an advisory was withdrawn or patched, rerun the focused "
+        "audit and record its actual result; never waive the audit or force a major change.",
     )
     prompt_path = project / ".ai" / "prompts" / f"recovery--{phase}--{feature_id}--{token}.md"
     prompt_path.parent.mkdir(parents=True, exist_ok=True)
