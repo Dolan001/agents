@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -31,6 +32,24 @@ def test_argument_prompt_transport_appends_prompt(tmp_path: Path) -> None:
     assert run.call_args.args[0][-1] == "follow this workflow"
     assert run.call_args.kwargs["input"] is None
     assert run.call_args.kwargs["env"]["AI_WORKFLOW_PYTHON"] == sys.executable
+
+
+def test_adapter_timeout_returns_retryable_result_with_partial_output(tmp_path: Path) -> None:
+    config = {"adapters": {"codex": {"argv": ["codex"]}}, "timeout_seconds": 3600}
+    with (
+        patch("ai_workflow.execution.read_json", return_value=config),
+        patch("ai_workflow.execution.shutil.which", return_value="/usr/local/bin/codex"),
+        patch("ai_workflow.provider_selection.refresh_provider_projection"),
+        patch(
+            "ai_workflow.execution.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["codex"], 1800, output=b"partial"),
+        ) as run,
+    ):
+        result = _run_adapter(tmp_path, "codex", "check design", timeout_seconds=1800)
+    assert run.call_args.kwargs["timeout"] == 1800
+    assert result["returncode"] == 124
+    assert result["stdout_tail"] == "partial"
+    assert "timed out after 1800 seconds" in result["stderr_tail"]
 
 
 def test_opencode_uses_documented_positional_prompt(tmp_path: Path) -> None:

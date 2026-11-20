@@ -13,7 +13,7 @@ from .design import _capture_protocol_required, capture_state
 from .io import read_json, write_json
 from .model import StateStore, utc_now
 from .pipeline import node_cache_key, workflow_root
-from .visual_diff import compare_pixels
+from .visual_diff import recompute_saved_pixels
 
 _IGNORED_PARTS = {
     ".agents",
@@ -76,6 +76,128 @@ def _evidence_paths(project: Path, target: str) -> dict[str, Path]:
         "comparison": root / "comparison.json",
         "plan": root / "repair-plan.md",
         "verification": root / "verification.json",
+    }
+
+
+def reusable_design_captures(
+    project: Path, target: str, framework: str
+) -> dict[str, Any] | None:
+    """Reuse complete pixel evidence after an interrupted resolver, never stale captures."""
+    if target != "frontend":
+        return None
+    paths = _evidence_paths(project, target)
+    manifest = read_json(paths["manifest"], {})
+    if _schema_failures(manifest, "design-fidelity-manifest.schema.json"):
+        return None
+    baseline_hash, baseline_files = approved_baseline(project)
+    if (
+        manifest.get("target") != target
+        or manifest.get("framework") != framework
+        or manifest.get("baseline_sha256") != baseline_hash
+        or manifest.get("baseline_files") != baseline_files
+    ):
+        return None
+    cases = manifest["cases"]
+    html_files = {
+        item["path"] for item in baseline_files
+        if item["path"].lower().endswith((".html", ".htm"))
+    }
+    web_files = {name for name in html_files if Path(name).name.startswith("web--")}
+    required = web_files or html_files
+    if not required <= {case["baseline_html"] for case in cases}:
+        return None
+    if not {"mobile", "tablet", "desktop"} <= {
+        case["viewport"]["name"] for case in cases
+    }:
+        return None
+    case_ids: set[str] = set()
+    capture_times: list[int] = []
+    summary: list[dict[str, Any]] = []
+    evidence_root = paths["root"].resolve()
+    for case in cases:
+        if case["id"] in case_ids or case["platform"] != "web":
+            return None
+        case_ids.add(case["id"])
+        baseline_html = _owned(project, case["baseline_html"])
+        if not baseline_html.is_file() or project / "HTML/approved" not in baseline_html.parents:
+            return None
+        try:
+            state = capture_state(
+                baseline_html,
+                require_explicit_region=_capture_protocol_required(project),
+            )
+            if state and state != case["state"]:
+                return None
+            artifacts = {
+                key: _owned(project, case[key])
+                for key in ("baseline_image", "rendered_image", "diff_image", "metrics")
+            }
+            if any(
+                evidence_root not in path.parents or not path.is_file()
+                for path in artifacts.values()
+            ):
+                return None
+            stored = read_json(artifacts["metrics"], {})
+            if _schema_failures(stored, "design-fidelity-pixel-metrics.schema.json"):
+                return None
+            recomputed, diff_pixels_match = recompute_saved_pixels(
+                artifacts["baseline_image"], artifacts["rendered_image"],
+                artifacts["diff_image"],
+                channel_tolerance=case["channel_tolerance"],
+                max_changed_ratio=case["max_changed_ratio"], masks=case["masks"],
+            )
+            if (
+                {key: value for key, value in stored.items() if key != "diff_sha256"}
+                != {key: value for key, value in recomputed.items() if key != "diff_sha256"}
+                or not diff_pixels_match
+                or hashlib.sha256(
+                artifacts["diff_image"].read_bytes()
+                ).hexdigest() != stored["diff_sha256"]
+            ):
+                return None
+            viewport = case["viewport"]
+            scale = viewport["device_scale_factor"]
+            if (recomputed["width"], recomputed["height"]) != (
+                round(viewport["width"] * scale), round(viewport["height"] * scale)
+            ):
+                return None
+        except (RuntimeError, OSError, ValueError, TypeError):
+            return None
+        capture_times.extend([
+            artifacts["baseline_image"].stat().st_mtime_ns,
+            artifacts["rendered_image"].stat().st_mtime_ns,
+        ])
+        summary.append({
+            "case_id": case["id"], "changed_ratio": recomputed["different_ratio"],
+            "passed": recomputed["passed"],
+        })
+    if not capture_times:
+        return None
+    # A changed source, capture harness, API, or approved page requires fresh images.
+    source_roots = (
+        "HTML/approved", "apps/frontend/src", "apps/frontend/app", "apps/frontend/pages",
+        "apps/frontend/public", "apps/frontend/tests/design-fidelity", "apps/backend/src",
+        "packages/api-client/src", "packages/ui", "packages/design-system", "docs/api",
+    )
+    source_files = [
+        path for name in source_roots
+        for path in (project / name).rglob("*")
+        if path.is_file()
+    ]
+    source_files.extend(
+        path for name in ("package.json", "package-lock.json", "pnpm-lock.yaml")
+        if (path := project / "apps/frontend" / name).is_file()
+    )
+    if any(path.stat().st_mtime_ns > min(capture_times) for path in source_files):
+        return None
+    failures = sorted(
+        (item for item in summary if not item["passed"]),
+        key=lambda item: item["changed_ratio"], reverse=True,
+    )
+    return {
+        "manifest": paths["manifest"].relative_to(project).as_posix(),
+        "cases": len(summary), "passed": len(summary) - len(failures),
+        "failed": len(failures), "largest_differences": failures[:6],
     }
 
 
@@ -202,9 +324,10 @@ def validate_design_fidelity_comparison(
             failures.append(f"design case has invalid pixel metrics {case_id}: {metric_failures}")
             continue
         try:
-            recomputed = compare_pixels(
+            recomputed, diff_pixels_match = recompute_saved_pixels(
                 artifacts["baseline_image"],
                 artifacts["rendered_image"],
+                artifacts["diff_image"],
                 channel_tolerance=int(case.get("channel_tolerance", 0)),
                 max_changed_ratio=float(case.get("max_changed_ratio", 0)),
                 masks=case.get("masks", []),
@@ -212,10 +335,15 @@ def validate_design_fidelity_comparison(
         except RuntimeError as error:
             failures.append(f"design case pixel comparison failed {case_id}: {error}")
             continue
-        if stored_metrics != recomputed:
+        if (
+            {key: value for key, value in stored_metrics.items() if key != "diff_sha256"}
+            != {key: value for key, value in recomputed.items() if key != "diff_sha256"}
+        ):
             failures.append(f"design case pixel metrics are stale or tampered: {case_id}")
+        if not diff_pixels_match:
+            failures.append(f"design case diff image pixels are stale or tampered: {case_id}")
         actual_diff_sha256 = hashlib.sha256(artifacts["diff_image"].read_bytes()).hexdigest()
-        if actual_diff_sha256 != recomputed["diff_sha256"]:
+        if actual_diff_sha256 != stored_metrics["diff_sha256"]:
             failures.append(f"design case diff image is stale or tampered: {case_id}")
         viewport = case.get("viewport", {})
         assert isinstance(viewport, dict)

@@ -2635,8 +2635,11 @@ def _capture_html(title: str) -> str:
     )
 
 
-def _fake_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+def _fake_agent(
+    project: Path, adapter: str, prompt: str, *, timeout_seconds: int | None = None,
+) -> dict[str, object]:
     del adapter
+    del timeout_seconds
     phase, node = re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).groups()  # type: ignore[union-attr]
     output = re.search(r"Required output: (.+)", prompt).group(1)  # type: ignore[union-attr]
     bundle_path = re.search(r"Bounded context bundle: (.+)", prompt).group(1)  # type: ignore[union-attr]
@@ -3765,7 +3768,10 @@ def test_frontend_requires_separate_html_generation(
     )
     calls = []
 
-    def agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+    def agent(
+        project: Path, adapter: str, prompt: str, *, timeout_seconds: int | None = None,
+    ) -> dict[str, object]:
+        del timeout_seconds
         calls.append(re.search(r"Phase/node: ([a-z-]+)/", prompt).group(1))
         return _fake_agent_with_html_checks(project, adapter, prompt)
 
@@ -4368,9 +4374,11 @@ def test_start_deployment_resumes_after_one_shot_build_with_cicd(
     )
     calls: list[str] = []
 
-    def recording_agent(project: Path, adapter: str, prompt: str) -> dict[str, object]:
+    def recording_agent(
+        project: Path, adapter: str, prompt: str, *, timeout_seconds: int | None = None,
+    ) -> dict[str, object]:
         calls.append(re.search(r"Phase/node: ([a-z-]+)/([a-z-]+)", prompt).group(0))  # type: ignore[union-attr]
-        return _fake_agent(project, adapter, prompt)
+        return _fake_agent(project, adapter, prompt, timeout_seconds=timeout_seconds)
 
     monkeypatch.setattr("ai_workflow.execution._run_adapter", recording_agent)
     assert main([

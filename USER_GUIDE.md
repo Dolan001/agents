@@ -421,6 +421,10 @@ independent frontend verification. After the backend and frontend gates pass, th
 both local services on available localhost ports and prints `local_preview.url` for browser review.
 The preview stays available through the project-scoped Docker Compose stack. A repeated command
 reuses a responding preview. This also happens during `start-build` after its frontend phase.
+An unchanged feature slice stays verified when the foundation's dependency audit is refreshed.
+If design capture is interrupted, the next attempt reuses complete images and metrics only after
+checking their pixels, approved HTML, and relevant source freshness; a source edit triggers fresh
+capture. The design resolver has a 15-minute limit per attempt and records timeouts for recovery.
 
 Before feature work, the workflow creates an executable framework foundation and a typed API
 client from an interim OpenAPI contract based on the specifications. Client tests use fixtures;

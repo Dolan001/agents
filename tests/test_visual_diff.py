@@ -1,11 +1,13 @@
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from ai_workflow.cli import main
-from ai_workflow.visual_diff import compare_pixels
+from ai_workflow.visual_diff import compare_pixels, recompute_saved_pixels
 
 
 def _image(path: Path, size: tuple[int, int] = (10, 10)) -> None:
@@ -46,6 +48,31 @@ def test_one_changed_pixel_fails_strict_comparison(tmp_path: Path) -> None:
     assert metrics["different_pixels"] == 1
     assert metrics["different_ratio"] == 0.01
     assert metrics["difference_bbox"] == [3, 4, 4, 5]
+
+
+def test_saved_diff_accepts_lossless_reencoding_but_rejects_changed_pixels(
+    tmp_path: Path,
+) -> None:
+    reference = tmp_path / "reference.png"
+    actual = tmp_path / "actual.png"
+    difference = tmp_path / "diff.png"
+    _image(reference)
+    _image(actual)
+    original = compare_pixels(reference, actual, diff_path=difference)
+    metadata = PngInfo()
+    metadata.add_text("encoder", "alternate lossless encoding")
+    with Image.open(difference) as source:
+        source.save(difference, format="PNG", pnginfo=metadata, compress_level=1)
+    recomputed, pixels_match = recompute_saved_pixels(reference, actual, difference)
+    assert pixels_match
+    assert hashlib.sha256(difference.read_bytes()).hexdigest() != original["diff_sha256"]
+    assert recomputed["diff_sha256"] == original["diff_sha256"]
+    with Image.open(difference) as source:
+        tampered = source.convert("RGBA")
+    tampered.putpixel((0, 0), (255, 0, 0, 255))
+    tampered.save(difference)
+    _, pixels_match = recompute_saved_pixels(reference, actual, difference)
+    assert not pixels_match
 
 
 def test_bounded_tolerance_and_mask_are_applied(tmp_path: Path) -> None:
