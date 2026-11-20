@@ -664,6 +664,10 @@ Before frontend approval, the design-fidelity resolver captures deterministic mo
 desktop cases against hashed approved HTML, writes a repair plan, corrects meaningful drift, and
 recaptures affected routes/states. The existing selected frontend verifier then independently checks
 the raw captures, accessibility, responsiveness, focused tests, and production build.
+If the resolver is interrupted after a complete capture pass, the next attempt checks the saved
+images, numeric metrics, diff pixels, approved HTML, and source freshness before reusing them.
+The browser journey runs again after a relevant source change. Lossless PNG encoding differences
+across Pillow versions do not invalidate identical diff pixels.
 
 ### 11. Build the optional Flutter mobile application
 
@@ -964,6 +968,10 @@ failed artifact and resume after correcting the actual cause.
   original verifier. Reusable workflow defects use a separate repository lease,
   tested review branch, and PR; a PR alone never approves a project gate.
 - Verified-node caching and durable checkpoints prevent unchanged work from repeating.
+- Refreshing frontend or mobile foundation audit evidence does not rerun unchanged feature slices;
+  feature source and API contract changes still invalidate their relevant checkpoints. Frontend
+  design capture is requested before repair when drift remains, with a 15-minute adapter limit per
+  attempt and validated partial capture reuse on retry.
 - Feature agents run focused checks after completing a slice. Full live PostgreSQL, API,
   browser, and design suites remain required at their owning phase gates. Shared contract,
   migration, auth, realtime, and design-token changes invalidate dependent checks.

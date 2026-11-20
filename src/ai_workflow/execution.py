@@ -32,6 +32,7 @@ from .design import (
     validate_html_approval,
 )
 from .design_fidelity import (
+    reusable_design_captures,
     validate_design_fidelity_comparison,
     validate_design_fidelity_evidence,
     verified_baseline_update_current,
@@ -1994,8 +1995,20 @@ def _node_input_files(
             files.add(test_matrix.relative_to(project).as_posix())
         if phase in {"frontend", "mobile", "desktop", "backend"}:
             foundation = project / f".ai/evidence/{phase}-foundation.json"
-            if foundation.is_file():
+            # The foundation node is verified separately before feature fan-out.
+            # Refreshing its audit evidence must not rerun every finished feature.
+            if foundation.is_file() and phase not in {"frontend", "mobile"}:
                 files.add(foundation.relative_to(project).as_posix())
+            if phase in {"frontend", "mobile"}:
+                dependency_files = (
+                    ("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")
+                    if phase == "frontend"
+                    else ("pubspec.yaml", "pubspec.lock")
+                )
+                for name in dependency_files:
+                    manifest = project / "apps" / phase / name
+                    if manifest.is_file():
+                        files.add(manifest.relative_to(project).as_posix())
             if phase != "desktop":
                 client_names = {
                     "backend": {"generate.py"},
@@ -2698,8 +2711,9 @@ def _prompt(
                 "\nThis is a repair gate, not a findings-only report. Inventory every approved "
                 "HTML document for this target and include each one in at least one deterministic "
                 "design case. Repair shared tokens and components before individual routes, rerun "
-                "the focused checks and captures, and return only when the comparison is both "
-                "aligned:true and verified:true with no unresolved meaningful drift. If an "
+                "the focused checks and captures. A complete capture set with measured drift is "
+                "a valid bounded handoff to the workflow retry; the final accepted comparison "
+                "must be aligned:true and verified:true with no unresolved meaningful drift. If an "
                 "external tool blocker prevents repair or capture, report that blocker truthfully "
                 "instead."
             )
@@ -2992,7 +3006,8 @@ def _record_failure(
 
 
 def _run_adapter(
-    project: Path, adapter: str, prompt: str, *, refresh_projection: bool = True
+    project: Path, adapter: str, prompt: str, *, refresh_projection: bool = True,
+    timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
     from .provider_selection import refresh_provider_projection
 
@@ -3016,16 +3031,29 @@ def _run_adapter(
         raise RuntimeError(f"invalid adapter prompt transport: {adapter}")
     if refresh_projection:
         refresh_provider_projection(project, adapter)
-    completed = subprocess.run(  # noqa: S603 - repository-owned fixed adapter argv
-        command,
-        cwd=project,
-        input=prompt_input,
-        text=True,
-        capture_output=True,
-        timeout=int(config.get("timeout_seconds", 3600)),
-        env={**os.environ, "AI_WORKFLOW_PYTHON": sys.executable},
-        check=False,
-    )
+    timeout = timeout_seconds or int(config.get("timeout_seconds", 3600))
+    try:
+        completed = subprocess.run(  # noqa: S603 - repository-owned fixed adapter argv
+            command,
+            cwd=project,
+            input=prompt_input,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            env={**os.environ, "AI_WORKFLOW_PYTHON": sys.executable},
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        def tail(value: bytes | str | None) -> str:
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")[-4000:]
+            return (value or "")[-4000:]
+
+        return {
+            "returncode": 124,
+            "stdout_tail": tail(error.stdout),
+            "stderr_tail": f"adapter timed out after {timeout} seconds; " + tail(error.stderr),
+        }
     return {
         "returncode": completed.returncode,
         "stdout_tail": completed.stdout[-4000:],
@@ -3636,6 +3664,28 @@ def _execute_phase_unlocked(
                 prompt, contract = _prompt(
                     project, phase, node, state, feature, inputs, retry_context
                 )
+                if phase == "frontend" and node["id"] == "sync-frontend-design":
+                    capture = reusable_design_captures(
+                        project, "frontend", state["frameworks"]["frontend"]
+                    )
+                    if capture is not None:
+                        prompt += (
+                            "\nThe previous attempt already produced a complete, independently "
+                            "recomputed capture set against unchanged HTML, frontend, backend, "
+                            "and API inputs. Reuse these captures and metrics for diagnosis; "
+                            "do not repeat the browser journey until a repair changes rendered "
+                            "source. Finish comparison.json and the repair plan from the actual "
+                            "case metrics, repair shared causes, then recapture affected cases. "
+                            f"Validated capture summary: {json.dumps(capture, sort_keys=True)}\n"
+                        )
+                    else:
+                        prompt += (
+                            "\nFirst run the existing project-owned browser capture harness "
+                            "once and write a complete manifest, pixel metrics, comparison, "
+                            "and repair plan. Return after that evidence pass if drift remains; "
+                            "the workflow will retry with a validated capture summary. "
+                            "Do not repeat earlier feature or system tests already verified.\n"
+                        )
                 current_contract = contract
                 suffix = "" if attempt == 0 else f"--retry-{attempt}"
                 prompt_path = (
@@ -3646,7 +3696,12 @@ def _execute_phase_unlocked(
                 _acquire_path_lease(project, contract)
                 try:
                     started = time.monotonic()
-                    result = _run_adapter(project, adapter, prompt)
+                    if phase == "frontend" and node["id"] == "sync-frontend-design":
+                        result = _run_adapter(
+                            project, adapter, prompt, timeout_seconds=900
+                        )
+                    else:
+                        result = _run_adapter(project, adapter, prompt)
                     record_attempt(
                         project,
                         identity=identity,

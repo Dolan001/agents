@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from PIL import Image, ImageChops, UnidentifiedImageError
@@ -170,6 +171,28 @@ def compare_pixels(
         "max_changed_ratio": max_changed_ratio,
         "passed": changed_ratio <= max_changed_ratio,
     }
+
+
+def recompute_saved_pixels(
+    reference_path: Path,
+    actual_path: Path,
+    diff_path: Path,
+    *,
+    channel_tolerance: int = 0,
+    max_changed_ratio: float = 0.0,
+    masks: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], bool]:
+    """Verify saved diff pixels across lossless PNG encoder versions."""
+    with TemporaryDirectory(prefix="ai-design-diff-") as directory:
+        expected_path = Path(directory) / "diff.png"
+        metrics = compare_pixels(
+            reference_path, actual_path, diff_path=expected_path,
+            channel_tolerance=channel_tolerance,
+            max_changed_ratio=max_changed_ratio, masks=masks,
+        )
+        expected = _rgba(expected_path)
+        saved = _rgba(diff_path)
+        return metrics, expected.size == saved.size and expected.tobytes() == saved.tobytes()
 
 
 def parse_mask(value: str) -> dict[str, int | str]:
